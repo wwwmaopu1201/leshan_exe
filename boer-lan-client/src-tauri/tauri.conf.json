@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "博尔局域网管理软件",
+  "productName": "Boer-LAN-Manager",
   "version": "1.0.0",
   "identifier": "com.boer.lan-client",
   "build": {
