@@ -1,0 +1,266 @@
+// 全局样式变量
+$primary-color: #409EFF;
+$sidebar-bg-start: #1e3c72;
+$sidebar-bg-end: #2a5298;
+$header-bg: #3b9dfc;
+$body-bg: #f5f7fa;
+$card-bg: #ffffff;
+$text-primary: #303133;
+$text-regular: #606266;
+$text-secondary: #909399;
+$border-color: #DCDFE6;
+
+// 状态颜色
+$status-success: #67C23A;
+$status-warning: #E6A23C;
+$status-danger: #F56C6C;
+$status-info: #909399;
+
+// Reset
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  font-size: 14px;
+  color: $text-primary;
+  background-color: $body-bg;
+}
+
+// 滚动条样式
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: rgba(144, 147, 153, 0.3);
+  border-radius: 3px;
+
+  &:hover {
+    background-color: rgba(144, 147, 153, 0.5);
+  }
+}
+
+::-webkit-scrollbar-track {
+  background-color: transparent;
+}
+
+// 通用类
+.flex {
+  display: flex;
+}
+
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.flex-1 {
+  flex: 1;
+}
+
+.text-center {
+  text-align: center;
+}
+
+.text-right {
+  text-align: right;
+}
+
+.mt-10 {
+  margin-top: 10px;
+}
+
+.mt-20 {
+  margin-top: 20px;
+}
+
+.mb-10 {
+  margin-bottom: 10px;
+}
+
+.mb-20 {
+  margin-bottom: 20px;
+}
+
+.ml-10 {
+  margin-left: 10px;
+}
+
+.mr-10 {
+  margin-right: 10px;
+}
+
+.p-10 {
+  padding: 10px;
+}
+
+.p-20 {
+  padding: 20px;
+}
+
+// 页面容器
+.page-container {
+  padding: 20px;
+  background-color: $body-bg;
+  min-height: 100%;
+}
+
+// 卡片样式
+.card {
+  background-color: $card-bg;
+  border-radius: 4px;
+  padding: 20px;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+
+  &-header {
+    font-size: 16px;
+    font-weight: 600;
+    color: $text-primary;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid $border-color;
+  }
+}
+
+// 搜索栏样式
+.search-bar {
+  background-color: $card-bg;
+  padding: 20px;
+  border-radius: 4px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+
+  .el-form-item {
+    margin-bottom: 0;
+    margin-right: 20px;
+  }
+}
+
+// 表格操作按钮
+.table-actions {
+  margin-bottom: 15px;
+}
+
+// 状态标签
+.status-tag {
+  &.online {
+    background-color: rgba($status-success, 0.1);
+    color: $status-success;
+    border-color: $status-success;
+  }
+
+  &.offline {
+    background-color: rgba($status-info, 0.1);
+    color: $status-info;
+    border-color: $status-info;
+  }
+
+  &.alarm {
+    background-color: rgba($status-danger, 0.1);
+    color: $status-danger;
+    border-color: $status-danger;
+  }
+
+  &.working {
+    background-color: rgba($primary-color, 0.1);
+    color: $primary-color;
+    border-color: $primary-color;
+  }
+}
+
+// 统计卡片
+.stat-card {
+  background: linear-gradient(135deg, $primary-color 0%, darken($primary-color, 10%) 100%);
+  border-radius: 8px;
+  padding: 20px;
+  color: #fff;
+
+  .stat-value {
+    font-size: 32px;
+    font-weight: bold;
+    margin-bottom: 5px;
+  }
+
+  .stat-label {
+    font-size: 14px;
+    opacity: 0.9;
+  }
+
+  &.success {
+    background: linear-gradient(135deg, $status-success 0%, darken($status-success, 10%) 100%);
+  }
+
+  &.warning {
+    background: linear-gradient(135deg, $status-warning 0%, darken($status-warning, 10%) 100%);
+  }
+
+  &.danger {
+    background: linear-gradient(135deg, $status-danger 0%, darken($status-danger, 10%) 100%);
+  }
+}
+
+// 图表卡片
+.chart-card {
+  background-color: $card-bg;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+
+  .chart-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: $text-primary;
+    margin-bottom: 15px;
+  }
+
+  .chart-container {
+    width: 100%;
+    height: 300px;
+  }
+}
+
+// Element UI 覆盖样式
+.el-button--primary {
+  background-color: $primary-color;
+  border-color: $primary-color;
+}
+
+.el-menu {
+  border-right: none !important;
+}
+
+.el-table {
+  border-radius: 4px;
+
+  th {
+    background-color: #fafafa !important;
+  }
+}
+
+.el-pagination {
+  margin-top: 20px;
+  text-align: right;
+}
+
+.el-dialog__header {
+  border-bottom: 1px solid $border-color;
+  padding-bottom: 15px;
+}
+
+.el-dialog__footer {
+  border-top: 1px solid $border-color;
+  padding-top: 15px;
+}

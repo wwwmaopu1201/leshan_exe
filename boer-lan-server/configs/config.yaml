@@ -1,0 +1,19 @@
+server:
+  port: 8088
+  mode: debug  # debug, release, test
+
+database:
+  host: localhost
+  port: 3307
+  username: root
+  password: "!QAZxsw2"
+  database: boer_lan
+  charset: utf8mb4
+
+jwt:
+  secret: boer-lan-secret-key-2024
+  expire: 24  # hours
+
+log:
+  level: debug
+  path: ./logs

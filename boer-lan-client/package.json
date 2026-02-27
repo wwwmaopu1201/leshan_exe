@@ -1,0 +1,30 @@
+{
+  "name": "boer-lan-client",
+  "version": "1.0.0",
+  "description": "博尔局域网管理软件 - 工业设备局域网管理客户端",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "dependencies": {
+    "vue": "^2.7.16",
+    "vue-router": "^3.6.5",
+    "vuex": "^3.6.2",
+    "element-ui": "^2.15.14",
+    "echarts": "^5.5.0",
+    "vue-i18n": "^8.28.2",
+    "axios": "^1.6.7",
+    "@tauri-apps/api": "^2.0.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue2": "^2.3.1",
+    "vite": "^5.1.0",
+    "sass": "^1.71.0",
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}

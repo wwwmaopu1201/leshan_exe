@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Build outputs
+dist/
+*/dist/
+build/
+*/build/
+target/
+*/target/
+
+# Logs
+*.log
+logs/
+*/logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Tauri
+boer-lan-client/src-tauri/target/
+
+# Go
+boer-lan-server/boer-lan-server
+*.exe
+!*.exe
+
+# Database
+*.db
+*.sqlite
+
+# Uploads
+uploads/
+*/uploads/
