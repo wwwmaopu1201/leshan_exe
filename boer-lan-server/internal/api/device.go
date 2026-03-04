@@ -54,7 +54,7 @@ func (h *DeviceHandler) buildTree(groups []model.DeviceGroup) []gin.H {
 					"label":  d.Name,
 					"type":   "device",
 					"status": d.Status,
-					"model":  d.Model,
+					"model":  d.ModelName,
 				})
 			}
 			if len(deviceNodes) > 0 {
@@ -102,7 +102,7 @@ func (h *DeviceHandler) GetDeviceList(c *gin.Context) {
 			"code":   d.Code,
 			"name":   d.Name,
 			"type":   d.Type,
-			"model":  d.Model,
+			"model":  d.ModelName,
 			"ip":     d.IP,
 			"status": d.Status,
 		}

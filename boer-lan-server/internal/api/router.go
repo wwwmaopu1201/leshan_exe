@@ -8,10 +8,12 @@ import (
 func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int) {
 	// API group
 	api := r.Group("/api")
+	deviceHandler := NewDeviceHandler(db)
 
 	// Auth routes (public)
 	authHandler := NewAuthHandler(db, jwtSecret, jwtExpire)
 	api.POST("/auth/login", authHandler.Login)
+	api.GET("/device/vnc/ws/:id", deviceHandler.ProxyVNCWebSocket)
 
 	// Protected routes
 	protected := api.Group("")
@@ -25,7 +27,6 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int) {
 		protected.GET("/auth/login-logs", authHandler.GetLoginLogs)
 
 		// Device
-		deviceHandler := NewDeviceHandler(db)
 		protected.GET("/device/tree", deviceHandler.GetDeviceTree)
 		protected.GET("/device/list", deviceHandler.GetDeviceList)
 		protected.GET("/device/:id", deviceHandler.GetDevice)
@@ -61,6 +62,7 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int) {
 		protected.GET("/statistics/process", statsHandler.GetProcessOverview)
 		protected.GET("/statistics/duration", statsHandler.GetDurationStats)
 		protected.GET("/statistics/alarm", statsHandler.GetAlarmStats)
+		protected.GET("/statistics/export/:type", statsHandler.ExportStatistics)
 
 		// Employee
 		employeeHandler := NewEmployeeHandler(db)

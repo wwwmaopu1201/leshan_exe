@@ -1,8 +1,13 @@
 package api
 
 import (
+	"encoding/csv"
+	"fmt"
+	"math"
 	"net/http"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"boer-lan-server/internal/model"
@@ -258,26 +263,32 @@ func (h *StatisticsHandler) GetSalaryStats(c *gin.Context) {
 	startDate := c.Query("startDate")
 	endDate := c.Query("endDate")
 	employeeId := c.Query("employeeId")
+	deviceId := c.Query("deviceId")
+	deviceIDs := parseDeviceIDs(c.Query("deviceIds"))
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+	page, pageSize = normalizePagination(page, pageSize)
 
-	query := h.db.Table("salary_records sr").
-		Select(`sr.*, e.name as employee_name, e.code as employee_code, d.name as device_name`).
-		Joins("LEFT JOIN employees e ON sr.employee_id = e.id").
-		Joins("LEFT JOIN devices d ON sr.device_id = d.id")
-
-	if startDate != "" {
-		query = query.Where("sr.record_date >= ?", startDate)
-	}
-	if endDate != "" {
-		query = query.Where("sr.record_date <= ?", endDate)
-	}
-	if employeeId != "" {
-		query = query.Where("sr.employee_id = ?", employeeId)
-	}
+	baseQuery := h.buildSalaryStatsBaseQuery(startDate, endDate, employeeId, deviceId, deviceIDs)
 
 	var total int64
-	query.Count(&total)
+	baseQuery.Session(&gorm.Session{}).Count(&total)
+
+	var summaryRow struct {
+		TotalSalary   float64
+		TotalPieces   int64
+		EmployeeCount int64
+	}
+	baseQuery.Session(&gorm.Session{}).
+		Select("COALESCE(SUM(sr.total_amount), 0) as total_salary, COALESCE(SUM(sr.pieces), 0) as total_pieces, COUNT(DISTINCT sr.employee_id) as employee_count").
+		Scan(&summaryRow)
+
+	averageSalary := 0.0
+	if summaryRow.EmployeeCount > 0 {
+		averageSalary = summaryRow.TotalSalary / float64(summaryRow.EmployeeCount)
+	}
+	totalSalary := roundFloat(summaryRow.TotalSalary, 2)
+	averageSalary = roundFloat(averageSalary, 2)
 
 	var results []struct {
 		model.SalaryRecord
@@ -285,90 +296,143 @@ func (h *StatisticsHandler) GetSalaryStats(c *gin.Context) {
 		EmployeeCode string
 		DeviceName   string
 	}
-
 	offset := (page - 1) * pageSize
-	query.Offset(offset).Limit(pageSize).Order("sr.record_date DESC").Scan(&results)
+	baseQuery.Session(&gorm.Session{}).
+		Select("sr.*, e.name as employee_name, e.code as employee_code, d.name as device_name").
+		Order("sr.record_date DESC").
+		Offset(offset).
+		Limit(pageSize).
+		Scan(&results)
 
-	// 汇总统计
-	var totalSalary, totalPieces float64
-	h.db.Model(&model.SalaryRecord{}).Select("COALESCE(SUM(total_amount), 0)").Scan(&totalSalary)
-	h.db.Model(&model.SalaryRecord{}).Select("COALESCE(SUM(pieces), 0)").Scan(&totalPieces)
-
-	var employeeCount int64
-	h.db.Model(&model.SalaryRecord{}).Distinct("employee_id").Count(&employeeCount)
-
-	averageSalary := 0.0
-	if employeeCount > 0 {
-		averageSalary = totalSalary / float64(employeeCount)
-	}
-
-	list := make([]gin.H, 0)
+	list := make([]gin.H, 0, len(results))
 	for _, r := range results {
 		list = append(list, gin.H{
 			"id":           r.ID,
+			"employeeId":   r.EmployeeID,
 			"employeeName": r.EmployeeName,
 			"employeeCode": r.EmployeeCode,
+			"deviceId":     r.DeviceID,
 			"deviceName":   r.DeviceName,
 			"totalPieces":  r.Pieces,
-			"unitPrice":    r.UnitPrice,
-			"salary":       r.Salary,
-			"bonus":        r.Bonus,
-			"totalAmount":  r.TotalAmount,
+			"unitPrice":    roundFloat(r.UnitPrice, 3),
+			"salary":       roundFloat(r.Salary, 2),
+			"bonus":        roundFloat(r.Bonus, 2),
+			"totalAmount":  roundFloat(r.TotalAmount, 2),
 			"date":         r.RecordDate.Format("2006-01-02"),
 		})
+	}
+
+	var rankRows []struct {
+		EmployeeName string
+		TotalAmount  float64
+	}
+	baseQuery.Session(&gorm.Session{}).
+		Select("COALESCE(e.name, '未知员工') as employee_name, COALESCE(SUM(sr.total_amount), 0) as total_amount").
+		Group("sr.employee_id, e.name").
+		Order("total_amount DESC").
+		Limit(10).
+		Scan(&rankRows)
+
+	salaryRank := make([]gin.H, 0, len(rankRows))
+	for _, row := range rankRows {
+		salaryRank = append(salaryRank, gin.H{
+			"name":  row.EmployeeName,
+			"value": roundFloat(row.TotalAmount, 2),
+		})
+	}
+
+	var trendRows []struct {
+		Date        string
+		TotalAmount float64
+	}
+	baseQuery.Session(&gorm.Session{}).
+		Select("DATE(sr.record_date) as date, COALESCE(SUM(sr.total_amount), 0) as total_amount").
+		Group("DATE(sr.record_date)").
+		Order("date").
+		Scan(&trendRows)
+
+	salaryTrend := make([]gin.H, 0, len(trendRows))
+	for _, row := range trendRows {
+		salaryTrend = append(salaryTrend, gin.H{
+			"date":  row.Date,
+			"value": roundFloat(row.TotalAmount, 2),
+		})
+	}
+
+	summary := gin.H{
+		"totalSalary":   totalSalary,
+		"totalPieces":   summaryRow.TotalPieces,
+		"averageSalary": averageSalary,
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
-			"totalSalary":   totalSalary,
-			"totalPieces":   int(totalPieces),
-			"averageSalary": averageSalary,
+			"summary":       summary,
 			"list":          list,
 			"total":         total,
+			"salaryRank":    salaryRank,
+			"salaryTrend":   salaryTrend,
+			"totalSalary":   totalSalary,
+			"totalPieces":   summaryRow.TotalPieces,
+			"averageSalary": averageSalary,
 		},
 		"message": "success",
 	})
 }
 
 func (h *StatisticsHandler) GetSalaryDetail(c *gin.Context) {
-	employeeId := c.Query("employeeId")
 	startDate := c.Query("startDate")
 	endDate := c.Query("endDate")
+	date := c.Query("date")
+	employeeId := c.Query("employeeId")
+	deviceId := c.Query("deviceId")
+	deviceIDs := parseDeviceIDs(c.Query("deviceIds"))
 
-	query := h.db.Table("salary_records sr").
-		Select(`sr.*, e.name as employee_name, d.name as device_name`).
-		Joins("LEFT JOIN employees e ON sr.employee_id = e.id").
-		Joins("LEFT JOIN devices d ON sr.device_id = d.id")
-
+	query := h.buildProductionStatsBaseQuery(startDate, endDate, deviceId, deviceIDs)
 	if employeeId != "" {
-		query = query.Where("sr.employee_id = ?", employeeId)
+		query = query.Where("pr.employee_id = ?", employeeId)
 	}
-	if startDate != "" {
-		query = query.Where("sr.record_date >= ?", startDate)
-	}
-	if endDate != "" {
-		query = query.Where("sr.record_date <= ?", endDate)
+	if date != "" {
+		query = query.Where("DATE(pr.record_date) = ?", date)
 	}
 
 	var results []struct {
-		model.SalaryRecord
-		EmployeeName string
-		DeviceName   string
+		model.ProductionRecord
+		DeviceName      string
+		PatternName     string
+		PatternStitches int64
+		UnitPrice       float64
 	}
-	query.Order("sr.record_date DESC").Scan(&results)
+	query.Session(&gorm.Session{}).
+		Select("pr.*, COALESCE(d.name, CONCAT('设备-', pr.device_id)) as device_name, COALESCE(p.name, '未命名花型') as pattern_name, COALESCE(NULLIF(p.stitches, 0), pr.stitches, 0) as pattern_stitches, COALESCE(sr.unit_price, 0) as unit_price").
+		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
+		Joins("LEFT JOIN patterns p ON pr.pattern_id = p.id").
+		Joins("LEFT JOIN (SELECT employee_id, device_id, DATE(record_date) as record_date, MAX(unit_price) as unit_price FROM salary_records GROUP BY employee_id, device_id, DATE(record_date)) sr ON sr.employee_id = pr.employee_id AND sr.device_id = pr.device_id AND sr.record_date = DATE(pr.record_date)").
+		Order("pr.record_date DESC, pr.created_at DESC, pr.id DESC").
+		Scan(&results)
 
-	list := make([]gin.H, 0)
+	list := make([]gin.H, 0, len(results))
 	for _, r := range results {
+		startTime, endTime := deriveProductionTimeRange(r.RecordDate, r.CreatedAt, r.RunningTime)
+		totalAmount := roundFloat(float64(r.Pieces)*r.UnitPrice, 2)
+		avgSewDuration := 0.0
+		if r.Pieces > 0 {
+			avgSewDuration = (r.RunningTime * 60) / float64(r.Pieces)
+		}
 		list = append(list, gin.H{
-			"employeeName": r.EmployeeName,
-			"deviceName":   r.DeviceName,
-			"pieces":       r.Pieces,
-			"unitPrice":    r.UnitPrice,
-			"salary":       r.Salary,
-			"bonus":        r.Bonus,
-			"totalAmount":  r.TotalAmount,
-			"date":         r.RecordDate.Format("2006-01-02"),
+			"id":              r.ID,
+			"deviceName":      r.DeviceName,
+			"patternName":     r.PatternName,
+			"patternStitches": r.PatternStitches,
+			"startTime":       startTime.Format("2006-01-02 15:04:05"),
+			"endTime":         endTime.Format("2006-01-02 15:04:05"),
+			"sewCount":        r.Pieces,
+			"sewDuration":     roundFloat(r.RunningTime, 2),
+			"avgSewDuration":  roundFloat(avgSewDuration, 2),
+			"unitPrice":       roundFloat(r.UnitPrice, 3),
+			"totalAmount":     totalAmount,
+			"date":            r.RecordDate.Format("2006-01-02"),
 		})
 	}
 
@@ -383,62 +447,171 @@ func (h *StatisticsHandler) GetProcessOverview(c *gin.Context) {
 	startDate := c.Query("startDate")
 	endDate := c.Query("endDate")
 	deviceId := c.Query("deviceId")
+	deviceIDs := parseDeviceIDs(c.Query("deviceIds"))
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+	page, pageSize = normalizePagination(page, pageSize)
 
-	query := h.db.Model(&model.ProductionRecord{})
+	baseQuery := h.buildProductionStatsBaseQuery(startDate, endDate, deviceId, deviceIDs)
 
-	if startDate != "" {
-		query = query.Where("record_date >= ?", startDate)
+	var summaryRow struct {
+		TotalPieces  int64
+		TotalThread  float64
+		TotalRunning float64
+		TotalIdle    float64
 	}
-	if endDate != "" {
-		query = query.Where("record_date <= ?", endDate)
-	}
-	if deviceId != "" {
-		query = query.Where("device_id = ?", deviceId)
-	}
+	baseQuery.Session(&gorm.Session{}).
+		Select("COALESCE(SUM(pr.pieces), 0) as total_pieces, COALESCE(SUM(pr.thread_length), 0) as total_thread, COALESCE(SUM(pr.running_time), 0) as total_running, COALESCE(SUM(pr.idle_time), 0) as total_idle").
+		Scan(&summaryRow)
 
-	var totalPieces int
-	var totalThread float64
-	var totalRunning, totalIdle float64
-
-	query.Select("COALESCE(SUM(pieces), 0)").Scan(&totalPieces)
-	query.Select("COALESCE(SUM(thread_length), 0)").Scan(&totalThread)
-	query.Select("COALESCE(SUM(running_time), 0)").Scan(&totalRunning)
-	query.Select("COALESCE(SUM(idle_time), 0)").Scan(&totalIdle)
-
+	totalHours := summaryRow.TotalRunning + summaryRow.TotalIdle
 	avgEfficiency := 0.0
-	totalTime := totalRunning + totalIdle
-	if totalTime > 0 {
-		avgEfficiency = (totalRunning / totalTime) * 100
+	if totalHours > 0 {
+		avgEfficiency = (summaryRow.TotalRunning / totalHours) * 100
 	}
+	avgEfficiency = roundFloat(avgEfficiency, 2)
 
-	// 按日期分组的产量趋势
-	var dailyData []struct {
-		Date   string
-		Pieces int
+	var total int64
+	baseQuery.Session(&gorm.Session{}).Count(&total)
+
+	var listRows []struct {
+		model.ProductionRecord
+		DeviceName      string
+		EmployeeCode    string
+		EmployeeName    string
+		PatternName     string
+		PatternStitches int64
 	}
-	h.db.Model(&model.ProductionRecord{}).
-		Select("DATE(record_date) as date, SUM(pieces) as pieces").
-		Where("record_date >= ?", time.Now().AddDate(0, 0, -7)).
-		Group("DATE(record_date)").
-		Order("date").
-		Scan(&dailyData)
+	offset := (page - 1) * pageSize
+	baseQuery.Session(&gorm.Session{}).
+		Select("pr.*, COALESCE(d.name, CONCAT('设备-', pr.device_id)) as device_name, COALESCE(e.code, '-') as employee_code, COALESCE(e.name, '-') as employee_name, COALESCE(p.name, '未命名花型') as pattern_name, COALESCE(NULLIF(p.stitches, 0), pr.stitches, 0) as pattern_stitches").
+		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
+		Joins("LEFT JOIN employees e ON pr.employee_id = e.id").
+		Joins("LEFT JOIN patterns p ON pr.pattern_id = p.id").
+		Order("pr.record_date DESC, pr.created_at DESC, pr.id DESC").
+		Offset(offset).
+		Limit(pageSize).
+		Scan(&listRows)
 
-	productionTrend := make([]gin.H, 0)
-	for _, d := range dailyData {
-		productionTrend = append(productionTrend, gin.H{
-			"date":  d.Date,
-			"value": d.Pieces,
+	patternSewCountMap := h.loadPatternSewCountByDevicePatternDate(startDate, endDate, deviceId, deviceIDs)
+	alarmInfoMap := h.loadAlarmInfoByDeviceDate(startDate, endDate, deviceId, deviceIDs)
+
+	list := make([]gin.H, 0, len(listRows))
+	for _, row := range listRows {
+		efficiency := 0.0
+		if row.RunningTime+row.IdleTime > 0 {
+			efficiency = row.RunningTime / (row.RunningTime + row.IdleTime) * 100
+		}
+		startTime, _ := deriveProductionTimeRange(row.RecordDate, row.CreatedAt, row.RunningTime)
+		sewSpeed := 0.0
+		if row.RunningTime > 0 {
+			sewSpeed = float64(row.Stitches) / (row.RunningTime * 60)
+		}
+		avgProcessDuration := 0.0
+		if row.Pieces > 0 {
+			avgProcessDuration = (row.RunningTime * 60) / float64(row.Pieces)
+		}
+		dateKey := row.RecordDate.Format("2006-01-02")
+		patternCountKey := makeDevicePatternDateKey(row.DeviceID, row.PatternID, dateKey)
+		patternSewCount := patternSewCountMap[patternCountKey]
+		alarmInfo := alarmInfoMap[makeDeviceDateKey(row.DeviceID, dateKey)]
+		alarmText := "-"
+		alarmTime := "-"
+		if alarmInfo.AlarmInfo != "" {
+			alarmText = alarmInfo.AlarmInfo
+		}
+		if alarmInfo.AlarmTime != "" {
+			alarmTime = alarmInfo.AlarmTime
+		}
+		list = append(list, gin.H{
+			"id":                 row.ID,
+			"deviceName":         row.DeviceName,
+			"employeeCode":       row.EmployeeCode,
+			"employeeName":       row.EmployeeName,
+			"date":               dateKey,
+			"patternName":        row.PatternName,
+			"patternStitches":    row.PatternStitches,
+			"sewSpeed":           roundFloat(sewSpeed, 2),
+			"startTime":          startTime.Format("2006-01-02 15:04:05"),
+			"processCount":       row.Pieces,
+			"avgProcessDuration": roundFloat(avgProcessDuration, 2),
+			"patternSewCount":    patternSewCount,
+			"alarmInfo":          alarmText,
+			"alarmTime":          alarmTime,
+			"cumulativeUpTime":   roundFloat(row.RunningTime+row.IdleTime, 2),
+			"totalPieces":        row.Pieces,
+			"totalStitches":      row.Stitches,
+			"threadLength":       roundFloat(row.ThreadLength, 2),
+			"runningTime":        roundFloat(row.RunningTime, 2),
+			"efficiency":         roundFloat(efficiency, 2),
 		})
+	}
+
+	var trendRows []struct {
+		Date        string
+		Pieces      int64
+		RunningTime float64
+		IdleTime    float64
+	}
+	baseQuery.Session(&gorm.Session{}).
+		Select("DATE(pr.record_date) as date, COALESCE(SUM(pr.pieces), 0) as pieces, COALESCE(SUM(pr.running_time), 0) as running_time, COALESCE(SUM(pr.idle_time), 0) as idle_time").
+		Group("DATE(pr.record_date)").
+		Order("date").
+		Scan(&trendRows)
+
+	productionTrend := make([]gin.H, 0, len(trendRows))
+	for _, row := range trendRows {
+		efficiency := 0.0
+		if row.RunningTime+row.IdleTime > 0 {
+			efficiency = row.RunningTime / (row.RunningTime + row.IdleTime) * 100
+		}
+		productionTrend = append(productionTrend, gin.H{
+			"date":       row.Date,
+			"pieces":     row.Pieces,
+			"value":      row.Pieces,
+			"efficiency": roundFloat(efficiency, 2),
+		})
+	}
+
+	var distributionRows []struct {
+		Name  string
+		Value int64
+	}
+	baseQuery.Session(&gorm.Session{}).
+		Select("COALESCE(d.name, CONCAT('设备-', pr.device_id)) as name, COALESCE(SUM(pr.pieces), 0) as value").
+		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
+		Group("pr.device_id, d.name").
+		Order("value DESC").
+		Limit(10).
+		Scan(&distributionRows)
+
+	deviceDistribution := make([]gin.H, 0, len(distributionRows))
+	for _, row := range distributionRows {
+		deviceDistribution = append(deviceDistribution, gin.H{
+			"name":  row.Name,
+			"value": row.Value,
+		})
+	}
+
+	overview := gin.H{
+		"totalPieces":   summaryRow.TotalPieces,
+		"totalThread":   roundFloat(summaryRow.TotalThread, 2),
+		"totalHours":    roundFloat(totalHours, 2),
+		"avgEfficiency": avgEfficiency,
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
-			"totalPieces":     totalPieces,
-			"totalThread":     totalThread,
-			"totalHours":      totalRunning + totalIdle,
-			"avgEfficiency":   avgEfficiency,
-			"productionTrend": productionTrend,
+			"overview":           overview,
+			"list":               list,
+			"total":              total,
+			"productionTrend":    productionTrend,
+			"deviceDistribution": deviceDistribution,
+			"totalPieces":        summaryRow.TotalPieces,
+			"totalThread":        roundFloat(summaryRow.TotalThread, 2),
+			"totalHours":         roundFloat(totalHours, 2),
+			"avgEfficiency":      avgEfficiency,
 		},
 		"message": "success",
 	})
@@ -448,72 +621,186 @@ func (h *StatisticsHandler) GetDurationStats(c *gin.Context) {
 	startDate := c.Query("startDate")
 	endDate := c.Query("endDate")
 	deviceId := c.Query("deviceId")
+	deviceIDs := parseDeviceIDs(c.Query("deviceIds"))
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+	page, pageSize = normalizePagination(page, pageSize)
 
-	query := h.db.Model(&model.ProductionRecord{})
+	baseProdQuery := h.buildProductionStatsBaseQuery(startDate, endDate, deviceId, deviceIDs)
+	baseAlarmQuery := h.buildAlarmStatsBaseQuery(startDate, endDate, deviceId, deviceIDs, "")
 
-	if startDate != "" {
-		query = query.Where("record_date >= ?", startDate)
-	}
-	if endDate != "" {
-		query = query.Where("record_date <= ?", endDate)
-	}
-	if deviceId != "" {
-		query = query.Where("device_id = ?", deviceId)
-	}
-
-	var totalRunning, totalIdle float64
-	query.Select("COALESCE(SUM(running_time), 0)").Scan(&totalRunning)
-	query.Select("COALESCE(SUM(idle_time), 0)").Scan(&totalIdle)
-
-	// 报警时长统计
-	var alarmDuration int
-	alarmQuery := h.db.Model(&model.AlarmRecord{})
-	if startDate != "" {
-		alarmQuery = alarmQuery.Where("start_time >= ?", startDate)
-	}
-	if endDate != "" {
-		alarmQuery = alarmQuery.Where("start_time <= ?", endDate)
-	}
-	if deviceId != "" {
-		alarmQuery = alarmQuery.Where("device_id = ?", deviceId)
-	}
-	alarmQuery.Select("COALESCE(SUM(duration), 0)").Scan(&alarmDuration)
-
-	totalTime := totalRunning + totalIdle
-	alarmTimeHours := float64(alarmDuration) / 3600.0
-
-	// 按设备分组的时长统计
-	var deviceDuration []struct {
-		DeviceID    uint
-		DeviceName  string
+	var prodSummary struct {
 		RunningTime float64
 		IdleTime    float64
 	}
-	h.db.Table("production_records pr").
-		Select("pr.device_id, d.name as device_name, SUM(pr.running_time) as running_time, SUM(pr.idle_time) as idle_time").
+	baseProdQuery.Session(&gorm.Session{}).
+		Select("COALESCE(SUM(pr.running_time), 0) as running_time, COALESCE(SUM(pr.idle_time), 0) as idle_time").
+		Scan(&prodSummary)
+
+	var alarmSummary struct {
+		DurationSeconds int64
+	}
+	baseAlarmQuery.Session(&gorm.Session{}).
+		Select("COALESCE(SUM(ar.duration), 0) as duration_seconds").
+		Scan(&alarmSummary)
+
+	alarmHours := float64(alarmSummary.DurationSeconds) / 3600.0
+	totalTime := prodSummary.RunningTime + prodSummary.IdleTime + alarmHours
+
+	summary := gin.H{
+		"totalTime":   roundFloat(totalTime, 2),
+		"runningTime": roundFloat(prodSummary.RunningTime, 2),
+		"idleTime":    roundFloat(prodSummary.IdleTime, 2),
+		"alarmTime":   roundFloat(alarmHours, 2),
+	}
+
+	var total int64
+	baseProdQuery.Session(&gorm.Session{}).Count(&total)
+
+	var listRows []struct {
+		model.ProductionRecord
+		DeviceName   string
+		EmployeeCode string
+		EmployeeName string
+		PatternName  string
+	}
+	offset := (page - 1) * pageSize
+	baseProdQuery.Session(&gorm.Session{}).
+		Select("pr.*, COALESCE(d.name, CONCAT('设备-', pr.device_id)) as device_name, COALESCE(e.code, '-') as employee_code, COALESCE(e.name, '-') as employee_name, COALESCE(p.name, '未命名花型') as pattern_name").
+		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
+		Joins("LEFT JOIN employees e ON pr.employee_id = e.id").
+		Joins("LEFT JOIN patterns p ON pr.pattern_id = p.id").
+		Order("pr.record_date DESC, pr.created_at DESC, pr.id DESC").
+		Offset(offset).
+		Limit(pageSize).
+		Scan(&listRows)
+
+	list := make([]gin.H, 0, len(listRows))
+	for _, row := range listRows {
+		startTime, endTime := deriveProductionTimeRange(row.RecordDate, row.CreatedAt, row.RunningTime)
+		avgSewDuration := 0.0
+		if row.Pieces > 0 {
+			avgSewDuration = (row.RunningTime * 60) / float64(row.Pieces)
+		}
+		list = append(list, gin.H{
+			"id":             row.ID,
+			"deviceName":     row.DeviceName,
+			"employeeCode":   row.EmployeeCode,
+			"employeeName":   row.EmployeeName,
+			"date":           row.RecordDate.Format("2006-01-02"),
+			"patternName":    row.PatternName,
+			"startTime":      startTime.Format("2006-01-02 15:04:05"),
+			"endTime":        endTime.Format("2006-01-02 15:04:05"),
+			"sewDuration":    roundFloat(row.RunningTime, 2),
+			"avgSewDuration": roundFloat(avgSewDuration, 2),
+			"totalTime":      roundFloat(row.RunningTime+row.IdleTime, 2),
+			"runningTime":    roundFloat(row.RunningTime, 2),
+			"idleTime":       roundFloat(row.IdleTime, 2),
+		})
+	}
+
+	durationPie := []gin.H{
+		{"name": "运行时长", "value": roundFloat(prodSummary.RunningTime, 2)},
+		{"name": "空闲时长", "value": roundFloat(prodSummary.IdleTime, 2)},
+		{"name": "报警时长", "value": roundFloat(alarmHours, 2)},
+	}
+
+	var prodTrendRows []struct {
+		Date        string
+		RunningTime float64
+		IdleTime    float64
+	}
+	baseProdQuery.Session(&gorm.Session{}).
+		Select("DATE(pr.record_date) as date, COALESCE(SUM(pr.running_time), 0) as running_time, COALESCE(SUM(pr.idle_time), 0) as idle_time").
+		Group("DATE(pr.record_date)").
+		Order("date").
+		Scan(&prodTrendRows)
+
+	var alarmTrendRows []struct {
+		Date      string
+		AlarmTime float64
+	}
+	baseAlarmQuery.Session(&gorm.Session{}).
+		Select("DATE(ar.start_time) as date, COALESCE(SUM(ar.duration), 0) / 3600 as alarm_time").
+		Group("DATE(ar.start_time)").
+		Order("date").
+		Scan(&alarmTrendRows)
+
+	type trendPoint struct {
+		Date        string
+		RunningTime float64
+		IdleTime    float64
+		AlarmTime   float64
+	}
+	trendMap := make(map[string]*trendPoint)
+	for _, row := range prodTrendRows {
+		trendMap[row.Date] = &trendPoint{
+			Date:        row.Date,
+			RunningTime: row.RunningTime,
+			IdleTime:    row.IdleTime,
+		}
+	}
+	for _, row := range alarmTrendRows {
+		item, ok := trendMap[row.Date]
+		if !ok {
+			item = &trendPoint{Date: row.Date}
+			trendMap[row.Date] = item
+		}
+		item.AlarmTime = row.AlarmTime
+	}
+
+	dates := make([]string, 0, len(trendMap))
+	for date := range trendMap {
+		dates = append(dates, date)
+	}
+	sort.Strings(dates)
+
+	durationTrend := make([]gin.H, 0, len(dates))
+	for _, date := range dates {
+		row := trendMap[date]
+		durationTrend = append(durationTrend, gin.H{
+			"date":        row.Date,
+			"runningTime": roundFloat(row.RunningTime, 2),
+			"idleTime":    roundFloat(row.IdleTime, 2),
+			"alarmTime":   roundFloat(row.AlarmTime, 2),
+		})
+	}
+
+	var deviceSummaryRows []struct {
+		Name        string
+		RunningTime float64
+		IdleTime    float64
+	}
+	baseProdQuery.Session(&gorm.Session{}).
+		Select("COALESCE(d.name, CONCAT('设备-', pr.device_id)) as name, COALESCE(SUM(pr.running_time), 0) as running_time, COALESCE(SUM(pr.idle_time), 0) as idle_time").
 		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
 		Group("pr.device_id, d.name").
 		Order("running_time DESC").
 		Limit(10).
-		Scan(&deviceDuration)
+		Scan(&deviceSummaryRows)
 
-	deviceStats := make([]gin.H, 0)
-	for _, d := range deviceDuration {
+	deviceStats := make([]gin.H, 0, len(deviceSummaryRows))
+	for _, row := range deviceSummaryRows {
 		deviceStats = append(deviceStats, gin.H{
-			"name":        d.DeviceName,
-			"runningTime": d.RunningTime,
-			"idleTime":    d.IdleTime,
+			"name":        row.Name,
+			"runningTime": roundFloat(row.RunningTime, 2),
+			"idleTime":    roundFloat(row.IdleTime, 2),
 		})
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
-			"totalTime":    totalTime,
-			"runningTime":  totalRunning,
-			"idleTime":     totalIdle,
-			"alarmTime":    alarmTimeHours,
-			"deviceStats":  deviceStats,
+			"summary":       summary,
+			"list":          list,
+			"total":         total,
+			"durationPie":   durationPie,
+			"durationTrend": durationTrend,
+			"totalTime":     summary["totalTime"],
+			"runningTime":   summary["runningTime"],
+			"idleTime":      summary["idleTime"],
+			"alarmTime":     summary["alarmTime"],
+			"deviceStats":   deviceStats,
 		},
 		"message": "success",
 	})
@@ -523,130 +810,686 @@ func (h *StatisticsHandler) GetAlarmStats(c *gin.Context) {
 	startDate := c.Query("startDate")
 	endDate := c.Query("endDate")
 	deviceId := c.Query("deviceId")
+	deviceIDs := parseDeviceIDs(c.Query("deviceIds"))
 	alarmType := c.Query("alarmType")
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+	page, pageSize = normalizePagination(page, pageSize)
 
-	query := h.db.Model(&model.AlarmRecord{})
-
-	if startDate != "" {
-		query = query.Where("start_time >= ?", startDate)
-	}
-	if endDate != "" {
-		query = query.Where("start_time <= ?", endDate)
-	}
-	if deviceId != "" {
-		query = query.Where("device_id = ?", deviceId)
-	}
-	if alarmType != "" {
-		query = query.Where("alarm_type = ?", alarmType)
-	}
-
-	// 汇总统计
-	var totalAlarms int64
-	var totalDuration int
-	query.Count(&totalAlarms)
-	query.Select("COALESCE(SUM(duration), 0)").Scan(&totalDuration)
-
-	var affectedDevices int64
-	query.Distinct("device_id").Count(&affectedDevices)
-
-	var resolvedCount int64
-	query.Where("status = ?", "resolved").Count(&resolvedCount)
-
-	resolvedRate := 0.0
-	if totalAlarms > 0 {
-		resolvedRate = float64(resolvedCount) / float64(totalAlarms) * 100
-	}
-
-	// 报警类型分布
-	var typeDistribution []struct {
-		AlarmType string
-		Count     int
-	}
-	h.db.Model(&model.AlarmRecord{}).
-		Select("alarm_type, COUNT(*) as count").
-		Group("alarm_type").
-		Scan(&typeDistribution)
-
-	alarmTypePie := make([]gin.H, 0)
-	for _, t := range typeDistribution {
-		alarmTypePie = append(alarmTypePie, gin.H{
-			"name":  t.AlarmType,
-			"value": t.Count,
-		})
-	}
-
-	// 日报警趋势
-	var dailyAlarms []struct {
-		Date    string
-		Count   int
-		AvgTime float64
-	}
-	h.db.Model(&model.AlarmRecord{}).
-		Select("DATE(start_time) as date, COUNT(*) as count, AVG(duration)/60 as avg_time").
-		Where("start_time >= ?", time.Now().AddDate(0, 0, -7)).
-		Group("DATE(start_time)").
-		Order("date").
-		Scan(&dailyAlarms)
-
-	alarmTrend := make([]gin.H, 0)
-	for _, d := range dailyAlarms {
-		alarmTrend = append(alarmTrend, gin.H{
-			"date":    d.Date,
-			"count":   d.Count,
-			"avgTime": d.AvgTime,
-		})
-	}
-
-	// 报警记录列表
-	var records []model.AlarmRecord
-	offset := (page - 1) * pageSize
-	h.db.Model(&model.AlarmRecord{}).
-		Offset(offset).Limit(pageSize).
-		Order("start_time DESC").
-		Find(&records)
-
-	list := make([]gin.H, 0)
-	for _, r := range records {
-		var device model.Device
-		h.db.First(&device, r.DeviceID)
-
-		endTimeStr := "-"
-		if r.EndTime != nil {
-			endTimeStr = r.EndTime.Format("2006-01-02 15:04:05")
-		}
-
-		list = append(list, gin.H{
-			"id":          r.ID,
-			"deviceName":  device.Name,
-			"alarmType":   r.AlarmType,
-			"alarmCode":   r.AlarmCode,
-			"description": r.Description,
-			"duration":    formatDuration(r.Duration),
-			"status":      formatAlarmStatus(r.Status),
-			"startTime":   r.StartTime.Format("2006-01-02 15:04:05"),
-			"endTime":     endTimeStr,
-		})
-	}
+	baseQuery := h.buildAlarmStatsBaseQuery(startDate, endDate, deviceId, deviceIDs, alarmType)
 
 	var total int64
-	h.db.Model(&model.AlarmRecord{}).Count(&total)
+	baseQuery.Session(&gorm.Session{}).Count(&total)
+
+	var totalDuration int64
+	baseQuery.Session(&gorm.Session{}).
+		Select("COALESCE(SUM(ar.duration), 0)").
+		Scan(&totalDuration)
+
+	var affectedDevices int64
+	baseQuery.Session(&gorm.Session{}).
+		Distinct("ar.device_id").
+		Count(&affectedDevices)
+
+	var resolvedCount int64
+	baseQuery.Session(&gorm.Session{}).
+		Where("ar.status = ?", "resolved").
+		Count(&resolvedCount)
+
+	resolvedRate := 0.0
+	if total > 0 {
+		resolvedRate = float64(resolvedCount) / float64(total) * 100
+	}
+	resolvedRate = roundFloat(resolvedRate, 2)
+
+	var typeRows []struct {
+		AlarmType string
+		Count     int64
+	}
+	baseQuery.Session(&gorm.Session{}).
+		Select("ar.alarm_type as alarm_type, COUNT(*) as count").
+		Group("ar.alarm_type").
+		Order("count DESC").
+		Scan(&typeRows)
+
+	alarmTypePie := make([]gin.H, 0, len(typeRows))
+	for _, row := range typeRows {
+		name := row.AlarmType
+		if name == "" {
+			name = "未分类"
+		}
+		alarmTypePie = append(alarmTypePie, gin.H{
+			"name":  name,
+			"value": row.Count,
+		})
+	}
+
+	var trendRows []struct {
+		Date        string
+		Count       int64
+		AvgDuration float64
+	}
+	baseQuery.Session(&gorm.Session{}).
+		Select("DATE(ar.start_time) as date, COUNT(*) as count, COALESCE(AVG(ar.duration), 0) / 60 as avg_duration").
+		Group("DATE(ar.start_time)").
+		Order("date").
+		Scan(&trendRows)
+
+	alarmTrend := make([]gin.H, 0, len(trendRows))
+	for _, row := range trendRows {
+		avgDuration := roundFloat(row.AvgDuration, 2)
+		alarmTrend = append(alarmTrend, gin.H{
+			"date":        row.Date,
+			"count":       row.Count,
+			"avgDuration": avgDuration,
+			"avgTime":     avgDuration,
+		})
+	}
+
+	var records []struct {
+		model.AlarmRecord
+		DeviceName string
+	}
+	offset := (page - 1) * pageSize
+	baseQuery.Session(&gorm.Session{}).
+		Select("ar.*, d.name as device_name").
+		Joins("LEFT JOIN devices d ON ar.device_id = d.id").
+		Order("ar.start_time DESC").
+		Offset(offset).
+		Limit(pageSize).
+		Scan(&records)
+
+	employeeByDeviceDate := h.loadEmployeeInfoByDeviceDate(startDate, endDate, deviceId, deviceIDs)
+
+	list := make([]gin.H, 0, len(records))
+	for _, row := range records {
+		endTime := "-"
+		if row.EndTime != nil {
+			endTime = row.EndTime.Format("2006-01-02 15:04:05")
+		}
+		dateKey := row.StartTime.Format("2006-01-02")
+		employeeInfo := employeeByDeviceDate[makeDeviceDateKey(row.DeviceID, dateKey)]
+		if employeeInfo.EmployeeCode == "" {
+			employeeInfo.EmployeeCode = "-"
+		}
+		if employeeInfo.EmployeeName == "" {
+			employeeInfo.EmployeeName = "-"
+		}
+		alarmInfo := strings.TrimSpace(row.AlarmType)
+		if alarmInfo == "" {
+			alarmInfo = strings.TrimSpace(row.Description)
+		}
+		if alarmInfo == "" {
+			alarmInfo = "报警"
+		}
+		list = append(list, gin.H{
+			"id":           row.ID,
+			"deviceName":   row.DeviceName,
+			"employeeCode": employeeInfo.EmployeeCode,
+			"employeeName": employeeInfo.EmployeeName,
+			"alarmTime":    row.StartTime.Format("2006-01-02 15:04:05"),
+			"alarmInfo":    alarmInfo,
+			"alarmType":    row.AlarmType,
+			"alarmCode":    row.AlarmCode,
+			"description":  row.Description,
+			"duration":     formatDuration(row.Duration),
+			"status":       formatAlarmStatus(row.Status),
+			"startTime":    row.StartTime.Format("2006-01-02 15:04:05"),
+			"endTime":      endTime,
+		})
+	}
+
+	summary := gin.H{
+		"totalAlarms":     total,
+		"totalDuration":   roundFloat(float64(totalDuration)/60.0, 2),
+		"affectedDevices": affectedDevices,
+		"resolvedRate":    resolvedRate,
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
-			"totalAlarms":     totalAlarms,
-			"totalDuration":   totalDuration / 60, // 转换为分钟
-			"affectedDevices": affectedDevices,
-			"resolvedRate":    resolvedRate,
-			"alarmTypePie":    alarmTypePie,
-			"alarmTrend":      alarmTrend,
+			"summary":         summary,
 			"list":            list,
 			"total":           total,
+			"alarmTypePie":    alarmTypePie,
+			"alarmTrend":      alarmTrend,
+			"totalAlarms":     total,
+			"totalDuration":   summary["totalDuration"],
+			"affectedDevices": affectedDevices,
+			"resolvedRate":    resolvedRate,
 		},
 		"message": "success",
 	})
+}
+
+func (h *StatisticsHandler) ExportStatistics(c *gin.Context) {
+	exportType := c.Param("type")
+	switch exportType {
+	case "salary":
+		h.exportSalaryCSV(c)
+	case "process":
+		h.exportProcessCSV(c)
+	case "duration":
+		h.exportDurationCSV(c)
+	case "alarm":
+		h.exportAlarmCSV(c)
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "不支持的导出类型",
+		})
+	}
+}
+
+func (h *StatisticsHandler) exportSalaryCSV(c *gin.Context) {
+	startDate := c.Query("startDate")
+	endDate := c.Query("endDate")
+	employeeId := c.Query("employeeId")
+	deviceId := c.Query("deviceId")
+	deviceIDs := parseDeviceIDs(c.Query("deviceIds"))
+	mode := c.DefaultQuery("mode", "all")
+
+	baseQuery := h.buildSalaryStatsBaseQuery(startDate, endDate, employeeId, deviceId, deviceIDs)
+
+	fileNamePrefix := "salary_stats"
+	switch mode {
+	case "merged":
+		var rowsData []struct {
+			EmployeeName string
+			EmployeeCode string
+			DeviceName   string
+			UnitPrice    float64
+			TotalPieces  int64
+			Salary       float64
+			Bonus        float64
+			TotalAmount  float64
+		}
+		baseQuery.Session(&gorm.Session{}).
+			Select("e.name as employee_name, e.code as employee_code, d.name as device_name, COALESCE(sr.unit_price, 0) as unit_price, COALESCE(SUM(sr.pieces), 0) as total_pieces, COALESCE(SUM(sr.salary), 0) as salary, COALESCE(SUM(sr.bonus), 0) as bonus, COALESCE(SUM(sr.total_amount), 0) as total_amount").
+			Group("sr.employee_id, e.name, e.code, sr.device_id, d.name, sr.unit_price").
+			Order("total_amount DESC").
+			Scan(&rowsData)
+
+		rows := make([][]string, 0, len(rowsData))
+		for _, row := range rowsData {
+			rows = append(rows, []string{
+				row.EmployeeCode,
+				row.EmployeeName,
+				row.DeviceName,
+				strconv.FormatInt(row.TotalPieces, 10),
+				csvFloat(row.UnitPrice, 3),
+				csvFloat(row.Salary, 2),
+				csvFloat(row.Bonus, 2),
+				csvFloat(row.TotalAmount, 2),
+			})
+		}
+
+		writeCSVResponse(c,
+			fileNamePrefix+"_merged_"+time.Now().Format("20060102_150405")+".csv",
+			[]string{"员工编号", "员工姓名", "设备名称", "加工件数", "单价(元)", "工资(元)", "奖金(元)", "合计(元)"},
+			rows,
+		)
+		return
+	case "current":
+		fileNamePrefix = "salary_stats_current"
+	default:
+		fileNamePrefix = "salary_stats_all"
+	}
+
+	query := baseQuery.Session(&gorm.Session{}).
+		Select("sr.*, e.name as employee_name, e.code as employee_code, d.name as device_name").
+		Order("sr.record_date DESC")
+
+	if mode == "current" {
+		page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+		pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+		page, pageSize = normalizePagination(page, pageSize)
+		offset := (page - 1) * pageSize
+		query = query.Offset(offset).Limit(pageSize)
+	}
+
+	var rowsData []struct {
+		model.SalaryRecord
+		EmployeeName string
+		EmployeeCode string
+		DeviceName   string
+	}
+	query.Scan(&rowsData)
+
+	rows := make([][]string, 0, len(rowsData))
+	for _, row := range rowsData {
+		rows = append(rows, []string{
+			row.EmployeeCode,
+			row.EmployeeName,
+			row.DeviceName,
+			strconv.Itoa(row.Pieces),
+			csvFloat(row.UnitPrice, 3),
+			csvFloat(row.Salary, 2),
+			csvFloat(row.Bonus, 2),
+			csvFloat(row.TotalAmount, 2),
+			row.RecordDate.Format("2006-01-02"),
+		})
+	}
+
+	writeCSVResponse(c,
+		fileNamePrefix+"_"+time.Now().Format("20060102_150405")+".csv",
+		[]string{"员工编号", "员工姓名", "设备名称", "加工件数", "单价(元)", "工资(元)", "奖金(元)", "合计(元)", "日期"},
+		rows,
+	)
+}
+
+func (h *StatisticsHandler) exportProcessCSV(c *gin.Context) {
+	startDate := c.Query("startDate")
+	endDate := c.Query("endDate")
+	deviceId := c.Query("deviceId")
+	deviceIDs := parseDeviceIDs(c.Query("deviceIds"))
+
+	baseQuery := h.buildProductionStatsBaseQuery(startDate, endDate, deviceId, deviceIDs)
+
+	var rowsData []struct {
+		model.ProductionRecord
+		DeviceName      string
+		EmployeeCode    string
+		EmployeeName    string
+		PatternName     string
+		PatternStitches int64
+	}
+	baseQuery.Session(&gorm.Session{}).
+		Select("pr.*, COALESCE(d.name, CONCAT('设备-', pr.device_id)) as device_name, COALESCE(e.code, '-') as employee_code, COALESCE(e.name, '-') as employee_name, COALESCE(p.name, '未命名花型') as pattern_name, COALESCE(NULLIF(p.stitches, 0), pr.stitches, 0) as pattern_stitches").
+		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
+		Joins("LEFT JOIN employees e ON pr.employee_id = e.id").
+		Joins("LEFT JOIN patterns p ON pr.pattern_id = p.id").
+		Order("pr.record_date DESC, pr.created_at DESC, pr.id DESC").
+		Scan(&rowsData)
+
+	patternSewCountMap := h.loadPatternSewCountByDevicePatternDate(startDate, endDate, deviceId, deviceIDs)
+	alarmInfoMap := h.loadAlarmInfoByDeviceDate(startDate, endDate, deviceId, deviceIDs)
+
+	rows := make([][]string, 0, len(rowsData))
+	for _, row := range rowsData {
+		startTime, _ := deriveProductionTimeRange(row.RecordDate, row.CreatedAt, row.RunningTime)
+		sewSpeed := 0.0
+		if row.RunningTime > 0 {
+			sewSpeed = float64(row.Stitches) / (row.RunningTime * 60)
+		}
+		avgProcessDuration := 0.0
+		if row.Pieces > 0 {
+			avgProcessDuration = (row.RunningTime * 60) / float64(row.Pieces)
+		}
+		dateKey := row.RecordDate.Format("2006-01-02")
+		patternSewCount := patternSewCountMap[makeDevicePatternDateKey(row.DeviceID, row.PatternID, dateKey)]
+		alarmInfo := alarmInfoMap[makeDeviceDateKey(row.DeviceID, dateKey)]
+		alarmText := "-"
+		alarmTime := "-"
+		if alarmInfo.AlarmInfo != "" {
+			alarmText = alarmInfo.AlarmInfo
+		}
+		if alarmInfo.AlarmTime != "" {
+			alarmTime = alarmInfo.AlarmTime
+		}
+		rows = append(rows, []string{
+			row.DeviceName,
+			row.EmployeeCode,
+			row.EmployeeName,
+			dateKey,
+			row.PatternName,
+			strconv.FormatInt(row.PatternStitches, 10),
+			csvFloat(sewSpeed, 2),
+			startTime.Format("2006-01-02 15:04:05"),
+			strconv.Itoa(row.Pieces),
+			csvFloat(avgProcessDuration, 2),
+			strconv.FormatInt(patternSewCount, 10),
+			alarmText,
+			alarmTime,
+			csvFloat(row.RunningTime+row.IdleTime, 2),
+		})
+	}
+
+	writeCSVResponse(c,
+		"process_overview_"+time.Now().Format("20060102_150405")+".csv",
+		[]string{"设备名称", "员工工号", "员工姓名", "日期", "花型名称", "花型针数", "缝纫速度(针/分钟)", "开始时间", "加工次数", "平均加工时长(min/次)", "花型缝纫次数", "报警信息", "报警时间", "累计开机时长(h)"},
+		rows,
+	)
+}
+
+func (h *StatisticsHandler) exportDurationCSV(c *gin.Context) {
+	startDate := c.Query("startDate")
+	endDate := c.Query("endDate")
+	deviceId := c.Query("deviceId")
+	deviceIDs := parseDeviceIDs(c.Query("deviceIds"))
+
+	baseProdQuery := h.buildProductionStatsBaseQuery(startDate, endDate, deviceId, deviceIDs)
+
+	var rowsData []struct {
+		model.ProductionRecord
+		DeviceName   string
+		EmployeeCode string
+		EmployeeName string
+		PatternName  string
+	}
+	baseProdQuery.Session(&gorm.Session{}).
+		Select("pr.*, COALESCE(d.name, CONCAT('设备-', pr.device_id)) as device_name, COALESCE(e.code, '-') as employee_code, COALESCE(e.name, '-') as employee_name, COALESCE(p.name, '未命名花型') as pattern_name").
+		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
+		Joins("LEFT JOIN employees e ON pr.employee_id = e.id").
+		Joins("LEFT JOIN patterns p ON pr.pattern_id = p.id").
+		Order("pr.record_date DESC, pr.created_at DESC, pr.id DESC").
+		Scan(&rowsData)
+
+	rows := make([][]string, 0, len(rowsData))
+	for _, row := range rowsData {
+		startTime, endTime := deriveProductionTimeRange(row.RecordDate, row.CreatedAt, row.RunningTime)
+		avgSewDuration := 0.0
+		if row.Pieces > 0 {
+			avgSewDuration = (row.RunningTime * 60) / float64(row.Pieces)
+		}
+		rows = append(rows, []string{
+			row.DeviceName,
+			row.EmployeeCode,
+			row.EmployeeName,
+			row.RecordDate.Format("2006-01-02"),
+			row.PatternName,
+			startTime.Format("2006-01-02 15:04:05"),
+			endTime.Format("2006-01-02 15:04:05"),
+			csvFloat(row.RunningTime, 2),
+			csvFloat(avgSewDuration, 2),
+		})
+	}
+
+	writeCSVResponse(c,
+		"duration_stats_"+time.Now().Format("20060102_150405")+".csv",
+		[]string{"设备名称", "员工工号", "员工姓名", "日期", "花型名称", "开始时间", "结束时间", "缝纫时长(h)", "平均缝纫时长(min/次)"},
+		rows,
+	)
+}
+
+func (h *StatisticsHandler) exportAlarmCSV(c *gin.Context) {
+	startDate := c.Query("startDate")
+	endDate := c.Query("endDate")
+	deviceId := c.Query("deviceId")
+	deviceIDs := parseDeviceIDs(c.Query("deviceIds"))
+	alarmType := c.Query("alarmType")
+
+	baseQuery := h.buildAlarmStatsBaseQuery(startDate, endDate, deviceId, deviceIDs, alarmType)
+
+	var rowsData []struct {
+		model.AlarmRecord
+		DeviceName string
+	}
+	baseQuery.Session(&gorm.Session{}).
+		Select("ar.*, d.name as device_name").
+		Joins("LEFT JOIN devices d ON ar.device_id = d.id").
+		Order("ar.start_time DESC").
+		Scan(&rowsData)
+
+	employeeByDeviceDate := h.loadEmployeeInfoByDeviceDate(startDate, endDate, deviceId, deviceIDs)
+
+	rows := make([][]string, 0, len(rowsData))
+	for _, row := range rowsData {
+		dateKey := row.StartTime.Format("2006-01-02")
+		employeeInfo := employeeByDeviceDate[makeDeviceDateKey(row.DeviceID, dateKey)]
+		if employeeInfo.EmployeeCode == "" {
+			employeeInfo.EmployeeCode = "-"
+		}
+		if employeeInfo.EmployeeName == "" {
+			employeeInfo.EmployeeName = "-"
+		}
+		alarmInfo := strings.TrimSpace(row.AlarmType)
+		if alarmInfo == "" {
+			alarmInfo = strings.TrimSpace(row.Description)
+		}
+		if alarmInfo == "" {
+			alarmInfo = "报警"
+		}
+		rows = append(rows, []string{
+			row.DeviceName,
+			employeeInfo.EmployeeCode,
+			employeeInfo.EmployeeName,
+			row.StartTime.Format("2006-01-02 15:04:05"),
+			alarmInfo,
+			row.AlarmCode,
+			formatDuration(row.Duration),
+			formatAlarmStatus(row.Status),
+		})
+	}
+
+	writeCSVResponse(c,
+		"alarm_stats_"+time.Now().Format("20060102_150405")+".csv",
+		[]string{"设备名称", "员工工号", "员工姓名", "报警时间", "报警信息", "报警代码", "持续时长", "处理状态"},
+		rows,
+	)
+}
+
+func writeCSVResponse(c *gin.Context, fileName string, headers []string, rows [][]string) {
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", fileName))
+	c.Header("Access-Control-Expose-Headers", "Content-Disposition")
+	c.Status(http.StatusOK)
+	_, _ = c.Writer.Write([]byte("\xEF\xBB\xBF"))
+
+	writer := csv.NewWriter(c.Writer)
+	_ = writer.Write(headers)
+	_ = writer.WriteAll(rows)
+	writer.Flush()
+}
+
+type alarmDailyInfo struct {
+	AlarmInfo string
+	AlarmTime string
+}
+
+type employeeDailyInfo struct {
+	EmployeeCode string
+	EmployeeName string
+}
+
+func makeDeviceDateKey(deviceID uint, date string) string {
+	return fmt.Sprintf("%d_%s", deviceID, date)
+}
+
+func makeDevicePatternDateKey(deviceID, patternID uint, date string) string {
+	return fmt.Sprintf("%d_%d_%s", deviceID, patternID, date)
+}
+
+func deriveProductionTimeRange(recordDate, createdAt time.Time, runningHours float64) (time.Time, time.Time) {
+	startTime := createdAt
+	if startTime.IsZero() {
+		base := recordDate
+		if base.IsZero() {
+			base = time.Now()
+		}
+		startTime = time.Date(base.Year(), base.Month(), base.Day(), 8, 0, 0, 0, base.Location())
+	}
+	duration := time.Duration(runningHours * float64(time.Hour))
+	if duration < 0 {
+		duration = 0
+	}
+	return startTime, startTime.Add(duration)
+}
+
+func (h *StatisticsHandler) loadPatternSewCountByDevicePatternDate(startDate, endDate, deviceId string, deviceIDs []uint) map[string]int64 {
+	baseQuery := h.buildProductionStatsBaseQuery(startDate, endDate, deviceId, deviceIDs)
+
+	var rows []struct {
+		DeviceID        uint
+		PatternID       uint
+		RecordDate      string
+		PatternSewCount int64
+	}
+	baseQuery.Session(&gorm.Session{}).
+		Select("pr.device_id, pr.pattern_id, DATE(pr.record_date) as record_date, COALESCE(SUM(pr.pieces), 0) as pattern_sew_count").
+		Group("pr.device_id, pr.pattern_id, DATE(pr.record_date)").
+		Scan(&rows)
+
+	result := make(map[string]int64, len(rows))
+	for _, row := range rows {
+		result[makeDevicePatternDateKey(row.DeviceID, row.PatternID, row.RecordDate)] = row.PatternSewCount
+	}
+	return result
+}
+
+func (h *StatisticsHandler) loadAlarmInfoByDeviceDate(startDate, endDate, deviceId string, deviceIDs []uint) map[string]alarmDailyInfo {
+	baseQuery := h.buildAlarmStatsBaseQuery(startDate, endDate, deviceId, deviceIDs, "")
+
+	var rows []struct {
+		DeviceID   uint
+		RecordDate string
+		AlarmInfo  string
+		AlarmTime  time.Time
+	}
+	baseQuery.Session(&gorm.Session{}).
+		Select("ar.device_id, DATE(ar.start_time) as record_date, COALESCE(GROUP_CONCAT(DISTINCT COALESCE(NULLIF(ar.alarm_type, ''), NULLIF(ar.description, ''), '报警') ORDER BY ar.start_time SEPARATOR '、'), '-') as alarm_info, MIN(ar.start_time) as alarm_time").
+		Group("ar.device_id, DATE(ar.start_time)").
+		Scan(&rows)
+
+	result := make(map[string]alarmDailyInfo, len(rows))
+	for _, row := range rows {
+		alarmTime := "-"
+		if !row.AlarmTime.IsZero() {
+			alarmTime = row.AlarmTime.Format("2006-01-02 15:04:05")
+		}
+		alarmInfo := row.AlarmInfo
+		if alarmInfo == "" {
+			alarmInfo = "-"
+		}
+		result[makeDeviceDateKey(row.DeviceID, row.RecordDate)] = alarmDailyInfo{
+			AlarmInfo: alarmInfo,
+			AlarmTime: alarmTime,
+		}
+	}
+	return result
+}
+
+func (h *StatisticsHandler) loadEmployeeInfoByDeviceDate(startDate, endDate, deviceId string, deviceIDs []uint) map[string]employeeDailyInfo {
+	baseQuery := h.buildProductionStatsBaseQuery(startDate, endDate, deviceId, deviceIDs)
+
+	var rows []struct {
+		DeviceID     uint
+		RecordDate   string
+		EmployeeCode string
+		EmployeeName string
+	}
+	baseQuery.Session(&gorm.Session{}).
+		Select("pr.device_id, DATE(pr.record_date) as record_date, COALESCE(MAX(e.code), '-') as employee_code, COALESCE(MAX(e.name), '-') as employee_name").
+		Joins("LEFT JOIN employees e ON pr.employee_id = e.id").
+		Group("pr.device_id, DATE(pr.record_date)").
+		Scan(&rows)
+
+	result := make(map[string]employeeDailyInfo, len(rows))
+	for _, row := range rows {
+		employeeCode := row.EmployeeCode
+		if employeeCode == "" {
+			employeeCode = "-"
+		}
+		employeeName := row.EmployeeName
+		if employeeName == "" {
+			employeeName = "-"
+		}
+		result[makeDeviceDateKey(row.DeviceID, row.RecordDate)] = employeeDailyInfo{
+			EmployeeCode: employeeCode,
+			EmployeeName: employeeName,
+		}
+	}
+	return result
+}
+
+func (h *StatisticsHandler) buildSalaryStatsBaseQuery(startDate, endDate, employeeId, deviceId string, deviceIDs []uint) *gorm.DB {
+	query := h.db.Table("salary_records sr").
+		Joins("LEFT JOIN employees e ON sr.employee_id = e.id").
+		Joins("LEFT JOIN devices d ON sr.device_id = d.id")
+	query = applyDateRangeFilter(query, "sr.record_date", startDate, endDate)
+	if employeeId != "" {
+		query = query.Where("sr.employee_id = ?", employeeId)
+	}
+	if len(deviceIDs) > 0 {
+		query = query.Where("sr.device_id IN ?", deviceIDs)
+	} else if deviceId != "" {
+		query = query.Where("sr.device_id = ?", deviceId)
+	}
+	return query
+}
+
+func (h *StatisticsHandler) buildProductionStatsBaseQuery(startDate, endDate, deviceId string, deviceIDs []uint) *gorm.DB {
+	query := h.db.Table("production_records pr")
+	query = applyDateRangeFilter(query, "pr.record_date", startDate, endDate)
+	if len(deviceIDs) > 0 {
+		query = query.Where("pr.device_id IN ?", deviceIDs)
+	} else if deviceId != "" {
+		query = query.Where("pr.device_id = ?", deviceId)
+	}
+	return query
+}
+
+func (h *StatisticsHandler) buildAlarmStatsBaseQuery(startDate, endDate, deviceId string, deviceIDs []uint, alarmType string) *gorm.DB {
+	query := h.db.Table("alarm_records ar")
+	query = applyDateRangeFilter(query, "ar.start_time", startDate, endDate)
+	if len(deviceIDs) > 0 {
+		query = query.Where("ar.device_id IN ?", deviceIDs)
+	} else if deviceId != "" {
+		query = query.Where("ar.device_id = ?", deviceId)
+	}
+	if alarmType != "" {
+		query = query.Where("ar.alarm_type = ?", alarmType)
+	}
+	return query
+}
+
+func parseDeviceIDs(raw string) []uint {
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	ids := make([]uint, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		parsed, err := strconv.ParseUint(part, 10, 64)
+		if err != nil || parsed == 0 {
+			continue
+		}
+		ids = append(ids, uint(parsed))
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	return ids
+}
+
+func applyDateRangeFilter(query *gorm.DB, column, startDate, endDate string) *gorm.DB {
+	if startDate != "" {
+		query = query.Where(fmt.Sprintf("DATE(%s) >= ?", column), startDate)
+	}
+	if endDate != "" {
+		query = query.Where(fmt.Sprintf("DATE(%s) <= ?", column), endDate)
+	}
+	return query
+}
+
+func normalizePagination(page, pageSize int) (int, int) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 10
+	}
+	if pageSize > 200 {
+		pageSize = 200
+	}
+	return page, pageSize
+}
+
+func roundFloat(value float64, precision int) float64 {
+	if precision < 0 {
+		return value
+	}
+	factor := math.Pow10(precision)
+	return math.Round(value*factor) / factor
+}
+
+func csvFloat(value float64, precision int) string {
+	return strconv.FormatFloat(roundFloat(value, precision), 'f', precision, 64)
 }
 
 func formatDuration(seconds int) string {

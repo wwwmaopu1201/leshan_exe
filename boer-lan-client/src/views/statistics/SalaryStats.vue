@@ -24,14 +24,7 @@
           </el-select>
         </el-form-item>
         <el-form-item :label="$t('statistics.device')">
-          <el-select v-model="searchForm.deviceId" clearable placeholder="全部设备">
-            <el-option
-              v-for="device in deviceList"
-              :key="device.id"
-              :label="device.name"
-              :value="device.id"
-            />
-          </el-select>
+          <device-tree-filter v-model="searchForm.deviceFilter" />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" icon="el-icon-search" @click="handleSearch">
@@ -95,14 +88,21 @@
     <div class="card">
       <div class="card-header flex-between">
         <span>{{ $t('statistics.salaryDetail') }}</span>
-        <el-button type="primary" size="small" icon="el-icon-download" @click="handleExport">
-          {{ $t('statistics.exportExcel') }}
-        </el-button>
+        <el-dropdown @command="handleExportCommand">
+          <el-button type="primary" size="small" icon="el-icon-download">
+            {{ $t('statistics.exportExcel') }}<i class="el-icon-arrow-down el-icon--right"></i>
+          </el-button>
+          <el-dropdown-menu slot="dropdown">
+            <el-dropdown-item command="current">导出当前页</el-dropdown-item>
+            <el-dropdown-item command="all">导出全部</el-dropdown-item>
+            <el-dropdown-item command="merged">导出合并后</el-dropdown-item>
+          </el-dropdown-menu>
+        </el-dropdown>
       </div>
       <el-table :data="tableData" border v-loading="loading" show-summary>
         <el-table-column prop="employeeName" label="员工姓名" width="120" />
         <el-table-column prop="employeeCode" label="员工编号" width="100" />
-        <el-table-column prop="deviceName" label="使用设备" width="120" />
+        <el-table-column v-if="!hideDeviceColumn" prop="deviceName" label="使用设备" width="120" />
         <el-table-column prop="totalPieces" label="加工件数" width="100" align="right" />
         <el-table-column prop="unitPrice" label="单价(元)" width="100" align="right" />
         <el-table-column prop="salary" label="工资(元)" width="120" align="right">
@@ -116,7 +116,13 @@
             <span class="text-success">{{ scope.row.totalAmount.toFixed(2) }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="date" label="日期" width="120" />
+        <el-table-column prop="date" label="日期" width="150">
+          <template slot-scope="scope">
+            <el-link type="primary" @click="openSalaryDetail(scope.row)">
+              {{ scope.row.date }}
+            </el-link>
+          </template>
+        </el-table-column>
       </el-table>
 
       <el-pagination
@@ -129,27 +135,57 @@
         @current-change="handlePageChange"
       />
     </div>
+
+    <el-dialog
+      :title="detailDialog.title"
+      :visible.sync="detailDialog.visible"
+      width="980px"
+      append-to-body
+    >
+      <el-table :data="detailDialog.rows" border v-loading="detailDialog.loading" max-height="460">
+        <el-table-column type="index" label="序号" width="60" align="center" />
+        <el-table-column prop="deviceName" label="设备名称" min-width="120" />
+        <el-table-column prop="patternName" label="花型名称" min-width="150" />
+        <el-table-column prop="patternStitches" label="花型针数" width="100" align="right" />
+        <el-table-column prop="startTime" label="开始时间" width="160" />
+        <el-table-column prop="endTime" label="结束时间" width="160" />
+        <el-table-column prop="sewCount" label="缝纫次数" width="100" align="right" />
+        <el-table-column prop="unitPrice" label="单价(元)" width="100" align="right" />
+        <el-table-column prop="totalAmount" label="金额(元)" width="110" align="right">
+          <template slot-scope="scope">
+            <span class="text-success">{{ Number(scope.row.totalAmount || 0).toFixed(2) }}</span>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
   </div>
 </template>
 
 <script>
 import * as echarts from 'echarts'
-import { getSalaryStats } from '@/api/statistics'
+import { getSalaryStats, getSalaryDetail, exportStatistics } from '@/api/statistics'
 import { getEmployeeList } from '@/api/employee'
-import { getDeviceList } from '@/api/device'
+import DeviceTreeFilter from '@/components/DeviceTreeFilter.vue'
 
 export default {
   name: 'SalaryStats',
+  components: {
+    DeviceTreeFilter
+  },
   data() {
     return {
       loading: false,
       searchForm: {
         dateRange: [],
         employeeId: '',
-        deviceId: ''
+        deviceFilter: {
+          label: '',
+          nodeType: '',
+          deviceId: '',
+          deviceIds: []
+        }
       },
       employeeList: [],
-      deviceList: [],
       summaryData: {
         totalSalary: 0,
         totalPieces: 0,
@@ -163,14 +199,20 @@ export default {
       pagination: {
         page: 1,
         pageSize: 10,
-        total: 5
+        total: 0
       },
-      charts: {}
+      charts: {},
+      hideDeviceColumn: false,
+      detailDialog: {
+        visible: false,
+        loading: false,
+        title: '工资明细',
+        rows: []
+      }
     }
   },
   mounted() {
     this.fetchEmployees()
-    this.fetchDevices()
     this.fetchData()
     window.addEventListener('resize', this.handleResize)
   },
@@ -189,16 +231,6 @@ export default {
         console.error('Failed to fetch employees:', error)
       }
     },
-    async fetchDevices() {
-      try {
-        const res = await getDeviceList({ pageSize: 100 })
-        if (res.code === 0) {
-          this.deviceList = res.data.list || []
-        }
-      } catch (error) {
-        console.error('Failed to fetch devices:', error)
-      }
-    },
     async fetchData() {
       this.loading = true
       try {
@@ -206,7 +238,8 @@ export default {
           startDate: this.searchForm.dateRange?.[0],
           endDate: this.searchForm.dateRange?.[1],
           employeeId: this.searchForm.employeeId,
-          deviceId: this.searchForm.deviceId,
+          deviceId: this.searchForm.deviceFilter.deviceId,
+          deviceIds: this.searchForm.deviceFilter.deviceIds.join(','),
           page: this.pagination.page,
           pageSize: this.pagination.pageSize
         })
@@ -229,12 +262,24 @@ export default {
       }
     },
     handleSearch() {
+      this.hideDeviceColumn = true
       this.pagination.page = 1
       this.fetchData()
     },
     handleReset() {
-      this.searchForm = { dateRange: [], employeeId: '', deviceId: '' }
-      this.handleSearch()
+      this.hideDeviceColumn = false
+      this.searchForm = {
+        dateRange: [],
+        employeeId: '',
+        deviceFilter: {
+          label: '',
+          nodeType: '',
+          deviceId: '',
+          deviceIds: []
+        }
+      }
+      this.pagination.page = 1
+      this.fetchData()
     },
     handleSizeChange(size) {
       this.pagination.pageSize = size
@@ -244,27 +289,99 @@ export default {
       this.pagination.page = page
       this.fetchData()
     },
-    handleExport() {
-      this.$message.success('导出功能开发中')
+    async openSalaryDetail(row) {
+      this.detailDialog.visible = true
+      this.detailDialog.loading = true
+      this.detailDialog.rows = []
+      this.detailDialog.title = `${row.employeeName || '-'} ${row.date || ''} 工资明细`
+      try {
+        const res = await getSalaryDetail({
+          date: row.date,
+          employeeId: row.employeeId || this.searchForm.employeeId,
+          deviceId: this.searchForm.deviceFilter.deviceId,
+          deviceIds: this.searchForm.deviceFilter.deviceIds.join(','),
+          startDate: this.searchForm.dateRange?.[0],
+          endDate: this.searchForm.dateRange?.[1]
+        })
+        if (res.code === 0) {
+          this.detailDialog.rows = Array.isArray(res.data) ? res.data : []
+        }
+      } catch (error) {
+        console.error('Failed to fetch salary detail:', error)
+      } finally {
+        this.detailDialog.loading = false
+      }
+    },
+    async handleExport(mode = 'all') {
+      try {
+        const response = await exportStatistics('salary', {
+          startDate: this.searchForm.dateRange?.[0],
+          endDate: this.searchForm.dateRange?.[1],
+          employeeId: this.searchForm.employeeId,
+          deviceId: this.searchForm.deviceFilter.deviceId,
+          deviceIds: this.searchForm.deviceFilter.deviceIds.join(','),
+          mode,
+          page: this.pagination.page,
+          pageSize: this.pagination.pageSize
+        })
+        this.downloadBlob(response, `salary_stats_${Date.now()}.csv`)
+        this.$message.success('导出成功')
+      } catch (error) {
+        console.error('Failed to export salary stats:', error)
+      }
+    },
+    handleExportCommand(mode) {
+      this.handleExport(mode)
+    },
+    getOrCreateChart(key, ref) {
+      if (this.charts[key]) {
+        return this.charts[key]
+      }
+      const chart = echarts.init(ref)
+      this.charts[key] = chart
+      return chart
+    },
+    parseFileName(contentDisposition, fallbackName) {
+      if (!contentDisposition) return fallbackName
+      const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i)
+      if (utf8Match && utf8Match[1]) {
+        return decodeURIComponent(utf8Match[1])
+      }
+      const normalMatch = contentDisposition.match(/filename="?([^";]+)"?/i)
+      return normalMatch?.[1] || fallbackName
+    },
+    downloadBlob(response, fallbackName) {
+      const blob = response.data instanceof Blob
+        ? response.data
+        : new Blob([response.data], { type: 'text/csv;charset=utf-8;' })
+      const filename = this.parseFileName(response.headers?.['content-disposition'], fallbackName)
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
     },
     initCharts() {
       this.initSalaryRankChart()
       this.initSalaryTrendChart()
     },
     initSalaryRankChart() {
-      const chart = echarts.init(this.$refs.salaryRankChart)
-      this.charts.salaryRank = chart
+      const chart = this.getOrCreateChart('salaryRank', this.$refs.salaryRankChart)
+      const rankData = this.chartData.salaryRank || []
       chart.setOption({
         tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
         grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
         xAxis: { type: 'value' },
         yAxis: {
           type: 'category',
-          data: ['王五', '赵六', '钱七', '李四', '张三']
+          data: rankData.map(item => item.name)
         },
         series: [{
           type: 'bar',
-          data: [4200, 4500, 4800, 5200, 5800],
+          data: rankData.map(item => item.value),
           barWidth: 20,
           itemStyle: {
             color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
@@ -274,22 +391,22 @@ export default {
             borderRadius: [0, 4, 4, 0]
           }
         }]
-      })
+      }, true)
     },
     initSalaryTrendChart() {
-      const chart = echarts.init(this.$refs.salaryTrendChart)
-      this.charts.salaryTrend = chart
+      const chart = this.getOrCreateChart('salaryTrend', this.$refs.salaryTrendChart)
+      const trendData = this.chartData.salaryTrend || []
       chart.setOption({
         tooltip: { trigger: 'axis' },
         grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
         xAxis: {
           type: 'category',
-          data: ['01-14', '01-15', '01-16', '01-17', '01-18', '01-19', '01-20']
+          data: trendData.map(item => item.date)
         },
         yAxis: { type: 'value' },
         series: [{
           type: 'line',
-          data: [4200, 4500, 4100, 4800, 4600, 5100, 4900],
+          data: trendData.map(item => item.value),
           smooth: true,
           lineStyle: { color: '#409EFF', width: 3 },
           itemStyle: { color: '#409EFF' },
@@ -300,7 +417,7 @@ export default {
             ])
           }
         }]
-      })
+      }, true)
     },
     handleResize() {
       Object.values(this.charts).forEach(chart => chart && chart.resize())

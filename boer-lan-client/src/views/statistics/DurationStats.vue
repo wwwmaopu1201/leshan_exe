@@ -1,154 +1,152 @@
 <template>
-  <div class="page-container">
-    <!-- 搜索栏 -->
-    <div class="search-bar">
-      <el-form :inline="true" :model="searchForm">
-        <el-form-item :label="$t('statistics.dateRange')">
-          <el-date-picker
-            v-model="searchForm.dateRange"
-            type="daterange"
-            range-separator="至"
-            start-placeholder="开始日期"
-            end-placeholder="结束日期"
-            value-format="yyyy-MM-dd"
-          />
-        </el-form-item>
-        <el-form-item :label="$t('statistics.device')">
-          <el-select v-model="searchForm.deviceId" clearable placeholder="全部设备">
-            <el-option label="全部设备" value="" />
-            <el-option label="A-001" value="1" />
-            <el-option label="A-002" value="2" />
-            <el-option label="B-001" value="3" />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" icon="el-icon-search" @click="handleSearch">
-            {{ $t('common.search') }}
-          </el-button>
-          <el-button icon="el-icon-refresh" @click="handleReset">
-            {{ $t('common.reset') }}
-          </el-button>
-        </el-form-item>
-      </el-form>
+  <div class="stats-layout">
+    <div class="stats-side">
+      <device-tree-panel v-model="searchForm.deviceFilter" />
     </div>
-
-    <!-- 统计卡片 -->
-    <el-row :gutter="20" class="stat-row">
-      <el-col :span="6">
-        <div class="stat-card">
-          <div class="stat-icon blue"><i class="el-icon-time"></i></div>
-          <div class="stat-info">
-            <div class="stat-value">{{ summary.totalTime }}</div>
-            <div class="stat-label">总时长(h)</div>
-          </div>
-        </div>
-      </el-col>
-      <el-col :span="6">
-        <div class="stat-card">
-          <div class="stat-icon green"><i class="el-icon-video-play"></i></div>
-          <div class="stat-info">
-            <div class="stat-value">{{ summary.runningTime }}</div>
-            <div class="stat-label">{{ $t('statistics.processingTime') }}(h)</div>
-          </div>
-        </div>
-      </el-col>
-      <el-col :span="6">
-        <div class="stat-card">
-          <div class="stat-icon orange"><i class="el-icon-video-pause"></i></div>
-          <div class="stat-info">
-            <div class="stat-value">{{ summary.idleTime }}</div>
-            <div class="stat-label">{{ $t('statistics.idleTime') }}(h)</div>
-          </div>
-        </div>
-      </el-col>
-      <el-col :span="6">
-        <div class="stat-card">
-          <div class="stat-icon red"><i class="el-icon-warning"></i></div>
-          <div class="stat-info">
-            <div class="stat-value">{{ summary.alarmTime }}</div>
-            <div class="stat-label">{{ $t('statistics.alarmTime') }}(h)</div>
-          </div>
-        </div>
-      </el-col>
-    </el-row>
-
-    <!-- 图表 -->
-    <el-row :gutter="20" class="chart-row">
-      <el-col :span="12">
-        <div class="chart-card">
-          <div class="chart-title">时长分布</div>
-          <div ref="durationPieChart" class="chart-container"></div>
-        </div>
-      </el-col>
-      <el-col :span="12">
-        <div class="chart-card">
-          <div class="chart-title">日运行时长趋势</div>
-          <div ref="durationTrendChart" class="chart-container"></div>
-        </div>
-      </el-col>
-    </el-row>
-
-    <!-- 数据表格 -->
-    <div class="card">
-      <div class="card-header flex-between">
-        <span>设备时长明细</span>
-        <el-button type="primary" size="small" icon="el-icon-download" @click="handleExport">
-          {{ $t('statistics.exportExcel') }}
-        </el-button>
-      </div>
-      <el-table :data="tableData" border v-loading="loading">
-        <el-table-column prop="deviceName" label="设备名称" width="120" />
-        <el-table-column prop="totalTime" label="总时长(h)" width="100" align="right" />
-        <el-table-column prop="runningTime" label="运行时长(h)" width="120" align="right">
-          <template slot-scope="scope">
-            <span class="text-success">{{ scope.row.runningTime }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="idleTime" label="空闲时长(h)" width="120" align="right">
-          <template slot-scope="scope">
-            <span class="text-warning">{{ scope.row.idleTime }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="alarmTime" label="报警时长(h)" width="120" align="right">
-          <template slot-scope="scope">
-            <span class="text-danger">{{ scope.row.alarmTime }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="utilizationRate" label="利用率" width="150">
-          <template slot-scope="scope">
-            <el-progress
-              :percentage="scope.row.utilizationRate"
-              :color="getProgressColor(scope.row.utilizationRate)"
+    <div class="stats-main page-container">
+      <!-- 搜索栏 -->
+      <div class="search-bar">
+        <el-form :inline="true" :model="searchForm">
+          <el-form-item :label="$t('statistics.dateRange')">
+            <el-date-picker
+              v-model="searchForm.dateRange"
+              type="daterange"
+              range-separator="至"
+              start-placeholder="开始日期"
+              end-placeholder="结束日期"
+              value-format="yyyy-MM-dd"
             />
-          </template>
-        </el-table-column>
-        <el-table-column prop="date" label="日期" width="120" />
-      </el-table>
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" icon="el-icon-search" @click="handleSearch">
+              {{ $t('common.search') }}
+            </el-button>
+            <el-button icon="el-icon-refresh" @click="handleReset">
+              {{ $t('common.reset') }}
+            </el-button>
+          </el-form-item>
+        </el-form>
+      </div>
 
-      <el-pagination
-        :current-page="pagination.page"
-        :page-size="pagination.pageSize"
-        :total="pagination.total"
-        layout="total, sizes, prev, pager, next, jumper"
-        @size-change="handleSizeChange"
-        @current-change="handlePageChange"
-      />
+      <!-- 统计卡片 -->
+      <el-row :gutter="20" class="stat-row">
+        <el-col :span="6">
+          <div class="stat-card">
+            <div class="stat-icon blue"><i class="el-icon-time"></i></div>
+            <div class="stat-info">
+              <div class="stat-value">{{ summary.totalTime }}</div>
+              <div class="stat-label">总时长(h)</div>
+            </div>
+          </div>
+        </el-col>
+        <el-col :span="6">
+          <div class="stat-card">
+            <div class="stat-icon green"><i class="el-icon-video-play"></i></div>
+            <div class="stat-info">
+              <div class="stat-value">{{ summary.runningTime }}</div>
+              <div class="stat-label">{{ $t('statistics.processingTime') }}(h)</div>
+            </div>
+          </div>
+        </el-col>
+        <el-col :span="6">
+          <div class="stat-card">
+            <div class="stat-icon orange"><i class="el-icon-video-pause"></i></div>
+            <div class="stat-info">
+              <div class="stat-value">{{ summary.idleTime }}</div>
+              <div class="stat-label">{{ $t('statistics.idleTime') }}(h)</div>
+            </div>
+          </div>
+        </el-col>
+        <el-col :span="6">
+          <div class="stat-card">
+            <div class="stat-icon red"><i class="el-icon-warning"></i></div>
+            <div class="stat-info">
+              <div class="stat-value">{{ summary.alarmTime }}</div>
+              <div class="stat-label">{{ $t('statistics.alarmTime') }}(h)</div>
+            </div>
+          </div>
+        </el-col>
+      </el-row>
+
+      <!-- 图表 -->
+      <el-row :gutter="20" class="chart-row">
+        <el-col :span="12">
+          <div class="chart-card">
+            <div class="chart-title">时长分布</div>
+            <div ref="durationPieChart" class="chart-container"></div>
+          </div>
+        </el-col>
+        <el-col :span="12">
+          <div class="chart-card">
+            <div class="chart-title">日运行时长趋势</div>
+            <div ref="durationTrendChart" class="chart-container"></div>
+          </div>
+        </el-col>
+      </el-row>
+
+      <!-- 数据表格 -->
+      <div class="card">
+        <div class="card-header flex-between">
+          <span>设备时长明细</span>
+          <el-button type="primary" size="small" icon="el-icon-download" @click="handleExport">
+            {{ $t('statistics.exportExcel') }}
+          </el-button>
+        </div>
+        <el-table :data="tableData" border v-loading="loading">
+          <el-table-column type="index" label="序号" width="60" align="center" />
+          <el-table-column prop="deviceName" label="设备名称" min-width="120" />
+          <el-table-column prop="employeeCode" label="员工工号" width="100" />
+          <el-table-column prop="employeeName" label="员工姓名" width="110" />
+          <el-table-column prop="date" label="日期" width="110" />
+          <el-table-column prop="patternName" label="花型名称" min-width="150" />
+          <el-table-column prop="startTime" label="开始时间" width="160" />
+          <el-table-column prop="endTime" label="结束时间" width="160" />
+          <el-table-column prop="sewDuration" label="缝纫时长(h)" width="110" align="right">
+            <template slot-scope="scope">
+              <span class="text-success">{{ scope.row.sewDuration }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="avgSewDuration" label="平均缝纫时长(min/次)" width="170" align="right">
+            <template slot-scope="scope">
+              <span class="text-warning">{{ scope.row.avgSewDuration }}</span>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <el-pagination
+          :current-page="pagination.page"
+          :page-size="pagination.pageSize"
+          :total="pagination.total"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="handleSizeChange"
+          @current-change="handlePageChange"
+        />
+      </div>
     </div>
   </div>
 </template>
 
 <script>
 import * as echarts from 'echarts'
-import { getDurationStats } from '@/api/statistics'
+import { getDurationStats, exportStatistics } from '@/api/statistics'
+import DeviceTreePanel from '@/components/DeviceTreePanel.vue'
 
 export default {
   name: 'DurationStats',
+  components: {
+    DeviceTreePanel
+  },
   data() {
     return {
       loading: false,
       searchForm: {
         dateRange: [],
-        deviceId: ''
+        deviceFilter: {
+          label: '',
+          nodeType: '',
+          deviceId: '',
+          deviceIds: []
+        }
       },
       summary: {
         totalTime: 0,
@@ -164,7 +162,7 @@ export default {
       pagination: {
         page: 1,
         pageSize: 10,
-        total: 4
+        total: 0
       },
       charts: {}
     }
@@ -184,7 +182,8 @@ export default {
         const res = await getDurationStats({
           startDate: this.searchForm.dateRange?.[0],
           endDate: this.searchForm.dateRange?.[1],
-          deviceId: this.searchForm.deviceId,
+          deviceId: this.searchForm.deviceFilter.deviceId,
+          deviceIds: this.searchForm.deviceFilter.deviceIds.join(','),
           page: this.pagination.page,
           pageSize: this.pagination.pageSize
         })
@@ -211,7 +210,15 @@ export default {
       this.fetchData()
     },
     handleReset() {
-      this.searchForm = { dateRange: [], deviceId: '' }
+      this.searchForm = {
+        dateRange: [],
+        deviceFilter: {
+          label: '',
+          nodeType: '',
+          deviceId: '',
+          deviceIds: []
+        }
+      }
       this.handleSearch()
     },
     handleSizeChange(size) {
@@ -222,8 +229,50 @@ export default {
       this.pagination.page = page
       this.fetchData()
     },
-    handleExport() {
-      this.$message.success('导出功能开发中')
+    async handleExport() {
+      try {
+        const response = await exportStatistics('duration', {
+          startDate: this.searchForm.dateRange?.[0],
+          endDate: this.searchForm.dateRange?.[1],
+          deviceId: this.searchForm.deviceFilter.deviceId,
+          deviceIds: this.searchForm.deviceFilter.deviceIds.join(',')
+        })
+        this.downloadBlob(response, `duration_stats_${Date.now()}.csv`)
+        this.$message.success('导出成功')
+      } catch (error) {
+        console.error('Failed to export duration stats:', error)
+      }
+    },
+    getOrCreateChart(key, ref) {
+      if (this.charts[key]) {
+        return this.charts[key]
+      }
+      const chart = echarts.init(ref)
+      this.charts[key] = chart
+      return chart
+    },
+    parseFileName(contentDisposition, fallbackName) {
+      if (!contentDisposition) return fallbackName
+      const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i)
+      if (utf8Match && utf8Match[1]) {
+        return decodeURIComponent(utf8Match[1])
+      }
+      const normalMatch = contentDisposition.match(/filename="?([^";]+)"?/i)
+      return normalMatch?.[1] || fallbackName
+    },
+    downloadBlob(response, fallbackName) {
+      const blob = response.data instanceof Blob
+        ? response.data
+        : new Blob([response.data], { type: 'text/csv;charset=utf-8;' })
+      const filename = this.parseFileName(response.headers?.['content-disposition'], fallbackName)
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
     },
     getProgressColor(value) {
       if (value >= 80) return '#67C23A'
@@ -235,8 +284,14 @@ export default {
       this.initDurationTrendChart()
     },
     initDurationPieChart() {
-      const chart = echarts.init(this.$refs.durationPieChart)
-      this.charts.durationPie = chart
+      const chart = this.getOrCreateChart('durationPie', this.$refs.durationPieChart)
+      const pieData = this.chartData.durationPie?.length > 0
+        ? this.chartData.durationPie
+        : [
+            { name: '运行时长', value: this.summary.runningTime },
+            { name: '空闲时长', value: this.summary.idleTime },
+            { name: '报警时长', value: this.summary.alarmTime }
+          ]
       chart.setOption({
         tooltip: { trigger: 'item', formatter: '{b}: {c}h ({d}%)' },
         legend: { orient: 'vertical', right: 10, top: 'center' },
@@ -244,25 +299,21 @@ export default {
           type: 'pie',
           radius: ['40%', '70%'],
           center: ['40%', '50%'],
-          data: [
-            { name: '运行时长', value: this.summary.runningTime },
-            { name: '空闲时长', value: this.summary.idleTime },
-            { name: '报警时长', value: this.summary.alarmTime }
-          ],
+          data: pieData,
           color: ['#67C23A', '#E6A23C', '#F56C6C']
         }]
-      })
+      }, true)
     },
     initDurationTrendChart() {
-      const chart = echarts.init(this.$refs.durationTrendChart)
-      this.charts.durationTrend = chart
+      const chart = this.getOrCreateChart('durationTrend', this.$refs.durationTrendChart)
+      const trendData = this.chartData.durationTrend || []
       chart.setOption({
         tooltip: { trigger: 'axis' },
         legend: { data: ['运行', '空闲', '报警'] },
         grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
         xAxis: {
           type: 'category',
-          data: ['01-14', '01-15', '01-16', '01-17', '01-18', '01-19', '01-20']
+          data: trendData.map(item => item.date)
         },
         yAxis: { type: 'value', name: '时长(h)' },
         series: [
@@ -270,25 +321,25 @@ export default {
             name: '运行',
             type: 'bar',
             stack: 'total',
-            data: [180, 175, 185, 190, 178, 182, 180],
+            data: trendData.map(item => item.runningTime ?? 0),
             itemStyle: { color: '#67C23A' }
           },
           {
             name: '空闲',
             type: 'bar',
             stack: 'total',
-            data: [45, 50, 40, 35, 47, 43, 45],
+            data: trendData.map(item => item.idleTime ?? 0),
             itemStyle: { color: '#E6A23C' }
           },
           {
             name: '报警',
             type: 'bar',
             stack: 'total',
-            data: [15, 15, 15, 15, 15, 15, 15],
+            data: trendData.map(item => item.alarmTime ?? 0),
             itemStyle: { color: '#F56C6C' }
           }
         ]
-      })
+      }, true)
     },
     handleResize() {
       Object.values(this.charts).forEach(chart => chart && chart.resize())
@@ -298,6 +349,31 @@ export default {
 </script>
 
 <style lang="scss" scoped>
+.stats-layout {
+  display: flex;
+  gap: 16px;
+}
+
+.stats-side {
+  width: 260px;
+  flex-shrink: 0;
+}
+
+.stats-main {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 1200px) {
+  .stats-layout {
+    flex-direction: column;
+  }
+
+  .stats-side {
+    width: 100%;
+  }
+}
+
 .stat-row {
   margin-bottom: 20px;
 }

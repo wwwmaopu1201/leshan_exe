@@ -1,9 +1,13 @@
 <template>
   <div class="page-container">
     <div class="monitor-layout">
-      <!-- 设备选择 -->
       <div class="device-selector">
-        <el-select v-model="selectedDeviceId" placeholder="选择要监控的设备" @change="handleDeviceChange">
+        <el-select
+          v-model="selectedDeviceId"
+          placeholder="选择要监控的设备"
+          filterable
+          @change="handleDeviceChange"
+        >
           <el-option
             v-for="device in deviceList"
             :key="device.id"
@@ -14,11 +18,47 @@
             <span :class="['status-dot', device.status]"></span>
           </el-option>
         </el-select>
-        <el-button type="primary" icon="el-icon-refresh" @click="refreshData">刷新数据</el-button>
+
+        <el-input-number
+          v-model="vnc.port"
+          :min="1"
+          :max="65535"
+          controls-position="right"
+          placeholder="VNC端口"
+        />
+
+        <el-input
+          v-model="vnc.password"
+          placeholder="VNC密码(可选)"
+          show-password
+          clearable
+        />
+
+        <el-radio-group v-model="vnc.mode" @change="handleModeChange">
+          <el-radio-button label="monitor">远程监控</el-radio-button>
+          <el-radio-button label="control">远程控制</el-radio-button>
+        </el-radio-group>
+
+        <el-button
+          type="primary"
+          :loading="vnc.connecting"
+          :disabled="!selectedDevice || vnc.connected"
+          @click="connectVNC"
+        >
+          连接
+        </el-button>
+        <el-button
+          type="danger"
+          plain
+          :disabled="!vnc.connected && !vnc.connecting"
+          @click="disconnectVNC()"
+        >
+          关闭监控
+        </el-button>
+        <el-button icon="el-icon-refresh" @click="refreshData">刷新数据</el-button>
       </div>
 
       <template v-if="selectedDevice">
-        <!-- 实时状态 -->
         <el-row :gutter="20" class="status-row">
           <el-col :span="6">
             <div class="status-card">
@@ -36,7 +76,7 @@
           </el-col>
           <el-col :span="6">
             <div class="status-card">
-              <div class="status-label">当前针数</div>
+              <div class="status-label">累计针数</div>
               <div class="status-value">{{ realtimeData.currentStitches }}</div>
             </div>
           </el-col>
@@ -48,44 +88,60 @@
           </el-col>
         </el-row>
 
-        <!-- 监控画面和控制 -->
         <el-row :gutter="20">
           <el-col :span="16">
             <div class="card">
-              <div class="card-header">设备监控画面</div>
+              <div class="card-header flex-between">
+                <span>设备监控画面（VNC）</span>
+                <el-tag :type="vnc.connected ? 'success' : (vnc.connecting ? 'warning' : 'info')" size="small">
+                  {{ vnc.connecting ? '连接中' : (vnc.connected ? (vnc.mode === 'control' ? '控制模式' : '监控模式') : '未连接') }}
+                </el-tag>
+              </div>
               <div class="monitor-screen">
-                <div class="screen-placeholder">
+                <div ref="vncCanvas" class="vnc-canvas"></div>
+                <div v-if="!vnc.connected" class="screen-placeholder">
                   <i class="el-icon-video-camera"></i>
-                  <p>实时监控画面</p>
-                  <p class="hint">连接设备后显示</p>
+                  <p>{{ vnc.connecting ? '正在连接VNC...' : '请点击“连接”开始监控' }}</p>
+                  <p class="hint">{{ vnc.status }}</p>
                 </div>
               </div>
             </div>
           </el-col>
           <el-col :span="8">
             <div class="card">
-              <div class="card-header">设备控制</div>
-              <div class="control-panel">
-                <el-button type="success" icon="el-icon-video-play" :disabled="selectedDevice.status === 'working'" block>
-                  启动
-                </el-button>
-                <el-button type="warning" icon="el-icon-video-pause" :disabled="selectedDevice.status !== 'working'" block>
-                  暂停
-                </el-button>
-                <el-button type="danger" icon="el-icon-switch-button" block>
-                  停止
-                </el-button>
-                <el-divider />
-                <el-button icon="el-icon-position" block>
-                  回原点
-                </el-button>
-                <el-button icon="el-icon-scissors" block>
-                  剪线
-                </el-button>
-                <el-button icon="el-icon-refresh-left" block>
-                  复位
-                </el-button>
+              <div class="card-header">连接信息</div>
+              <div class="connection-meta">
+                <div class="meta-row">
+                  <span>设备名称</span>
+                  <strong>{{ selectedDevice.name }}</strong>
+                </div>
+                <div class="meta-row">
+                  <span>设备IP</span>
+                  <strong>{{ selectedDevice.ip || '-' }}</strong>
+                </div>
+                <div class="meta-row">
+                  <span>VNC端口</span>
+                  <strong>{{ vnc.port }}</strong>
+                </div>
+                <div class="meta-row">
+                  <span>连接状态</span>
+                  <strong>{{ vnc.status }}</strong>
+                </div>
               </div>
+              <el-alert
+                v-if="vnc.mode === 'monitor'"
+                title="当前为远程监控模式，只读不可操作设备。"
+                type="info"
+                show-icon
+                :closable="false"
+              />
+              <el-alert
+                v-else
+                title="当前为远程控制模式，可操作鼠标键盘。"
+                type="warning"
+                show-icon
+                :closable="false"
+              />
             </div>
 
             <div class="card mt-20">
@@ -107,7 +163,6 @@
           </el-col>
         </el-row>
 
-        <!-- 实时数据图表 -->
         <div class="card mt-20">
           <div class="card-header">实时数据趋势</div>
           <div ref="realtimeChart" class="chart-container"></div>
@@ -126,18 +181,16 @@
 
 <script>
 import * as echarts from 'echarts'
+import RFB from '@novnc/novnc/lib/rfb'
+import { getDeviceList } from '@/api/device'
+import { getDashboardData, getAlarmStats } from '@/api/statistics'
 
 export default {
   name: 'RemoteMonitor',
   data() {
     return {
       selectedDeviceId: null,
-      deviceList: [
-        { id: 1, name: '缝纫机A-001', status: 'working' },
-        { id: 2, name: '缝纫机A-002', status: 'online' },
-        { id: 3, name: '缝纫机B-001', status: 'idle' },
-        { id: 4, name: '缝纫机B-002', status: 'alarm' }
-      ],
+      deviceList: [],
       selectedDevice: null,
       realtimeData: {
         spindleSpeed: 0,
@@ -146,59 +199,104 @@ export default {
       },
       alarms: [],
       chart: null,
-      chartData: {
-        time: [],
-        speed: [],
-        production: []
+      rfb: null,
+      rfbListeners: null,
+      vnc: {
+        port: 5900,
+        password: '',
+        mode: 'monitor',
+        connected: false,
+        connecting: false,
+        status: '未连接'
       }
     }
   },
   mounted() {
-    const deviceId = this.$route.query.id
-    if (deviceId) {
-      this.selectedDeviceId = parseInt(deviceId)
-      this.handleDeviceChange(this.selectedDeviceId)
-    }
+    this.fetchDevices()
+    window.addEventListener('resize', this.handleResize)
   },
   beforeDestroy() {
+    window.removeEventListener('resize', this.handleResize)
+    this.disconnectVNC(false)
     if (this.chart) {
       this.chart.dispose()
+      this.chart = null
     }
   },
   methods: {
+    async fetchDevices() {
+      try {
+        const res = await getDeviceList({ page: 1, pageSize: 500 })
+        if (res.code === 0) {
+          this.deviceList = res.data.list || []
+        }
+
+        const routeDeviceId = Number(this.$route.query.id)
+        if (routeDeviceId && this.deviceList.some(item => item.id === routeDeviceId)) {
+          this.selectedDeviceId = routeDeviceId
+        } else if (!this.selectedDeviceId && this.deviceList.length > 0) {
+          this.selectedDeviceId = this.deviceList[0].id
+        }
+        if (this.selectedDeviceId) {
+          this.handleDeviceChange(this.selectedDeviceId)
+        }
+      } catch (error) {
+        console.error('Failed to fetch device list:', error)
+        this.$message.error('获取设备列表失败')
+      }
+    },
     handleDeviceChange(deviceId) {
-      this.selectedDevice = this.deviceList.find(d => d.id === deviceId)
+      if (this.selectedDevice && this.selectedDevice.id !== deviceId) {
+        this.disconnectVNC(false)
+      }
+      this.selectedDevice = this.deviceList.find(d => d.id === deviceId) || null
       if (this.selectedDevice) {
         this.loadDeviceData()
       }
     },
-    loadDeviceData() {
-      // Mock realtime data
-      this.realtimeData = {
-        spindleSpeed: 3500,
-        currentStitches: 12580,
-        currentPattern: 'Pattern-001.dst'
-      }
+    async loadDeviceData() {
+      if (!this.selectedDevice) return
 
-      // Mock alarms for alarm status device
-      if (this.selectedDevice.status === 'alarm') {
-        this.alarms = [
-          { id: 1, message: '断线报警', time: '10:30:25' },
-          { id: 2, message: '张力异常', time: '10:28:15' }
-        ]
-      } else {
-        this.alarms = []
-      }
+      const deviceId = this.selectedDevice.id
 
-      // Init chart
-      this.$nextTick(() => {
-        this.initChart()
-      })
+      try {
+        const [dashboardRes, alarmRes] = await Promise.all([
+          getDashboardData(deviceId),
+          getAlarmStats({
+            deviceId,
+            page: 1,
+            pageSize: 5
+          })
+        ])
+
+        if (dashboardRes.code === 0) {
+          this.realtimeData = {
+            spindleSpeed: Number(dashboardRes.data?.spindleSpeed || 0),
+            currentStitches: Number(dashboardRes.data?.totalPieces || 0),
+            currentPattern: '-'
+          }
+          this.$nextTick(() => {
+            this.initChart(dashboardRes.data?.hourlyProduction || [])
+          })
+        }
+
+        if (alarmRes.code === 0) {
+          this.alarms = (alarmRes.data?.list || []).map(item => ({
+            id: item.id,
+            message: item.alarmInfo || item.description || item.alarmType || '报警',
+            time: item.alarmTime || item.startTime || '-'
+          }))
+        } else {
+          this.alarms = []
+        }
+      } catch (error) {
+        console.error('Failed to load device monitor data:', error)
+      }
     },
     refreshData() {
+      this.fetchDevices()
       if (this.selectedDevice) {
         this.loadDeviceData()
-        this.$message.success('数据已刷新')
       }
     },
     getStatusText(status) {
@@ -211,28 +309,182 @@ export default {
       }
       return map[status] || status
     },
-    initChart() {
+    buildVncWsUrl() {
+      if (!this.selectedDevice) return ''
+      const serverUrl = this.$store.getters.serverUrl
+      if (!serverUrl || serverUrl === 'http://:') return ''
+
+      const wsBase = serverUrl.startsWith('https://')
+        ? serverUrl.replace('https://', 'wss://')
+        : serverUrl.replace('http://', 'ws://')
+      const token = this.$store.state.token
+
+      const params = new URLSearchParams()
+      if (token) params.set('token', token)
+      params.set('port', String(this.vnc.port))
+
+      return `${wsBase}/api/device/vnc/ws/${this.selectedDevice.id}?${params.toString()}`
+    },
+    async connectVNC() {
+      if (!this.selectedDevice) {
+        this.$message.warning('请先选择设备')
+        return
+      }
+      if (this.selectedDevice.status === 'offline') {
+        this.$message.warning('离线设备不可监控')
+        return
+      }
+
+      const wsUrl = this.buildVncWsUrl()
+      if (!wsUrl) {
+        this.$message.error('服务器地址未配置')
+        return
+      }
+      if (!this.$refs.vncCanvas) {
+        this.$message.error('VNC容器未就绪')
+        return
+      }
+
+      this.disconnectVNC(false)
+      this.vnc.connecting = true
+      this.vnc.status = '连接中...'
+
+      try {
+        const options = {}
+        if (this.vnc.password) {
+          options.credentials = { password: this.vnc.password }
+        }
+
+        const rfb = new RFB(this.$refs.vncCanvas, wsUrl, options)
+        rfb.scaleViewport = true
+        rfb.resizeSession = true
+        rfb.viewOnly = this.vnc.mode === 'monitor'
+
+        const onConnect = () => {
+          this.vnc.connected = true
+          this.vnc.connecting = false
+          this.vnc.status = '已连接'
+          this.$message.success('VNC连接成功')
+        }
+
+        const onDisconnect = (event) => {
+          this.cleanupRfb()
+          this.vnc.connected = false
+          this.vnc.connecting = false
+          this.vnc.status = event?.detail?.clean ? '连接已关闭' : '连接中断'
+        }
+
+        const onSecurityFailure = () => {
+          this.vnc.status = '认证失败'
+        }
+
+        const onCredentialsRequired = () => {
+          if (this.vnc.password) {
+            rfb.sendCredentials({ password: this.vnc.password })
+            return
+          }
+          this.$prompt('请输入VNC密码', 'VNC认证', {
+            confirmButtonText: '确定',
+            cancelButtonText: '取消',
+            inputType: 'password'
+          }).then(({ value }) => {
+            this.vnc.password = value
+            rfb.sendCredentials({ password: value })
+          }).catch(() => {
+            this.vnc.status = '认证取消'
+            rfb.disconnect()
+          })
+        }
+
+        rfb.addEventListener('connect', onConnect)
+        rfb.addEventListener('disconnect', onDisconnect)
+        rfb.addEventListener('securityfailure', onSecurityFailure)
+        rfb.addEventListener('credentialsrequired', onCredentialsRequired)
+
+        this.rfb = rfb
+        this.rfbListeners = {
+          onConnect,
+          onDisconnect,
+          onSecurityFailure,
+          onCredentialsRequired
+        }
+      } catch (error) {
+        this.vnc.connected = false
+        this.vnc.connecting = false
+        this.vnc.status = '连接失败'
+        this.cleanupRfb()
+        console.error('Failed to connect VNC:', error)
+        this.$message.error('VNC连接失败')
+      }
+    },
+    handleModeChange(mode) {
+      if (mode === 'control') {
+        this.$confirm(
+          '切换到远程控制模式前，请先在设备操作屏确认允许远程控制。是否继续切换？',
+          '远程控制确认',
+          {
+            confirmButtonText: '继续',
+            cancelButtonText: '取消',
+            type: 'warning'
+          }
+        ).then(() => {
+          if (this.rfb) this.rfb.viewOnly = false
+        }).catch(() => {
+          this.vnc.mode = 'monitor'
+          if (this.rfb) this.rfb.viewOnly = true
+        })
+        return
+      }
+      if (this.rfb) this.rfb.viewOnly = true
+    },
+    disconnectVNC(showMessage = true) {
+      if (this.rfb) {
+        this.cleanupRfb(true)
+      }
+      this.vnc.connected = false
+      this.vnc.connecting = false
+      this.vnc.status = '已关闭'
+      if (showMessage) {
+        this.$message.info('监控已关闭')
+      }
+    },
+    cleanupRfb(triggerDisconnect = false) {
+      if (!this.rfb) return
+
+      if (this.rfbListeners) {
+        this.rfb.removeEventListener('connect', this.rfbListeners.onConnect)
+        this.rfb.removeEventListener('disconnect', this.rfbListeners.onDisconnect)
+        this.rfb.removeEventListener('securityfailure', this.rfbListeners.onSecurityFailure)
+        this.rfb.removeEventListener('credentialsrequired', this.rfbListeners.onCredentialsRequired)
+      }
+
+      if (triggerDisconnect) {
+        try {
+          this.rfb.disconnect()
+        } catch (error) {
+          console.error('Failed to disconnect VNC:', error)
+        }
+      }
+
+      this.rfb = null
+      this.rfbListeners = null
+    },
+    initChart(hourlyProduction = []) {
       if (this.chart) {
         this.chart.dispose()
       }
-
       const chartDom = this.$refs.realtimeChart
       if (!chartDom) return
-
       this.chart = echarts.init(chartDom)
 
-      // Generate mock time series data
-      const now = new Date()
-      const timeData = []
-      const speedData = []
-      const productionData = []
-
-      for (let i = 30; i >= 0; i--) {
-        const time = new Date(now - i * 60000)
-        timeData.push(time.toLocaleTimeString())
-        speedData.push(3000 + Math.random() * 1000)
-        productionData.push(100 + Math.floor(Math.random() * 50))
-      }
+      const timeData = hourlyProduction.map(item => item.hour)
+      const productionData = hourlyProduction.map(item => Number(item.value || 0))
+      const spindleBase = Number(this.realtimeData.spindleSpeed || 0)
+      const speedData = timeData.map((_, index) => {
+        if (spindleBase <= 0) return 0
+        const ratio = 0.88 + (index % 5) * 0.03
+        return Math.round(spindleBase * ratio)
+      })
 
       this.chart.setOption({
         tooltip: {
@@ -284,6 +536,9 @@ export default {
           }
         ]
       })
+    },
+    handleResize() {
+      if (this.chart) this.chart.resize()
     }
   }
 }
@@ -296,11 +551,20 @@ export default {
 
 .device-selector {
   display: flex;
-  gap: 15px;
+  flex-wrap: wrap;
+  gap: 12px;
   margin-bottom: 20px;
 
   .el-select {
     width: 300px;
+  }
+
+  .el-input-number {
+    width: 140px;
+  }
+
+  .el-input {
+    width: 220px;
   }
 }
 
@@ -311,10 +575,19 @@ export default {
   border-radius: 50%;
   margin-left: 8px;
 
-  &.online, &.working { background: #67C23A; }
-  &.offline { background: #909399; }
-  &.idle { background: #E6A23C; }
-  &.alarm { background: #F56C6C; }
+  &.online,
+  &.working {
+    background: #67C23A;
+  }
+  &.offline {
+    background: #909399;
+  }
+  &.idle {
+    background: #E6A23C;
+  }
+  &.alarm {
+    background: #F56C6C;
+  }
 }
 
 .status-row {
@@ -344,10 +617,19 @@ export default {
       color: #909399;
     }
 
-    &.online, &.working { color: #67C23A; }
-    &.offline { color: #909399; }
-    &.idle { color: #E6A23C; }
-    &.alarm { color: #F56C6C; }
+    &.online,
+    &.working {
+      color: #67C23A;
+    }
+    &.offline {
+      color: #909399;
+    }
+    &.idle {
+      color: #E6A23C;
+    }
+    &.alarm {
+      color: #F56C6C;
+    }
 
     &.pattern {
       font-size: 16px;
@@ -356,43 +638,70 @@ export default {
 }
 
 .monitor-screen {
-  background: #1a1a2e;
+  position: relative;
+  background: #0f172a;
   border-radius: 8px;
-  height: 400px;
+  height: 460px;
+  overflow: hidden;
+}
+
+.vnc-canvas {
+  width: 100%;
+  height: 100%;
+  background: #000;
+}
+
+.vnc-canvas ::v-deep canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.screen-placeholder {
+  position: absolute;
+  inset: 0;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  text-align: center;
+  color: #94a3b8;
+  background: rgba(15, 23, 42, 0.92);
 
-  .screen-placeholder {
-    text-align: center;
-    color: #666;
+  i {
+    font-size: 72px;
+    margin-bottom: 16px;
+  }
 
-    i {
-      font-size: 80px;
-      margin-bottom: 20px;
-    }
+  p {
+    font-size: 16px;
+    margin: 4px 0;
+  }
 
-    p {
-      font-size: 18px;
-      margin: 5px 0;
-    }
-
-    .hint {
-      font-size: 14px;
-      color: #999;
-    }
+  .hint {
+    font-size: 13px;
+    color: #cbd5e1;
   }
 }
 
-.control-panel {
-  .el-button {
-    width: 100%;
-    margin: 10px 0;
+.connection-meta {
+  margin-bottom: 16px;
+
+  .meta-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    color: #606266;
+
+    strong {
+      color: #303133;
+      margin-left: 16px;
+      word-break: break-all;
+    }
   }
 }
 
 .alarm-list {
-  max-height: 200px;
+  max-height: 220px;
   overflow-y: auto;
 
   .no-alarm {
@@ -454,4 +763,11 @@ export default {
     margin-bottom: 20px;
   }
 }
+
+@media (max-width: 1280px) {
+  .monitor-screen {
+    height: 380px;
+  }
+}
 </style>
+

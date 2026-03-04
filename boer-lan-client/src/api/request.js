@@ -34,6 +34,10 @@ service.interceptors.request.use(
 // 响应拦截器
 service.interceptors.response.use(
   response => {
+    if (response.config?.responseType === 'blob' || response.config?.responseType === 'arraybuffer') {
+      return response
+    }
+
     const res = response.data
 
     // 假设后端返回格式为 { code: 0, data: {}, message: '' }
