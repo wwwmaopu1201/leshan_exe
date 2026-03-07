@@ -1,6 +1,9 @@
 import Vue from 'vue'
 import VueRouter from 'vue-router'
 import MainLayout from '@/layouts/MainLayout.vue'
+import store from '@/store'
+import { checkRoutePermission, PERMISSIONS } from '@/utils/permission'
+import { Message } from 'element-ui'
 
 Vue.use(VueRouter)
 
@@ -34,63 +37,103 @@ const routes = [
         path: 'device/list',
         name: 'DeviceList',
         component: () => import('@/views/device/DeviceList.vue'),
-        meta: { title: 'menu.deviceList', parent: 'menu.device' }
+        meta: {
+          title: 'menu.deviceList',
+          parent: 'menu.device',
+          permission: PERMISSIONS.DEVICE_MANAGEMENT
+        }
       },
       {
         path: 'device/group',
         name: 'DeviceGroup',
         component: () => import('@/views/device/DeviceGroup.vue'),
-        meta: { title: 'menu.deviceGroup', parent: 'menu.device' }
+        meta: {
+          title: 'menu.deviceGroup',
+          parent: 'menu.device',
+          permission: PERMISSIONS.DEVICE_MANAGEMENT
+        }
       },
       {
         path: 'device/monitor',
         name: 'RemoteMonitor',
         component: () => import('@/views/device/RemoteMonitor.vue'),
-        meta: { title: 'menu.remoteMonitor', parent: 'menu.device' }
+        meta: {
+          title: 'menu.remoteMonitor',
+          parent: 'menu.device',
+          permission: PERMISSIONS.REMOTE_MONITORING
+        }
       },
       // 花型管理
       {
         path: 'file/pattern',
         name: 'PatternList',
         component: () => import('@/views/file/PatternList.vue'),
-        meta: { title: 'menu.patternList', parent: 'menu.file' }
+        meta: {
+          title: 'menu.patternList',
+          parent: 'menu.file',
+          permission: PERMISSIONS.FILE_MANAGEMENT
+        }
       },
       {
         path: 'file/queue',
         name: 'DownloadQueue',
         component: () => import('@/views/file/DownloadQueue.vue'),
-        meta: { title: 'menu.downloadQueue', parent: 'menu.file' }
+        meta: {
+          title: 'menu.downloadQueue',
+          parent: 'menu.file',
+          permission: PERMISSIONS.FILE_MANAGEMENT
+        }
       },
       {
         path: 'file/log',
         name: 'DownloadLog',
         component: () => import('@/views/file/DownloadLog.vue'),
-        meta: { title: 'menu.downloadLog', parent: 'menu.file' }
+        meta: {
+          title: 'menu.downloadLog',
+          parent: 'menu.file',
+          permission: PERMISSIONS.FILE_MANAGEMENT
+        }
       },
       // 数据统计
       {
         path: 'statistics/salary',
         name: 'SalaryStats',
         component: () => import('@/views/statistics/SalaryStats.vue'),
-        meta: { title: 'menu.salaryStats', parent: 'menu.statistics' }
+        meta: {
+          title: 'menu.salaryStats',
+          parent: 'menu.statistics',
+          permission: PERMISSIONS.STATISTICS
+        }
       },
       {
         path: 'statistics/process',
         name: 'ProcessOverview',
         component: () => import('@/views/statistics/ProcessOverview.vue'),
-        meta: { title: 'menu.processOverview', parent: 'menu.statistics' }
+        meta: {
+          title: 'menu.processOverview',
+          parent: 'menu.statistics',
+          permission: PERMISSIONS.STATISTICS
+        }
       },
       {
         path: 'statistics/duration',
         name: 'DurationStats',
         component: () => import('@/views/statistics/DurationStats.vue'),
-        meta: { title: 'menu.durationStats', parent: 'menu.statistics' }
+        meta: {
+          title: 'menu.durationStats',
+          parent: 'menu.statistics',
+          permission: PERMISSIONS.STATISTICS
+        }
       },
       {
         path: 'statistics/alarm',
         name: 'AlarmStats',
         component: () => import('@/views/statistics/AlarmStats.vue'),
-        meta: { title: 'menu.alarmStats', parent: 'menu.statistics' }
+        meta: {
+          title: 'menu.alarmStats',
+          parent: 'menu.statistics',
+          permission: PERMISSIONS.STATISTICS
+        }
       },
       // 员工管理
       {
@@ -151,12 +194,36 @@ const router = new VueRouter({
 // Navigation guard
 router.beforeEach((to, from, next) => {
   const token = localStorage.getItem('token')
+
+  // 需要登录认证的路由
   if (to.matched.some(record => record.meta.requiresAuth !== false)) {
     if (!token) {
+      // 未登录，跳转到登录页
       next({ name: 'Login' })
-    } else {
-      next()
+      return
     }
+
+    // 检查用户是否被禁用
+    if (store.getters.isUserDisabled) {
+      Message.error('您的账户已被禁用，请联系管理员')
+      store.dispatch('logout')
+      next({ name: 'Login' })
+      return
+    }
+
+    // 检查路由权限
+    if (!checkRoutePermission(to)) {
+      Message.error('您没有权限访问该页面')
+      // 如果是从登录页来的，跳转到首页
+      if (from.name === 'Login') {
+        next({ name: 'Home' })
+      } else {
+        next(false) // 阻止导航
+      }
+      return
+    }
+
+    next()
   } else {
     next()
   }

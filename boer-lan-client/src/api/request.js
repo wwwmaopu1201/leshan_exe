@@ -53,6 +53,14 @@ service.interceptors.response.use(
       return Promise.reject(new Error(res.message || '请求失败'))
     }
 
+    // 检查用户是否被禁用（仅在登录后检查）
+    if (store.state.token && store.getters.isUserDisabled) {
+      Message.error('您的账户已被禁用，请联系管理员')
+      store.dispatch('logout')
+      router.push('/login')
+      return Promise.reject(new Error('账户已被禁用'))
+    }
+
     return res
   },
   error => {
