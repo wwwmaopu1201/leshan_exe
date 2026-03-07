@@ -6,40 +6,59 @@ import (
 	"gorm.io/gorm"
 )
 
-// User 用户模型
+// User 用户模型（客户端用户）
 type User struct {
+	gorm.Model
+	Username    string `gorm:"size:50;uniqueIndex;not null" json:"username"`
+	Password    string `gorm:"size:255;not null" json:"-"`
+	Nickname    string `gorm:"size:50" json:"nickname"`
+	Email       string `gorm:"size:100" json:"email"`
+	Phone       string `gorm:"size:20" json:"phone"`
+	Role        string `gorm:"size:20;default:user" json:"role"` // admin, user
+	Avatar      string `gorm:"size:255" json:"avatar"`
+	Disabled    bool   `gorm:"default:false" json:"disabled"`           // 是否禁用
+	Permissions string `gorm:"type:text" json:"permissions"`            // JSON格式的权限设置
+	GroupID     *uint  `gorm:"index" json:"groupId"`                    // 所属分组
+	Group       *Group `gorm:"foreignKey:GroupID" json:"group,omitempty"`
+}
+
+// Operator 操作员模型（用于登录模板机）
+type Operator struct {
 	gorm.Model
 	Username string `gorm:"size:50;uniqueIndex;not null" json:"username"`
 	Password string `gorm:"size:255;not null" json:"-"`
 	Nickname string `gorm:"size:50" json:"nickname"`
-	Email    string `gorm:"size:100" json:"email"`
-	Phone    string `gorm:"size:20" json:"phone"`
-	Role     string `gorm:"size:20;default:user" json:"role"` // admin, user
-	Avatar   string `gorm:"size:255" json:"avatar"`
+	Disabled bool   `gorm:"default:false" json:"disabled"` // 限制登录
+	GroupID  *uint  `gorm:"index" json:"groupId"`          // 所属分组
+	Group    *Group `gorm:"foreignKey:GroupID" json:"group,omitempty"`
 }
 
-// DeviceGroup 设备分组
-type DeviceGroup struct {
+// Group 分组模型（统一管理用户、设备、操作员）
+type Group struct {
 	gorm.Model
-	Name     string        `gorm:"size:100;not null" json:"name"`
-	ParentID *uint         `gorm:"index" json:"parentId"`
-	Parent   *DeviceGroup  `gorm:"foreignKey:ParentID" json:"parent,omitempty"`
-	Children []DeviceGroup `gorm:"foreignKey:ParentID" json:"children,omitempty"`
-	Devices  []Device      `gorm:"foreignKey:GroupID" json:"devices,omitempty"`
+	Name      string   `gorm:"size:100;not null" json:"name"`
+	ParentID  *uint    `gorm:"index" json:"parentId"`
+	Parent    *Group   `gorm:"foreignKey:ParentID" json:"parent,omitempty"`
+	Children  []Group  `gorm:"foreignKey:ParentID" json:"children,omitempty"`
+	SortOrder int      `gorm:"default:0" json:"sortOrder"` // 排序
+	Users     []User   `gorm:"foreignKey:GroupID" json:"users,omitempty"`
+	Operators []Operator `gorm:"foreignKey:GroupID" json:"operators,omitempty"`
+	Devices   []Device `gorm:"foreignKey:GroupID" json:"devices,omitempty"`
 }
 
 // Device 设备模型
 type Device struct {
 	gorm.Model
-	Code       string       `gorm:"size:50;uniqueIndex;not null" json:"code"`
-	Name       string       `gorm:"size:100;not null" json:"name"`
-	Type       string       `gorm:"size:50" json:"type"`      // 缝纫机, 绣花机
-	ModelName  string       `gorm:"size:50" json:"model"`     // BM-2000, BM-3000
-	IP         string       `gorm:"size:50" json:"ip"`
-	Status     string       `gorm:"size:20;default:offline" json:"status"` // online, offline, working, idle, alarm
-	GroupID    *uint        `gorm:"index" json:"groupId"`
-	Group      *DeviceGroup `gorm:"foreignKey:GroupID" json:"group,omitempty"`
-	LastOnline time.Time    `json:"lastOnline"`
+	Code       string    `gorm:"size:50;uniqueIndex;not null" json:"code"`
+	Name       string    `gorm:"size:100;not null" json:"name"`
+	Type       string    `gorm:"size:50" json:"type"`                       // 缝纫机, 绣花机
+	ModelName  string    `gorm:"size:50" json:"model"`                      // BM-2000, BM-3000
+	IP         string    `gorm:"size:50" json:"ip"`
+	Status     string    `gorm:"size:20;default:offline" json:"status"`     // online, offline, working, idle, alarm
+	GroupID    *uint     `gorm:"index" json:"groupId"`
+	Group      *Group    `gorm:"foreignKey:GroupID" json:"group,omitempty"`
+	SortOrder  int       `gorm:"default:0" json:"sortOrder"`                // 分组内排序
+	LastOnline time.Time `json:"lastOnline"`
 }
 
 // Pattern 花型文件
@@ -132,4 +151,21 @@ type LoginLog struct {
 	Device    string    `gorm:"size:200" json:"device"`
 	Status    string    `gorm:"size:20" json:"status"`
 	LoginTime time.Time `gorm:"type:timestamp;not null;default:CURRENT_TIMESTAMP" json:"loginTime"`
+}
+
+// ServerConfig 服务器配置
+type ServerConfig struct {
+	gorm.Model
+	Key   string `gorm:"size:100;uniqueIndex;not null" json:"key"`
+	Value string `gorm:"type:text" json:"value"`
+	Desc  string `gorm:"size:255" json:"desc"`
+}
+
+// DebugLog 调试日志
+type DebugLog struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	Level     string    `gorm:"size:20" json:"level"` // info, warn, error
+	Message   string    `gorm:"type:text" json:"message"`
+	Source    string    `gorm:"size:100" json:"source"` // 来源模块
+	CreatedAt time.Time `gorm:"type:timestamp;not null;default:CURRENT_TIMESTAMP" json:"createdAt"`
 }

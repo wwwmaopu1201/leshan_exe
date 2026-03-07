@@ -6,9 +6,18 @@ import (
 )
 
 func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int) {
+	// 静态文件服务 - 管理界面
+	r.Static("/admin", "./web/admin")
+
 	// API group
 	api := r.Group("/api")
+
+	// Initialize handlers
 	deviceHandler := NewDeviceHandler(db)
+	groupHandler := NewGroupHandler(db)
+	userHandler := NewUserHandler(db)
+	operatorHandler := NewOperatorHandler(db)
+	systemHandler := NewSystemHandler(db, 8088) // TODO: 从配置读取端口
 
 	// Auth routes (public)
 	authHandler := NewAuthHandler(db, jwtSecret, jwtExpire)
@@ -71,5 +80,47 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int) {
 		protected.POST("/employee", employeeHandler.CreateEmployee)
 		protected.PUT("/employee/:id", employeeHandler.UpdateEmployee)
 		protected.DELETE("/employee/:id", employeeHandler.DeleteEmployee)
+
+		// Group Management
+		protected.GET("/group/tree", groupHandler.GetGroupTree)
+		protected.GET("/group/list", groupHandler.GetGroupList)
+		protected.POST("/group", groupHandler.CreateGroup)
+		protected.PUT("/group/:id", groupHandler.UpdateGroup)
+		protected.DELETE("/group/:id", groupHandler.DeleteGroup)
+		protected.POST("/group/sort", groupHandler.SortGroups)
+
+		// User Management
+		protected.GET("/user/list", userHandler.GetUserList)
+		protected.GET("/user/all", userHandler.GetAllUsers)
+		protected.POST("/user", userHandler.CreateUser)
+		protected.PUT("/user/:id", userHandler.UpdateUser)
+		protected.DELETE("/user", userHandler.DeleteUser)
+		protected.POST("/user/move", userHandler.MoveUsersToGroup)
+
+		// Operator Management
+		protected.GET("/operator/list", operatorHandler.GetOperatorList)
+		protected.GET("/operator/all", operatorHandler.GetAllOperators)
+		protected.POST("/operator", operatorHandler.CreateOperator)
+		protected.PUT("/operator/:id", operatorHandler.UpdateOperator)
+		protected.DELETE("/operator", operatorHandler.DeleteOperator)
+		protected.POST("/operator/move", operatorHandler.MoveOperatorsToGroup)
+		protected.POST("/operator/import", operatorHandler.ImportOperators)
+		protected.GET("/operator/export", operatorHandler.ExportOperators)
+
+		// System Management
+		protected.GET("/system/info", systemHandler.GetServerInfo)
+		protected.GET("/system/stats", systemHandler.GetSystemStats)
+		protected.GET("/system/network", systemHandler.GetNetworkInfo)
+		protected.POST("/system/ping", systemHandler.PingDevice)
+		protected.POST("/system/command", systemHandler.ExecuteCommand)
+
+		// Debug Logs
+		protected.GET("/system/logs", systemHandler.GetDebugLogs)
+		protected.POST("/system/logs", systemHandler.AddDebugLog)
+		protected.DELETE("/system/logs", systemHandler.ClearDebugLogs)
+
+		// Server Config
+		protected.GET("/system/config", systemHandler.GetServerConfig)
+		protected.POST("/system/config", systemHandler.SetServerConfig)
 	}
 }
