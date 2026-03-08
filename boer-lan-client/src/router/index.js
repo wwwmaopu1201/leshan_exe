@@ -24,13 +24,21 @@ const routes = [
         path: 'home',
         name: 'Home',
         component: () => import('@/views/Home.vue'),
-        meta: { title: 'menu.home', icon: 'el-icon-s-home' }
+        meta: {
+          title: 'menu.home',
+          icon: 'el-icon-s-home',
+          permission: PERMISSIONS.HOME
+        }
       },
       {
         path: 'dashboard',
         name: 'Dashboard',
         component: () => import('@/views/Dashboard.vue'),
-        meta: { title: 'menu.dashboard', icon: 'el-icon-data-board' }
+        meta: {
+          title: 'menu.dashboard',
+          icon: 'el-icon-data-board',
+          permission: PERMISSIONS.DASHBOARD
+        }
       },
       // 设备管理
       {
@@ -140,7 +148,11 @@ const routes = [
         path: 'employee/list',
         name: 'EmployeeList',
         component: () => import('@/views/employee/EmployeeList.vue'),
-        meta: { title: 'menu.employeeList', parent: 'menu.employee' }
+        meta: {
+          title: 'menu.employeeList',
+          parent: 'menu.employee',
+          permission: PERMISSIONS.EMPLOYEE_MANAGEMENT
+        }
       },
       // 个人中心
       {
@@ -214,11 +226,11 @@ router.beforeEach((to, from, next) => {
     // 检查路由权限
     if (!checkRoutePermission(to)) {
       Message.error('您没有权限访问该页面')
-      // 如果是从登录页来的，跳转到首页
-      if (from.name === 'Login') {
-        next({ name: 'Home' })
+      const fallbackPath = '/profile/info'
+      if (to.path !== fallbackPath) {
+        next({ path: fallbackPath })
       } else {
-        next(false) // 阻止导航
+        next(false)
       }
       return
     }

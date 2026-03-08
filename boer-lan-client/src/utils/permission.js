@@ -2,12 +2,18 @@ import store from '@/store'
 
 /**
  * 权限键定义
+ * - home: 首页权限
+ * - dashboard: 看板权限
+ * - employeeManagement: 员工管理权限
  * - fileManagement: 文件管理权限
  * - remoteMonitoring: 远程监控权限
  * - statistics: 统计权限
  * - deviceManagement: 设备管理权限
  */
 export const PERMISSIONS = {
+  HOME: 'home',
+  DASHBOARD: 'dashboard',
+  EMPLOYEE_MANAGEMENT: 'employeeManagement',
   FILE_MANAGEMENT: 'fileManagement',
   REMOTE_MONITORING: 'remoteMonitoring',
   STATISTICS: 'statistics',

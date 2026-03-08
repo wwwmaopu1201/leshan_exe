@@ -16,27 +16,27 @@
         :unique-opened="true"
         router
       >
-        <el-menu-item index="/home">
+        <el-menu-item v-if="canAccess.home" index="/home">
           <i class="el-icon-s-home"></i>
           <span slot="title">{{ $t('menu.home') }}</span>
         </el-menu-item>
 
-        <el-menu-item index="/dashboard">
+        <el-menu-item v-if="canAccess.dashboard" index="/dashboard">
           <i class="el-icon-data-board"></i>
           <span slot="title">{{ $t('menu.dashboard') }}</span>
         </el-menu-item>
 
-        <el-submenu index="/device">
+        <el-submenu v-if="canAccess.deviceGroup" index="/device">
           <template slot="title">
             <i class="el-icon-monitor"></i>
             <span>{{ $t('menu.device') }}</span>
           </template>
-          <el-menu-item index="/device/list">{{ $t('menu.deviceList') }}</el-menu-item>
-          <el-menu-item index="/device/group">{{ $t('menu.deviceGroup') }}</el-menu-item>
-          <el-menu-item index="/device/monitor">{{ $t('menu.remoteMonitor') }}</el-menu-item>
+          <el-menu-item v-if="canAccess.deviceManagement" index="/device/list">{{ $t('menu.deviceList') }}</el-menu-item>
+          <el-menu-item v-if="canAccess.deviceManagement" index="/device/group">{{ $t('menu.deviceGroup') }}</el-menu-item>
+          <el-menu-item v-if="canAccess.remoteMonitoring" index="/device/monitor">{{ $t('menu.remoteMonitor') }}</el-menu-item>
         </el-submenu>
 
-        <el-submenu index="/file">
+        <el-submenu v-if="canAccess.fileManagement" index="/file">
           <template slot="title">
             <i class="el-icon-folder"></i>
             <span>{{ $t('menu.file') }}</span>
@@ -46,7 +46,7 @@
           <el-menu-item index="/file/log">{{ $t('menu.downloadLog') }}</el-menu-item>
         </el-submenu>
 
-        <el-submenu index="/statistics">
+        <el-submenu v-if="canAccess.statistics" index="/statistics">
           <template slot="title">
             <i class="el-icon-s-data"></i>
             <span>{{ $t('menu.statistics') }}</span>
@@ -57,7 +57,7 @@
           <el-menu-item index="/statistics/alarm">{{ $t('menu.alarmStats') }}</el-menu-item>
         </el-submenu>
 
-        <el-submenu index="/employee">
+        <el-submenu v-if="canAccess.employeeManagement" index="/employee">
           <template slot="title">
             <i class="el-icon-user"></i>
             <span>{{ $t('menu.employee') }}</span>
@@ -143,6 +143,21 @@ export default {
   name: 'MainLayout',
   computed: {
     ...mapState(['user', 'sidebarCollapsed']),
+    canAccess() {
+      const hasPermission = this.$store.getters.hasPermission
+      const deviceManagement = hasPermission('deviceManagement')
+      const remoteMonitoring = hasPermission('remoteMonitoring')
+      return {
+        home: hasPermission('home'),
+        dashboard: hasPermission('dashboard'),
+        employeeManagement: hasPermission('employeeManagement'),
+        fileManagement: hasPermission('fileManagement'),
+        statistics: hasPermission('statistics'),
+        deviceManagement,
+        remoteMonitoring,
+        deviceGroup: deviceManagement || remoteMonitoring
+      }
+    },
     isCollapsed() {
       return this.sidebarCollapsed
     },

@@ -43,6 +43,9 @@ export default new Vuex.Store({
 
       if (!state.user || !state.user.permissions) {
         return {
+          home: true,
+          dashboard: true,
+          employeeManagement: true,
           fileManagement: true,
           remoteMonitoring: true,
           statistics: true,
@@ -54,10 +57,19 @@ export default new Vuex.Store({
         const permissions = typeof state.user.permissions === 'string'
           ? JSON.parse(state.user.permissions)
           : state.user.permissions
+        if (Array.isArray(permissions)) {
+          return permissions.reduce((acc, key) => {
+            acc[key] = true
+            return acc
+          }, {})
+        }
         return permissions
       } catch (error) {
         console.error('解析用户权限失败:', error)
         return {
+          home: true,
+          dashboard: true,
+          employeeManagement: true,
           fileManagement: true,
           remoteMonitoring: true,
           statistics: true,
