@@ -2,25 +2,106 @@
   <div>
     <div class="page-title">操作员管理</div>
     <el-card>
-      <el-button type="primary" @click="showAddOperatorDialog" icon="el-icon-plus">新建操作员</el-button>
-      <el-table :data="operators" style="margin-top: 20px;">
-        <el-table-column prop="username" label="用户名" />
-        <el-table-column prop="nickname" label="昵称" />
-        <el-table-column prop="disabled" label="状态">
+      <div style="margin-bottom: 16px; display: flex; gap: 8px;">
+        <el-button type="primary" icon="el-icon-plus" @click="openCreateDialog">新建操作员</el-button>
+        <el-button icon="el-icon-upload2" @click="importDialogVisible = true">批量导入</el-button>
+        <el-button icon="el-icon-download" @click="exportOperators">导出</el-button>
+        <el-button icon="el-icon-refresh" @click="loadData">刷新</el-button>
+      </div>
+
+      <el-table :data="operators" v-loading="loading" style="width: 100%;">
+        <el-table-column prop="username" label="用户名" min-width="140" />
+        <el-table-column prop="nickname" label="昵称" min-width="130" />
+        <el-table-column label="所属分组" min-width="180">
+          <template slot-scope="{ row }">
+            {{ formatGroupName(row) }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="disabled" label="状态" width="100">
           <template slot-scope="{ row }">
             <el-tag :type="row.disabled ? 'danger' : 'success'">
-              {{ row.disabled ? '已禁用' : '正常' }}
+              {{ row.disabled ? '限制登录' : '正常' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200">
+        <el-table-column label="操作" width="180">
           <template slot-scope="{ row }">
-            <el-button size="small" @click="editOperator(row)" icon="el-icon-edit">编辑</el-button>
+            <el-button size="small" @click="openEditDialog(row)" icon="el-icon-edit">编辑</el-button>
             <el-button size="small" type="danger" @click="deleteOperator(row)" icon="el-icon-delete">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
     </el-card>
+
+    <el-dialog
+      :title="form.id ? '编辑操作员' : '新建操作员'"
+      :visible.sync="dialogVisible"
+      width="560px"
+      @close="resetForm"
+    >
+      <el-form ref="operatorFormRef" :model="form" :rules="rules" label-width="110px">
+        <el-form-item label="用户名" prop="username">
+          <el-input v-model="form.username" :disabled="!!form.id" placeholder="请输入用户名" />
+        </el-form-item>
+
+        <el-form-item :label="form.id ? '新密码(可选)' : '密码'" :prop="form.id ? '' : 'password'">
+          <el-input
+            v-model="form.password"
+            type="password"
+            show-password
+            :placeholder="form.id ? '不填写则不修改密码' : '请输入密码'"
+          />
+        </el-form-item>
+
+        <el-form-item label="昵称" prop="nickname">
+          <el-input v-model="form.nickname" placeholder="请输入昵称" />
+        </el-form-item>
+
+        <el-form-item label="所属分组">
+          <el-select v-model="form.groupId" style="width: 100%;" clearable placeholder="可不选">
+            <el-option
+              v-for="item in groups"
+              :key="item.id"
+              :label="item.parent ? `${item.parent.name} / ${item.name}` : item.name"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="限制登录">
+          <el-switch
+            v-model="form.disabled"
+            active-text="限制"
+            inactive-text="允许"
+          />
+        </el-form-item>
+      </el-form>
+
+      <span slot="footer" class="dialog-footer">
+        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="saveOperator">保存</el-button>
+      </span>
+    </el-dialog>
+
+    <el-dialog
+      title="批量导入操作员"
+      :visible.sync="importDialogVisible"
+      width="640px"
+    >
+      <div style="margin-bottom: 8px; color: #606266;">
+        每行一个操作员，格式：`用户名,密码,昵称,分组ID(可选)`
+      </div>
+      <el-input
+        v-model="importText"
+        type="textarea"
+        :rows="10"
+        placeholder="例如：\noperator01,123456,张三,2\noperator02,123456,李四"
+      />
+      <span slot="footer" class="dialog-footer">
+        <el-button @click="importDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="importing" @click="importOperators">开始导入</el-button>
+      </span>
+    </el-dialog>
   </div>
 </template>
 
@@ -29,31 +110,218 @@ export default {
   name: 'Operators',
   data() {
     return {
-      operators: []
+      loading: false,
+      saving: false,
+      importing: false,
+      operators: [],
+      groups: [],
+      dialogVisible: false,
+      importDialogVisible: false,
+      importText: '',
+      form: {
+        id: null,
+        username: '',
+        password: '',
+        nickname: '',
+        groupId: null,
+        disabled: false
+      },
+      rules: {
+        username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
+        password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
+        nickname: [{ required: true, message: '请输入昵称', trigger: 'blur' }]
+      }
     }
   },
   mounted() {
-    this.loadOperators()
+    this.loadData()
   },
   methods: {
-    async loadOperators() {
+    async loadData() {
+      this.loading = true
       try {
-        const res = await this.$axios.get('/operator/all')
-        if (res.code === 0) {
-          this.operators = res.data
+        const [operatorsRes, groupsRes] = await Promise.all([
+          this.$axios.get('/operator/all'),
+          this.$axios.get('/group/list')
+        ])
+        if (operatorsRes.code === 0) {
+          this.operators = (Array.isArray(operatorsRes.data) ? operatorsRes.data : []).map(item => ({
+            ...item,
+            id: item.id || item.ID
+          }))
+        }
+        if (groupsRes.code === 0) {
+          this.groups = Array.isArray(groupsRes.data) ? groupsRes.data : []
         }
       } catch (error) {
-        console.error('加载操作员列表失败', error)
+        console.error('加载操作员失败', error)
+      } finally {
+        this.loading = false
       }
     },
-    showAddOperatorDialog() {
-      this.$message.info('新建操作员功能暂未实现')
+    formatGroupName(row) {
+      if (!row.group) return '-'
+      if (row.group.parent) {
+        return `${row.group.parent.name} / ${row.group.name}`
+      }
+      return row.group.name
     },
-    editOperator(operator) {
-      this.$message.info('编辑操作员功能暂未实现')
+    openCreateDialog() {
+      this.dialogVisible = true
+      this.form = {
+        id: null,
+        username: '',
+        password: '',
+        nickname: '',
+        groupId: null,
+        disabled: false
+      }
     },
-    deleteOperator(operator) {
-      this.$message.info('删除操作员功能暂未实现')
+    openEditDialog(row) {
+      this.dialogVisible = true
+      this.form = {
+        id: row.id || row.ID,
+        username: row.username,
+        password: '',
+        nickname: row.nickname || '',
+        groupId: row.groupId || null,
+        disabled: !!row.disabled
+      }
+    },
+    resetForm() {
+      this.$refs.operatorFormRef?.resetFields()
+    },
+    async saveOperator() {
+      try {
+        await this.$refs.operatorFormRef.validate()
+        this.saving = true
+
+        const payload = {
+          username: this.form.username,
+          nickname: this.form.nickname,
+          groupId: this.form.groupId,
+          disabled: this.form.disabled
+        }
+
+        if (this.form.id) {
+          if (this.form.password) {
+            payload.password = this.form.password
+          }
+          const res = await this.$axios.put(`/operator/${this.form.id}`, payload)
+          if (res.code === 0) {
+            this.$message.success('更新成功')
+            this.dialogVisible = false
+            await this.loadData()
+          }
+          return
+        }
+
+        payload.password = this.form.password
+        const res = await this.$axios.post('/operator', payload)
+        if (res.code === 0) {
+          this.$message.success('创建成功')
+          this.dialogVisible = false
+          await this.loadData()
+        }
+      } catch (error) {
+        console.error('保存操作员失败', error)
+      } finally {
+        this.saving = false
+      }
+    },
+    async deleteOperator(row) {
+      try {
+        await this.$confirm(`确定要删除操作员「${row.username}」吗?`, '警告', {
+          type: 'warning'
+        })
+        const res = await this.$axios.delete('/operator', {
+          data: { ids: [row.id || row.ID] }
+        })
+        if (res.code === 0) {
+          this.$message.success('删除成功')
+          await this.loadData()
+        }
+      } catch (error) {
+        if (error !== 'cancel') {
+          console.error('删除操作员失败', error)
+        }
+      }
+    },
+    async importOperators() {
+      const lines = this.importText
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean)
+
+      if (!lines.length) {
+        this.$message.warning('请输入导入内容')
+        return
+      }
+
+      const operators = []
+      for (const line of lines) {
+        const [username, password, nickname, groupIdRaw] = line.split(',').map(part => part?.trim())
+        if (!username || !password) continue
+        const payload = { username, password, nickname: nickname || username }
+        const groupId = Number(groupIdRaw)
+        if (groupId) payload.groupId = groupId
+        operators.push(payload)
+      }
+
+      if (!operators.length) {
+        this.$message.warning('未解析到有效导入数据')
+        return
+      }
+
+      try {
+        this.importing = true
+        const res = await this.$axios.post('/operator/import', { operators })
+        if (res.code === 0) {
+          const successCount = res.data?.successCount || 0
+          const errors = res.data?.errors || []
+          this.$message.success(`导入完成，成功 ${successCount} 条`)
+          if (errors.length) {
+            this.$alert(errors.join('\n'), '导入失败明细', { type: 'warning' })
+          }
+          this.importDialogVisible = false
+          this.importText = ''
+          await this.loadData()
+        }
+      } catch (error) {
+        console.error('导入操作员失败', error)
+      } finally {
+        this.importing = false
+      }
+    },
+    async exportOperators() {
+      try {
+        const res = await this.$axios.get('/operator/export')
+        if (res.code !== 0) return
+
+        const headers = ['用户名', '昵称', '状态', '分组ID', '分组名称']
+        const rows = (Array.isArray(res.data) ? res.data : []).map(item => ([
+          item.username || '',
+          item.nickname || '',
+          item.disabled ? '限制登录' : '正常',
+          item.groupId || '',
+          item.groupName || ''
+        ]))
+        const csv = [headers, ...rows]
+          .map(row => row.map(col => `"${String(col).replace(/"/g, '""')}"`).join(','))
+          .join('\n')
+
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+        const url = window.URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `operators_${Date.now()}.csv`
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        window.URL.revokeObjectURL(url)
+      } catch (error) {
+        console.error('导出操作员失败', error)
+      }
     }
   }
 }

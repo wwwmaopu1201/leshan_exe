@@ -48,3 +48,21 @@ export function deleteEmployee(id) {
     method: 'delete'
   })
 }
+
+// 批量导入员工
+export function importEmployees(employees) {
+  return request({
+    url: '/employee/import',
+    method: 'post',
+    data: { employees }
+  })
+}
+
+// 导出员工列表
+export function exportEmployees(params) {
+  return request({
+    url: '/employee/export',
+    method: 'get',
+    params
+  })
+}

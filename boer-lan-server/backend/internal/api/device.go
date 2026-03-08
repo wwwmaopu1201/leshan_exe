@@ -105,6 +105,7 @@ func (h *DeviceHandler) GetDeviceList(c *gin.Context) {
 			"model":  d.ModelName,
 			"ip":     d.IP,
 			"status": d.Status,
+			"groupId": d.GroupID,
 		}
 		if d.Group != nil {
 			item["group"] = d.Group.Name
@@ -232,7 +233,7 @@ func (h *DeviceHandler) BatchDeleteDevices(c *gin.Context) {
 func (h *DeviceHandler) MoveToGroup(c *gin.Context) {
 	var req struct {
 		DeviceIDs []uint `json:"deviceIds"`
-		GroupID   uint   `json:"groupId"`
+		GroupID   *uint  `json:"groupId"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{

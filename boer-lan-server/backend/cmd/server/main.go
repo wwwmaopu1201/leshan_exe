@@ -62,7 +62,7 @@ func main() {
 	r.Use(corsMiddleware())
 
 	// Setup routes
-	api.SetupRouter(r, db, config.JWT.Secret, config.JWT.Expire)
+	api.SetupRouter(r, db, config.JWT.Secret, config.JWT.Expire, config.Server.Port)
 
 	// Start server
 	addr := fmt.Sprintf(":%d", config.Server.Port)
@@ -155,6 +155,8 @@ func initDB() {
 		&model.Device{},
 		&model.Pattern{},
 		&model.DownloadTask{},
+		&model.DevicePatternFile{},
+		&model.UploadTask{},
 		&model.Employee{},
 		&model.EmployeeDevice{},
 		&model.ProductionRecord{},
@@ -200,11 +202,11 @@ func initDefaultData(db *gorm.DB) {
 		db.First(&firstGroup)
 
 		db.Create(&model.User{
-			Username: "admin",
-			Password: hashedPassword,
-			Nickname: "管理员",
-			Role:     "admin",
-			GroupID:  &firstGroup.ID,
+			Username:    "admin",
+			Password:    hashedPassword,
+			Nickname:    "管理员",
+			Role:        "admin",
+			GroupID:     &firstGroup.ID,
 			Permissions: `{"fileManagement":true,"remoteMonitoring":true,"statistics":true,"deviceManagement":true}`,
 		})
 		log.Println("Default admin user created (admin/admin123)")

@@ -18,6 +18,7 @@ const routes = [
     children: [
       { path: 'home', name: 'Home', component: () => import('@/views/Home.vue') },
       { path: 'tools', name: 'Tools', component: () => import('@/views/Tools.vue') },
+      { path: 'database', name: 'Database', component: () => import('@/views/Database.vue') },
       { path: 'groups', name: 'Groups', component: () => import('@/views/Groups.vue') },
       { path: 'users', name: 'Users', component: () => import('@/views/Users.vue') },
       { path: 'operators', name: 'Operators', component: () => import('@/views/Operators.vue') },

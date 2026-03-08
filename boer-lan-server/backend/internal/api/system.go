@@ -2,15 +2,21 @@ package api
 
 import (
 	"boer-lan-server/internal/model"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
 
@@ -18,6 +24,21 @@ type SystemHandler struct {
 	db         *gorm.DB
 	serverPort int
 }
+
+type ExternalDBConfig struct {
+	DBType              string `json:"dbType"` // mysql, mssql
+	Host                string `json:"host"`
+	Port                int    `json:"port"`
+	Username            string `json:"username"`
+	Password            string `json:"password"`
+	Database            string `json:"database"`
+	Charset             string `json:"charset"`
+	SyncIntervalMinutes int    `json:"syncIntervalMinutes"`
+	Enabled             bool   `json:"enabled"`
+	UpdatedAt           int64  `json:"updatedAt"`
+}
+
+const externalDBConfigKey = "external_db_config"
 
 func NewSystemHandler(db *gorm.DB, serverPort int) *SystemHandler {
 	return &SystemHandler{
@@ -48,14 +69,14 @@ func (h *SystemHandler) GetServerInfo(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
-			"ips":      ips,
-			"port":     h.serverPort,
-			"workDir":  workDir,
-			"dataDir":  dataDir,
-			"os":       runtime.GOOS,
-			"arch":     runtime.GOARCH,
-			"version":  "1.0.0",
-			"uptime":   time.Now().Unix(),
+			"ips":     ips,
+			"port":    h.serverPort,
+			"workDir": workDir,
+			"dataDir": dataDir,
+			"os":      runtime.GOOS,
+			"arch":    runtime.GOARCH,
+			"version": "1.0.0",
+			"uptime":  time.Now().Unix(),
 		},
 	})
 }
@@ -219,12 +240,12 @@ func (h *SystemHandler) ExecuteCommand(c *gin.Context) {
 
 	// 安全检查：只允许特定的命令
 	allowedCommands := map[string]bool{
-		"ipconfig":  true,
-		"ifconfig":  true,
-		"arp":       true,
-		"ping":      true,
-		"netstat":   true,
-		"hostname":  true,
+		"ipconfig": true,
+		"ifconfig": true,
+		"arp":      true,
+		"ping":     true,
+		"netstat":  true,
+		"hostname": true,
 	}
 
 	if !allowedCommands[req.Command] {
@@ -277,11 +298,11 @@ func (h *SystemHandler) GetNetworkInfo(c *gin.Context) {
 		}
 
 		networkInfo = append(networkInfo, gin.H{
-			"name":       iface.Name,
-			"mac":        iface.HardwareAddr.String(),
-			"flags":      iface.Flags.String(),
-			"mtu":        iface.MTU,
-			"addresses":  ips,
+			"name":      iface.Name,
+			"mac":       iface.HardwareAddr.String(),
+			"flags":     iface.Flags.String(),
+			"mtu":       iface.MTU,
+			"addresses": ips,
 		})
 	}
 
@@ -338,4 +359,268 @@ func (h *SystemHandler) GetSystemStats(c *gin.Context) {
 			"groupCount":        groupCount,
 		},
 	})
+}
+
+func defaultExternalDBConfig() ExternalDBConfig {
+	return ExternalDBConfig{
+		DBType:              "mysql",
+		Host:                "127.0.0.1",
+		Port:                3306,
+		Username:            "",
+		Password:            "",
+		Database:            "",
+		Charset:             "utf8mb4",
+		SyncIntervalMinutes: 30,
+		Enabled:             false,
+		UpdatedAt:           0,
+	}
+}
+
+func normalizeExternalDBConfig(cfg *ExternalDBConfig) {
+	cfg.DBType = strings.ToLower(strings.TrimSpace(cfg.DBType))
+	cfg.Host = strings.TrimSpace(cfg.Host)
+	cfg.Username = strings.TrimSpace(cfg.Username)
+	cfg.Database = strings.TrimSpace(cfg.Database)
+	cfg.Charset = strings.TrimSpace(cfg.Charset)
+
+	if cfg.DBType == "" {
+		cfg.DBType = "mysql"
+	}
+	if cfg.Port <= 0 {
+		if cfg.DBType == "mssql" {
+			cfg.Port = 1433
+		} else {
+			cfg.Port = 3306
+		}
+	}
+	if cfg.Charset == "" {
+		cfg.Charset = "utf8mb4"
+	}
+	if cfg.SyncIntervalMinutes <= 0 {
+		cfg.SyncIntervalMinutes = 30
+	}
+}
+
+func validateExternalDBConfig(cfg ExternalDBConfig, requireCredential bool) error {
+	if cfg.DBType != "mysql" && cfg.DBType != "mssql" {
+		return errors.New("数据库类型仅支持 mysql 或 mssql")
+	}
+	if cfg.Host == "" {
+		return errors.New("数据库地址不能为空")
+	}
+	if cfg.Port < 1 || cfg.Port > 65535 {
+		return errors.New("数据库端口不合法")
+	}
+	if requireCredential {
+		if cfg.Username == "" {
+			return errors.New("登录名不能为空")
+		}
+		if cfg.Database == "" {
+			return errors.New("数据库名不能为空")
+		}
+	}
+	return nil
+}
+
+func (h *SystemHandler) loadExternalDBConfig() (ExternalDBConfig, error) {
+	cfg := defaultExternalDBConfig()
+
+	var record model.ServerConfig
+	if err := h.db.Where("key = ?", externalDBConfigKey).First(&record).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return cfg, nil
+		}
+		return cfg, err
+	}
+
+	if err := json.Unmarshal([]byte(record.Value), &cfg); err != nil {
+		return defaultExternalDBConfig(), err
+	}
+	normalizeExternalDBConfig(&cfg)
+	return cfg, nil
+}
+
+func (h *SystemHandler) saveExternalDBConfig(cfg ExternalDBConfig) error {
+	payload, err := json.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+
+	record := model.ServerConfig{
+		Key:   externalDBConfigKey,
+		Value: string(payload),
+		Desc:  "外部数据库连接配置",
+	}
+
+	var existing model.ServerConfig
+	err = h.db.Where("key = ?", externalDBConfigKey).First(&existing).Error
+	if err == gorm.ErrRecordNotFound {
+		return h.db.Create(&record).Error
+	}
+	if err != nil {
+		return err
+	}
+	return h.db.Model(&existing).Updates(record).Error
+}
+
+// GetExternalDBConfig 获取外部数据库配置
+func (h *SystemHandler) GetExternalDBConfig(c *gin.Context) {
+	cfg, err := h.loadExternalDBConfig()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "读取数据库配置失败",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": cfg,
+	})
+}
+
+// SetExternalDBConfig 设置外部数据库配置
+func (h *SystemHandler) SetExternalDBConfig(c *gin.Context) {
+	var req ExternalDBConfig
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "参数错误",
+		})
+		return
+	}
+
+	normalizeExternalDBConfig(&req)
+	if err := validateExternalDBConfig(req, req.Enabled); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	req.UpdatedAt = time.Now().Unix()
+	if err := h.saveExternalDBConfig(req); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "保存数据库配置失败",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "配置已保存",
+		"data":    req,
+	})
+}
+
+// TestExternalDBConnection 测试外部数据库连接
+func (h *SystemHandler) TestExternalDBConnection(c *gin.Context) {
+	var req ExternalDBConfig
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "参数错误",
+		})
+		return
+	}
+
+	normalizeExternalDBConfig(&req)
+	if err := validateExternalDBConfig(req, true); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	switch req.DBType {
+	case "mysql":
+		dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&loc=Local",
+			req.Username,
+			req.Password,
+			req.Host,
+			req.Port,
+			req.Database,
+			req.Charset,
+		)
+		db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    1,
+				"message": "MySQL连接失败: " + err.Error(),
+				"data": gin.H{
+					"success": false,
+				},
+			})
+			return
+		}
+
+		sqlDB, err := db.DB()
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    1,
+				"message": "获取MySQL连接失败: " + err.Error(),
+				"data": gin.H{
+					"success": false,
+				},
+			})
+			return
+		}
+		defer sqlDB.Close()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := sqlDB.PingContext(ctx); err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    1,
+				"message": "MySQL连通性验证失败: " + err.Error(),
+				"data": gin.H{
+					"success": false,
+				},
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"code":    0,
+			"message": "MySQL连接成功",
+			"data": gin.H{
+				"success": true,
+			},
+		})
+		return
+
+	case "mssql":
+		address := net.JoinHostPort(req.Host, strconv.Itoa(req.Port))
+		conn, err := net.DialTimeout("tcp", address, 5*time.Second)
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    1,
+				"message": "MSSQL网络连接失败: " + err.Error(),
+				"data": gin.H{
+					"success": false,
+				},
+			})
+			return
+		}
+		_ = conn.Close()
+
+		c.JSON(http.StatusOK, gin.H{
+			"code":    0,
+			"message": "MSSQL端口连通，当前版本已完成网络检测",
+			"data": gin.H{
+				"success": true,
+			},
+		})
+		return
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "不支持的数据库类型",
+		})
+	}
 }

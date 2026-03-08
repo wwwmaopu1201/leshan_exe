@@ -22,11 +22,14 @@
           </el-select>
         </el-form-item>
         <el-form-item :label="$t('device.group')">
-          <el-select v-model="searchForm.group" clearable>
+          <el-select v-model="searchForm.groupId" clearable>
             <el-option label="全部" value="" />
-            <el-option label="A车间" value="A车间" />
-            <el-option label="B车间" value="B车间" />
-            <el-option label="C车间" value="C车间" />
+            <el-option
+              v-for="group in groupOptions"
+              :key="group.id"
+              :label="group.name"
+              :value="group.id"
+            />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -58,7 +61,7 @@
           <el-button
             icon="el-icon-folder-add"
             :disabled="!selectedRows.length"
-            @click="showMoveDialog = true"
+            @click="openMoveDialog"
           >
             {{ $t('device.moveToGroup') }}
           </el-button>
@@ -146,11 +149,14 @@
         <el-form-item :label="$t('device.ipAddress')" prop="ip">
           <el-input v-model="editForm.ip" placeholder="192.168.1.xxx" />
         </el-form-item>
-        <el-form-item :label="$t('device.group')" prop="group">
-          <el-select v-model="editForm.group" style="width: 100%">
-            <el-option label="A车间" value="A车间" />
-            <el-option label="B车间" value="B车间" />
-            <el-option label="C车间" value="C车间" />
+        <el-form-item :label="$t('device.group')" prop="groupId">
+          <el-select v-model="editForm.groupId" style="width: 100%" clearable>
+            <el-option
+              v-for="group in groupOptions"
+              :key="group.id"
+              :label="group.name"
+              :value="group.id"
+            />
           </el-select>
         </el-form-item>
       </el-form>
@@ -168,10 +174,13 @@
     >
       <el-form label-width="80px">
         <el-form-item :label="$t('device.group')">
-          <el-select v-model="moveTargetGroup" style="width: 100%">
-            <el-option label="A车间" value="A车间" />
-            <el-option label="B车间" value="B车间" />
-            <el-option label="C车间" value="C车间" />
+          <el-select v-model="moveTargetGroupId" style="width: 100%" clearable>
+            <el-option
+              v-for="group in groupOptions"
+              :key="group.id"
+              :label="group.name"
+              :value="group.id"
+            />
           </el-select>
         </el-form-item>
       </el-form>
@@ -192,16 +201,17 @@ export default {
     return {
       loading: false,
       tableData: [],
+      groupOptions: [],
       selectedRows: [],
       searchForm: {
         keyword: '',
         status: '',
-        group: ''
+        groupId: ''
       },
       pagination: {
         page: 1,
         pageSize: 10,
-        total: 7
+        total: 0
       },
       showEditDialog: false,
       editForm: {
@@ -211,7 +221,7 @@ export default {
         type: '',
         model: '',
         ip: '',
-        group: ''
+        groupId: null
       },
       editRules: {
         code: [{ required: true, message: '请输入设备编码', trigger: 'blur' }],
@@ -219,23 +229,34 @@ export default {
         type: [{ required: true, message: '请选择设备类型', trigger: 'change' }],
         model: [{ required: true, message: '请选择设备型号', trigger: 'change' }],
         ip: [{ required: true, message: '请输入IP地址', trigger: 'blur' }],
-        group: [{ required: true, message: '请选择分组', trigger: 'change' }]
+        groupId: [{ required: true, message: '请选择分组', trigger: 'change' }]
       },
       showMoveDialog: false,
-      moveTargetGroup: ''
+      moveTargetGroupId: null
     }
   },
   mounted() {
+    this.fetchGroups()
     this.fetchData()
   },
   methods: {
+    async fetchGroups() {
+      try {
+        const res = await getDeviceGroups()
+        if (res.code === 0) {
+          this.groupOptions = Array.isArray(res.data) ? res.data : []
+        }
+      } catch (error) {
+        console.error('Failed to fetch groups:', error)
+      }
+    },
     async fetchData() {
       this.loading = true
       try {
         const res = await getDeviceList({
           keyword: this.searchForm.keyword,
           status: this.searchForm.status,
-          group: this.searchForm.group,
+          groupId: this.searchForm.groupId,
           page: this.pagination.page,
           pageSize: this.pagination.pageSize
         })
@@ -255,7 +276,7 @@ export default {
       this.fetchData()
     },
     handleReset() {
-      this.searchForm = { keyword: '', status: '', group: '' }
+      this.searchForm = { keyword: '', status: '', groupId: '' }
       this.handleSearch()
     },
     handleSelectionChange(rows) {
@@ -297,16 +318,28 @@ export default {
         type: '',
         model: '',
         ip: '',
-        group: ''
+        groupId: null
       }
       this.showEditDialog = true
     },
     handleEdit(row) {
-      this.editForm = { ...row }
+      this.editForm = {
+        id: row.id,
+        code: row.code,
+        name: row.name,
+        type: row.type,
+        model: row.model,
+        ip: row.ip,
+        groupId: row.groupId || null
+      }
       this.showEditDialog = true
     },
     handleMonitor(row) {
       this.$router.push('/device/monitor?id=' + row.id)
+    },
+    openMoveDialog() {
+      this.moveTargetGroupId = null
+      this.showMoveDialog = true
     },
     resetEditForm() {
       this.$refs.editFormRef?.resetFields()
@@ -314,11 +347,19 @@ export default {
     async handleSaveDevice() {
       try {
         await this.$refs.editFormRef.validate()
+        const payload = {
+          code: this.editForm.code,
+          name: this.editForm.name,
+          type: this.editForm.type,
+          model: this.editForm.model,
+          ip: this.editForm.ip,
+          groupId: this.editForm.groupId
+        }
         let res
         if (this.editForm.id) {
-          res = await updateDevice(this.editForm.id, this.editForm)
+          res = await updateDevice(this.editForm.id, payload)
         } else {
-          res = await createDevice(this.editForm)
+          res = await createDevice(payload)
         }
         if (res.code === 0) {
           this.$message.success(this.$t('common.success'))
@@ -374,16 +415,17 @@ export default {
       }).catch(() => {})
     },
     async handleMoveToGroup() {
-      if (!this.moveTargetGroup) {
+      if (!this.moveTargetGroupId) {
         this.$message.warning('请选择目标分组')
         return
       }
       try {
         const deviceIds = this.selectedRows.map(r => r.id)
-        const res = await moveToGroup(deviceIds, this.moveTargetGroup)
+        const res = await moveToGroup(deviceIds, this.moveTargetGroupId)
         if (res.code === 0) {
           this.$message.success(this.$t('common.success'))
           this.showMoveDialog = false
+          this.moveTargetGroupId = null
           this.fetchData()
         } else {
           this.$message.error(res.message || '移动失败')

@@ -37,6 +37,9 @@
           <el-button type="primary" icon="el-icon-plus" @click="handleAdd">
             {{ $t('employee.addEmployee') }}
           </el-button>
+          <el-button icon="el-icon-upload2" @click="showImportDialog = true">
+            批量导入
+          </el-button>
           <el-button
             type="danger"
             icon="el-icon-delete"
@@ -141,11 +144,31 @@
         <el-button type="primary" @click="handleSave">{{ $t('common.confirm') }}</el-button>
       </span>
     </el-dialog>
+
+    <el-dialog
+      title="批量导入员工"
+      :visible.sync="showImportDialog"
+      width="680px"
+    >
+      <div style="margin-bottom: 8px; color: #606266;">
+        每行格式：`员工工号,员工姓名,部门,职位,手机号`（至少需要前两列）
+      </div>
+      <el-input
+        v-model="importText"
+        type="textarea"
+        :rows="10"
+        placeholder="例如：&#10;E10001,张三,生产部,组长,13800138000&#10;E10002,李四,质检部,质检员,13900139000"
+      />
+      <span slot="footer" class="dialog-footer">
+        <el-button @click="showImportDialog = false">{{ $t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="importing" @click="handleImport">开始导入</el-button>
+      </span>
+    </el-dialog>
   </div>
 </template>
 
 <script>
-import { getEmployeeList, createEmployee, updateEmployee, deleteEmployee } from '@/api/employee'
+import { getEmployeeList, createEmployee, updateEmployee, deleteEmployee, importEmployees, exportEmployees } from '@/api/employee'
 
 export default {
   name: 'EmployeeList',
@@ -161,9 +184,12 @@ export default {
       pagination: {
         page: 1,
         pageSize: 10,
-        total: 7
+        total: 0
       },
       showEditDialog: false,
+      showImportDialog: false,
+      importing: false,
+      importText: '',
       editForm: {
         id: null,
         code: '',
@@ -305,8 +331,96 @@ export default {
         }
       }).catch(() => {})
     },
-    handleExport() {
-      this.$message.success('导出功能开发中')
+    async handleImport() {
+      const lines = this.importText
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean)
+
+      if (!lines.length) {
+        this.$message.warning('请输入导入内容')
+        return
+      }
+
+      const employees = []
+      for (const line of lines) {
+        const [code, name, department, position, phone] = line.split(',').map(part => part?.trim())
+        if (!code || !name) continue
+        employees.push({
+          code,
+          name,
+          department: department || '',
+          position: position || '',
+          phone: phone || ''
+        })
+      }
+
+      if (!employees.length) {
+        this.$message.warning('未解析到有效员工数据')
+        return
+      }
+
+      try {
+        this.importing = true
+        const res = await importEmployees(employees)
+        if (res.code === 0) {
+          const successCount = res.data?.successCount || 0
+          const errors = res.data?.errors || []
+          this.$message.success(`导入完成，成功 ${successCount} 条`)
+          if (errors.length) {
+            this.$alert(errors.join('\n'), '导入失败明细', { type: 'warning' })
+          }
+          this.importText = ''
+          this.showImportDialog = false
+          this.fetchData()
+        } else {
+          this.$message.error(res.message || '导入失败')
+        }
+      } catch (error) {
+        console.error('Import employees failed:', error)
+        this.$message.error('导入失败')
+      } finally {
+        this.importing = false
+      }
+    },
+    async handleExport() {
+      try {
+        const res = await exportEmployees({
+          keyword: this.searchForm.keyword,
+          department: this.searchForm.department
+        })
+        if (res.code !== 0) {
+          this.$message.error(res.message || '导出失败')
+          return
+        }
+
+        const headers = ['员工工号', '员工姓名', '部门', '职位', '手机号', '创建时间']
+        const rows = (Array.isArray(res.data) ? res.data : []).map(item => ([
+          item.code || '',
+          item.name || '',
+          item.department || '',
+          item.position || '',
+          item.phone || '',
+          item.createTime || ''
+        ]))
+        const csv = [headers, ...rows]
+          .map(row => row.map(col => `\"${String(col).replace(/\"/g, '\"\"')}\"`).join(','))
+          .join('\n')
+
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+        const url = window.URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `employees_${Date.now()}.csv`
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        window.URL.revokeObjectURL(url)
+        this.$message.success('导出成功')
+      } catch (error) {
+        console.error('Export employees failed:', error)
+        this.$message.error('导出失败')
+      }
     }
   }
 }

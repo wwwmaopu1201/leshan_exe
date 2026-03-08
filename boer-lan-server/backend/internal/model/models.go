@@ -16,9 +16,9 @@ type User struct {
 	Phone       string `gorm:"size:20" json:"phone"`
 	Role        string `gorm:"size:20;default:user" json:"role"` // admin, user
 	Avatar      string `gorm:"size:255" json:"avatar"`
-	Disabled    bool   `gorm:"default:false" json:"disabled"`           // 是否禁用
-	Permissions string `gorm:"type:text" json:"permissions"`            // JSON格式的权限设置
-	GroupID     *uint  `gorm:"index" json:"groupId"`                    // 所属分组
+	Disabled    bool   `gorm:"default:false" json:"disabled"` // 是否禁用
+	Permissions string `gorm:"type:text" json:"permissions"`  // JSON格式的权限设置
+	GroupID     *uint  `gorm:"index" json:"groupId"`          // 所属分组
 	Group       *Group `gorm:"foreignKey:GroupID" json:"group,omitempty"`
 }
 
@@ -36,14 +36,14 @@ type Operator struct {
 // Group 分组模型（统一管理用户、设备、操作员）
 type Group struct {
 	gorm.Model
-	Name      string   `gorm:"size:100;not null" json:"name"`
-	ParentID  *uint    `gorm:"index" json:"parentId"`
-	Parent    *Group   `gorm:"foreignKey:ParentID" json:"parent,omitempty"`
-	Children  []Group  `gorm:"foreignKey:ParentID" json:"children,omitempty"`
-	SortOrder int      `gorm:"default:0" json:"sortOrder"` // 排序
-	Users     []User   `gorm:"foreignKey:GroupID" json:"users,omitempty"`
+	Name      string     `gorm:"size:100;not null" json:"name"`
+	ParentID  *uint      `gorm:"index" json:"parentId"`
+	Parent    *Group     `gorm:"foreignKey:ParentID" json:"parent,omitempty"`
+	Children  []Group    `gorm:"foreignKey:ParentID" json:"children,omitempty"`
+	SortOrder int        `gorm:"default:0" json:"sortOrder"` // 排序
+	Users     []User     `gorm:"foreignKey:GroupID" json:"users,omitempty"`
 	Operators []Operator `gorm:"foreignKey:GroupID" json:"operators,omitempty"`
-	Devices   []Device `gorm:"foreignKey:GroupID" json:"devices,omitempty"`
+	Devices   []Device   `gorm:"foreignKey:GroupID" json:"devices,omitempty"`
 }
 
 // Device 设备模型
@@ -51,28 +51,31 @@ type Device struct {
 	gorm.Model
 	Code       string    `gorm:"size:50;uniqueIndex;not null" json:"code"`
 	Name       string    `gorm:"size:100;not null" json:"name"`
-	Type       string    `gorm:"size:50" json:"type"`                       // 缝纫机, 绣花机
-	ModelName  string    `gorm:"size:50" json:"model"`                      // BM-2000, BM-3000
+	Type       string    `gorm:"size:50" json:"type"`  // 缝纫机, 绣花机
+	ModelName  string    `gorm:"size:50" json:"model"` // BM-2000, BM-3000
 	IP         string    `gorm:"size:50" json:"ip"`
-	Status     string    `gorm:"size:20;default:offline" json:"status"`     // online, offline, working, idle, alarm
+	Status     string    `gorm:"size:20;default:offline" json:"status"` // online, offline, working, idle, alarm
 	GroupID    *uint     `gorm:"index" json:"groupId"`
 	Group      *Group    `gorm:"foreignKey:GroupID" json:"group,omitempty"`
-	SortOrder  int       `gorm:"default:0" json:"sortOrder"`                // 分组内排序
+	SortOrder  int       `gorm:"default:0" json:"sortOrder"` // 分组内排序
 	LastOnline time.Time `json:"lastOnline"`
 }
 
 // Pattern 花型文件
 type Pattern struct {
 	gorm.Model
-	Name       string `gorm:"size:255;not null" json:"name"`
-	FileName   string `gorm:"size:255;not null" json:"fileName"`
-	FilePath   string `gorm:"size:500" json:"filePath"`
-	FileSize   int64  `json:"fileSize"`
-	Stitches   int    `json:"stitches"`   // 针数
-	Colors     int    `json:"colors"`     // 色数
-	Width      float64 `json:"width"`     // 宽度mm
-	Height     float64 `json:"height"`    // 高度mm
-	UploadedBy uint   `gorm:"index" json:"uploadedBy"`
+	Name        string  `gorm:"size:255;not null" json:"name"`
+	PatternType string  `gorm:"size:100;index" json:"patternType"`
+	FileName    string  `gorm:"size:255;not null" json:"fileName"`
+	FilePath    string  `gorm:"size:500" json:"filePath"`
+	FileSize    int64   `json:"fileSize"`
+	Stitches    int     `json:"stitches"`                                      // 针数
+	Colors      int     `json:"colors"`                                        // 色数
+	Width       float64 `json:"width"`                                         // 宽度mm
+	Height      float64 `json:"height"`                                        // 高度mm
+	UnitPrice   float64 `gorm:"type:decimal(12,3);default:0" json:"unitPrice"` // 工价
+	OrderNo     string  `gorm:"size:100;index" json:"orderNo"`                 // 订单编号
+	UploadedBy  uint    `gorm:"index" json:"uploadedBy"`
 }
 
 // DownloadTask 下发任务
@@ -80,10 +83,35 @@ type DownloadTask struct {
 	gorm.Model
 	PatternID  uint   `gorm:"index;not null" json:"patternId"`
 	DeviceID   uint   `gorm:"index;not null" json:"deviceId"`
-	Status     string `gorm:"size:20;default:waiting" json:"status"` // waiting, downloading, completed, failed
+	Status     string `gorm:"size:20;default:waiting" json:"status"` // waiting, downloading, paused, completed, failed
 	Progress   int    `json:"progress"`
 	Message    string `gorm:"size:500" json:"message"`
 	OperatorID uint   `gorm:"index" json:"operatorId"`
+}
+
+// DevicePatternFile 设备本地花型文件
+type DevicePatternFile struct {
+	gorm.Model
+	DeviceID    uint    `gorm:"index;not null" json:"deviceId"`
+	FileName    string  `gorm:"size:255;not null" json:"fileName"`
+	PatternType string  `gorm:"size:100;index" json:"patternType"`
+	FileSize    int64   `json:"fileSize"`
+	Stitches    int     `json:"stitches"`
+	UnitPrice   float64 `gorm:"type:decimal(12,3);default:0" json:"unitPrice"`
+	OrderNo     string  `gorm:"size:100;index" json:"orderNo"`
+	FilePath    string  `gorm:"size:500" json:"filePath"`
+}
+
+// UploadTask 设备文件回传任务
+type UploadTask struct {
+	gorm.Model
+	DeviceFileID uint   `gorm:"index;not null" json:"deviceFileId"`
+	PatternID    *uint  `gorm:"index" json:"patternId"`
+	DeviceID     uint   `gorm:"index;not null" json:"deviceId"`
+	Status       string `gorm:"size:20;default:waiting" json:"status"` // waiting, uploading, paused, completed, failed, canceled
+	Progress     int    `json:"progress"`
+	Message      string `gorm:"size:500" json:"message"`
+	OperatorID   uint   `gorm:"index" json:"operatorId"`
 }
 
 // Employee 员工模型
@@ -120,13 +148,13 @@ type ProductionRecord struct {
 // AlarmRecord 报警记录
 type AlarmRecord struct {
 	gorm.Model
-	DeviceID    uint      `gorm:"index;not null" json:"deviceId"`
-	AlarmType   string    `gorm:"size:50" json:"alarmType"`   // 断线, 张力, 电机, 传感器
-	AlarmCode   string    `gorm:"size:20" json:"alarmCode"`
-	Description string    `gorm:"size:500" json:"description"`
-	Duration    int       `json:"duration"`                         // 持续时长(秒)
-	Status      string    `gorm:"size:20;default:pending" json:"status"` // pending, resolved
-	StartTime   time.Time `json:"startTime"`
+	DeviceID    uint       `gorm:"index;not null" json:"deviceId"`
+	AlarmType   string     `gorm:"size:50" json:"alarmType"` // 断线, 张力, 电机, 传感器
+	AlarmCode   string     `gorm:"size:20" json:"alarmCode"`
+	Description string     `gorm:"size:500" json:"description"`
+	Duration    int        `json:"duration"`                              // 持续时长(秒)
+	Status      string     `gorm:"size:20;default:pending" json:"status"` // pending, resolved
+	StartTime   time.Time  `json:"startTime"`
 	EndTime     *time.Time `json:"endTime"`
 }
 

@@ -5,7 +5,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int) {
+func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, serverPort int) {
 	// API group
 	api := r.Group("/api")
 
@@ -14,7 +14,7 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int) {
 	groupHandler := NewGroupHandler(db)
 	userHandler := NewUserHandler(db)
 	operatorHandler := NewOperatorHandler(db)
-	systemHandler := NewSystemHandler(db, 8088) // TODO: 从配置读取端口
+	systemHandler := NewSystemHandler(db, serverPort)
 
 	// Auth routes (public)
 	authHandler := NewAuthHandler(db, jwtSecret, jwtExpire)
@@ -51,13 +51,32 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int) {
 		// Pattern
 		patternHandler := NewPatternHandler(db)
 		protected.GET("/pattern/list", patternHandler.GetPatternList)
+		protected.GET("/pattern/types", patternHandler.GetPatternTypes)
 		protected.POST("/pattern/upload", patternHandler.UploadPattern)
-		protected.DELETE("/pattern/:id", patternHandler.DeletePattern)
+		protected.PUT("/pattern/:id", patternHandler.UpdatePattern)
+		protected.POST("/pattern/batch-update", patternHandler.BatchUpdatePatterns)
 		protected.POST("/pattern/download", patternHandler.DownloadToDevice)
 		protected.POST("/pattern/batch-download", patternHandler.BatchDownload)
 		protected.GET("/pattern/queue", patternHandler.GetDownloadQueue)
 		protected.GET("/pattern/log", patternHandler.GetDownloadLog)
+		protected.POST("/pattern/queue/:id/pause", patternHandler.PauseDownload)
+		protected.POST("/pattern/queue/:id/resume", patternHandler.ResumeDownload)
+		protected.POST("/pattern/queue/pause-all", patternHandler.PauseAllDownloads)
+		protected.POST("/pattern/queue/resume-all", patternHandler.ResumeAllDownloads)
+		protected.DELETE("/pattern/queue/completed", patternHandler.ClearCompletedDownloads)
 		protected.DELETE("/pattern/queue/:id", patternHandler.CancelDownload)
+
+		// Device Files (upload back to server)
+		protected.GET("/pattern/device-files", patternHandler.GetDevicePatternFiles)
+		protected.DELETE("/pattern/device-files/:id", patternHandler.DeleteDevicePatternFile)
+		protected.POST("/pattern/device-files/upload", patternHandler.UploadDeviceFilesToServer)
+		protected.GET("/pattern/upload-queue", patternHandler.GetUploadQueue)
+		protected.POST("/pattern/upload-queue/:id/pause", patternHandler.PauseUploadTask)
+		protected.POST("/pattern/upload-queue/:id/resume", patternHandler.ResumeUploadTask)
+		protected.DELETE("/pattern/upload-queue/completed", patternHandler.ClearCompletedUploads)
+		protected.DELETE("/pattern/upload-queue/:id", patternHandler.CancelUploadTask)
+
+		protected.DELETE("/pattern/:id", patternHandler.DeletePattern)
 
 		// Statistics
 		statsHandler := NewStatisticsHandler(db)
@@ -77,6 +96,8 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int) {
 		protected.POST("/employee", employeeHandler.CreateEmployee)
 		protected.PUT("/employee/:id", employeeHandler.UpdateEmployee)
 		protected.DELETE("/employee/:id", employeeHandler.DeleteEmployee)
+		protected.POST("/employee/import", employeeHandler.ImportEmployees)
+		protected.GET("/employee/export", employeeHandler.ExportEmployees)
 
 		// Group Management
 		protected.GET("/group/tree", groupHandler.GetGroupTree)
@@ -119,5 +140,8 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int) {
 		// Server Config
 		protected.GET("/system/config", systemHandler.GetServerConfig)
 		protected.POST("/system/config", systemHandler.SetServerConfig)
+		protected.GET("/system/database/config", systemHandler.GetExternalDBConfig)
+		protected.POST("/system/database/config", systemHandler.SetExternalDBConfig)
+		protected.POST("/system/database/test", systemHandler.TestExternalDBConnection)
 	}
 }

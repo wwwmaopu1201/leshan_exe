@@ -39,7 +39,13 @@ export default {
       try {
         const res = await this.$axios.get('/device/list')
         if (res.code === 0) {
-          this.devices = res.data
+          if (Array.isArray(res.data?.list)) {
+            this.devices = res.data.list
+          } else if (Array.isArray(res.data)) {
+            this.devices = res.data
+          } else {
+            this.devices = []
+          }
         }
       } catch (error) {
         console.error('加载设备列表失败', error)
