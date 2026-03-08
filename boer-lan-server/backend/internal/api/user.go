@@ -206,6 +206,11 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 // UpdateUser 更新用户
 func (h *UserHandler) UpdateUser(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
+	var user model.User
+	if err := h.db.First(&user, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		return
+	}
 
 	var req struct {
 		Username    *string         `json:"username"`
@@ -227,19 +232,10 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	updates := make(map[string]interface{})
 
 	if req.Username != nil {
-		username := strings.TrimSpace(*req.Username)
-		if !isValidUsername(username) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "账号仅支持字母数字下划线，且不超过11位"})
+		if strings.TrimSpace(*req.Username) != user.Username {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "账号不允许修改"})
 			return
 		}
-		// 检查用户名是否已被其他用户使用
-		var count int64
-		h.db.Model(&model.User{}).Where("username = ? AND id != ?", username, id).Count(&count)
-		if count > 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "用户名已存在"})
-			return
-		}
-		updates["username"] = username
 	}
 
 	if req.Password != nil && *req.Password != "" {

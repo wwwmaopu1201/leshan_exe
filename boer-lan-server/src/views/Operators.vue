@@ -29,12 +29,22 @@
 
       <div style="margin-bottom: 16px; display: flex; gap: 8px;">
         <el-button type="primary" icon="el-icon-plus" @click="openCreateDialog">新建操作员</el-button>
+        <el-button icon="el-icon-share" :disabled="selectedOperatorIds.length === 0" @click="openMoveDialog">
+          批量移动分组
+        </el-button>
         <el-button icon="el-icon-upload2" @click="importDialogVisible = true">批量导入</el-button>
         <el-button icon="el-icon-download" @click="exportOperators">导出</el-button>
         <el-button icon="el-icon-refresh" @click="loadData">刷新</el-button>
       </div>
 
-      <el-table :data="operators" v-loading="loading" style="width: 100%;">
+      <el-table
+        ref="operatorTableRef"
+        :data="operators"
+        v-loading="loading"
+        style="width: 100%;"
+        @selection-change="handleSelectionChange"
+      >
+        <el-table-column type="selection" width="48" />
         <el-table-column prop="username" label="用户名" min-width="140" />
         <el-table-column prop="nickname" label="昵称" min-width="130" />
         <el-table-column prop="createTime" label="创建时间" width="170" />
@@ -128,6 +138,30 @@
         <el-button type="primary" :loading="importing" @click="importOperators">开始导入</el-button>
       </span>
     </el-dialog>
+
+    <el-dialog
+      title="批量移动操作员分组"
+      :visible.sync="moveDialogVisible"
+      width="420px"
+    >
+      <el-form label-width="90px">
+        <el-form-item label="目标分组" required>
+          <el-select v-model="moveTargetGroupId" style="width: 100%;" placeholder="请选择分组">
+            <el-option
+              v-for="item in groups"
+              :key="item.id"
+              :label="item.parent ? `${item.parent.name} / ${item.name}` : item.name"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+        <div style="color: #606266;">已选择 {{ selectedOperatorIds.length }} 个操作员</div>
+      </el-form>
+      <span slot="footer" class="dialog-footer">
+        <el-button @click="moveDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="moving" @click="confirmMoveOperators">确定移动</el-button>
+      </span>
+    </el-dialog>
   </div>
 </template>
 
@@ -138,15 +172,19 @@ export default {
     return {
       loading: false,
       saving: false,
+      moving: false,
       importing: false,
       operators: [],
       groups: [],
+      selectedOperatorIds: [],
       searchForm: {
         keyword: '',
         dateRange: []
       },
       dialogVisible: false,
       importDialogVisible: false,
+      moveDialogVisible: false,
+      moveTargetGroupId: null,
       importText: '',
       form: {
         id: null,
@@ -196,10 +234,47 @@ export default {
         if (groupsRes.code === 0) {
           this.groups = Array.isArray(groupsRes.data) ? groupsRes.data : []
         }
+        this.selectedOperatorIds = []
+        this.$nextTick(() => {
+          this.$refs.operatorTableRef?.clearSelection()
+        })
       } catch (error) {
         console.error('加载操作员失败', error)
       } finally {
         this.loading = false
+      }
+    },
+    handleSelectionChange(rows) {
+      this.selectedOperatorIds = rows.map(item => item.id || item.ID).filter(Boolean)
+    },
+    openMoveDialog() {
+      this.moveTargetGroupId = null
+      this.moveDialogVisible = true
+    },
+    async confirmMoveOperators() {
+      if (!this.moveTargetGroupId) {
+        this.$message.warning('请选择目标分组')
+        return
+      }
+      if (!this.selectedOperatorIds.length) {
+        this.$message.warning('请先选择操作员')
+        return
+      }
+      this.moving = true
+      try {
+        const res = await this.$axios.post('/operator/move', {
+          operatorIds: this.selectedOperatorIds,
+          groupId: this.moveTargetGroupId
+        })
+        if (res.code === 0) {
+          this.$message.success('移动成功')
+          this.moveDialogVisible = false
+          await this.loadData()
+        }
+      } catch (error) {
+        console.error('移动操作员分组失败', error)
+      } finally {
+        this.moving = false
       }
     },
     handleSearch() {

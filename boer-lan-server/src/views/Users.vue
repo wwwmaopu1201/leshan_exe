@@ -39,10 +39,14 @@
 
       <div style="margin-bottom: 16px; display: flex; gap: 8px;">
         <el-button type="primary" icon="el-icon-plus" @click="openCreateDialog">新建用户</el-button>
+        <el-button icon="el-icon-share" :disabled="selectedUserIds.length === 0" @click="openMoveDialog">
+          批量移动分组
+        </el-button>
         <el-button icon="el-icon-refresh" @click="loadData">刷新</el-button>
       </div>
 
-      <el-table :data="users" v-loading="loading" style="width: 100%;">
+      <el-table ref="userTableRef" :data="users" v-loading="loading" style="width: 100%;" @selection-change="handleSelectionChange">
+        <el-table-column type="selection" width="48" />
         <el-table-column prop="username" label="用户名" min-width="130" />
         <el-table-column prop="nickname" label="昵称" min-width="120" />
         <el-table-column prop="role" label="角色" width="100" />
@@ -162,6 +166,30 @@
         <el-button type="primary" :loading="saving" @click="saveUser">保存</el-button>
       </span>
     </el-dialog>
+
+    <el-dialog
+      title="批量移动用户分组"
+      :visible.sync="moveDialogVisible"
+      width="420px"
+    >
+      <el-form label-width="90px">
+        <el-form-item label="目标分组" required>
+          <el-select v-model="moveTargetGroupId" style="width: 100%;" placeholder="请选择分组">
+            <el-option
+              v-for="item in groups"
+              :key="item.id"
+              :label="item.parent ? `${item.parent.name} / ${item.name}` : item.name"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+        <div style="color: #606266;">已选择 {{ selectedUserIds.length }} 个用户</div>
+      </el-form>
+      <span slot="footer" class="dialog-footer">
+        <el-button @click="moveDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="moving" @click="confirmMoveUsers">确定移动</el-button>
+      </span>
+    </el-dialog>
   </div>
 </template>
 
@@ -174,9 +202,13 @@ export default {
     return {
       loading: false,
       saving: false,
+      moving: false,
       users: [],
       groups: [],
       roles: [],
+      selectedUserIds: [],
+      moveDialogVisible: false,
+      moveTargetGroupId: null,
       searchForm: {
         keyword: '',
         dateRange: [],
@@ -259,10 +291,47 @@ export default {
             this.form.role = defaultRole.name
           }
         }
+        this.selectedUserIds = []
+        this.$nextTick(() => {
+          this.$refs.userTableRef?.clearSelection()
+        })
       } catch (error) {
         console.error('加载用户数据失败', error)
       } finally {
         this.loading = false
+      }
+    },
+    handleSelectionChange(rows) {
+      this.selectedUserIds = rows.map(item => item.id || item.ID).filter(Boolean)
+    },
+    openMoveDialog() {
+      this.moveTargetGroupId = null
+      this.moveDialogVisible = true
+    },
+    async confirmMoveUsers() {
+      if (!this.moveTargetGroupId) {
+        this.$message.warning('请选择目标分组')
+        return
+      }
+      if (!this.selectedUserIds.length) {
+        this.$message.warning('请先选择用户')
+        return
+      }
+      this.moving = true
+      try {
+        const res = await this.$axios.post('/user/move', {
+          userIds: this.selectedUserIds,
+          groupId: this.moveTargetGroupId
+        })
+        if (res.code === 0) {
+          this.$message.success('移动成功')
+          this.moveDialogVisible = false
+          await this.loadData()
+        }
+      } catch (error) {
+        console.error('移动用户分组失败', error)
+      } finally {
+        this.moving = false
       }
     },
     handleSearch() {

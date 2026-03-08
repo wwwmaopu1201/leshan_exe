@@ -107,6 +107,14 @@ func (h *DeviceHandler) GetDeviceList(c *gin.Context) {
 		query = query.Where("group_id = ?", groupId)
 	}
 
+	// Filter by create date
+	if startDate := strings.TrimSpace(c.Query("startDate")); startDate != "" {
+		query = query.Where("DATE(created_at) >= ?", startDate)
+	}
+	if endDate := strings.TrimSpace(c.Query("endDate")); endDate != "" {
+		query = query.Where("DATE(created_at) <= ?", endDate)
+	}
+
 	// Pagination
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
