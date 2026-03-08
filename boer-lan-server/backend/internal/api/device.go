@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -50,12 +51,18 @@ func (h *DeviceHandler) buildTree(groups []model.Group) []gin.H {
 			// Add devices as children
 			deviceNodes := make([]gin.H, 0)
 			for _, d := range g.Devices {
+				label := d.Name
+				if strings.TrimSpace(d.EmployeeName) != "" {
+					label = d.Name + "（" + strings.TrimSpace(d.EmployeeName) + "）"
+				}
 				deviceNodes = append(deviceNodes, gin.H{
-					"id":     d.ID,
-					"label":  d.Name,
-					"type":   "device",
-					"status": d.Status,
-					"model":  d.ModelName,
+					"id":           d.ID,
+					"label":        label,
+					"type":         "device",
+					"status":       d.Status,
+					"model":        d.ModelName,
+					"employeeCode": d.EmployeeCode,
+					"employeeName": d.EmployeeName,
 				})
 			}
 			if len(deviceNodes) > 0 {
@@ -76,7 +83,12 @@ func (h *DeviceHandler) GetDeviceList(c *gin.Context) {
 	if keyword := c.Query("keyword"); keyword != "" {
 		like := "%" + strings.TrimSpace(keyword) + "%"
 		query = query.Where(
-			"name LIKE ? OR code LIKE ? OR type LIKE ? OR model_name LIKE ? OR ip LIKE ?",
+			"name LIKE ? OR initial_name LIKE ? OR code LIKE ? OR type LIKE ? OR model_name LIKE ? OR ip LIKE ? OR employee_code LIKE ? OR employee_name LIKE ? OR mainboard_sn LIKE ? OR remark LIKE ?",
+			like,
+			like,
+			like,
+			like,
+			like,
 			like,
 			like,
 			like,
@@ -120,15 +132,20 @@ func (h *DeviceHandler) GetDeviceList(c *gin.Context) {
 	list := make([]gin.H, 0)
 	for _, d := range devices {
 		item := gin.H{
-			"id":         d.ID,
-			"code":       d.Code,
-			"name":       d.Name,
-			"type":       d.Type,
-			"model":      d.ModelName,
-			"ip":         d.IP,
-			"status":     d.Status,
-			"groupId":    d.GroupID,
-			"createTime": d.CreatedAt.Format("2006-01-02 15:04:05"),
+			"id":           d.ID,
+			"code":         d.Code,
+			"name":         d.Name,
+			"initialName":  d.InitialName,
+			"type":         d.Type,
+			"model":        d.ModelName,
+			"employeeCode": d.EmployeeCode,
+			"employeeName": d.EmployeeName,
+			"mainboardSn":  d.MainboardSN,
+			"remark":       d.Remark,
+			"ip":           d.IP,
+			"status":       d.Status,
+			"groupId":      d.GroupID,
+			"createTime":   d.CreatedAt.Format("2006-01-02 15:04:05"),
 		}
 		if d.Group != nil {
 			item["group"] = d.Group.Name
@@ -174,6 +191,28 @@ func (h *DeviceHandler) CreateDevice(c *gin.Context) {
 		return
 	}
 
+	device.Code = strings.TrimSpace(device.Code)
+	device.Name = strings.TrimSpace(device.Name)
+	device.InitialName = strings.TrimSpace(device.InitialName)
+	device.Type = strings.TrimSpace(device.Type)
+	device.ModelName = strings.TrimSpace(device.ModelName)
+	device.EmployeeCode = strings.TrimSpace(device.EmployeeCode)
+	device.EmployeeName = strings.TrimSpace(device.EmployeeName)
+	device.MainboardSN = strings.TrimSpace(device.MainboardSN)
+	device.Remark = strings.TrimSpace(device.Remark)
+	device.IP = strings.TrimSpace(device.IP)
+
+	if device.Code == "" || device.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "设备编码和名称不能为空",
+		})
+		return
+	}
+	if device.InitialName == "" {
+		device.InitialName = device.Name
+	}
+
 	if err := h.db.Create(&device).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -200,7 +239,22 @@ func (h *DeviceHandler) UpdateDevice(c *gin.Context) {
 		return
 	}
 
-	if err := c.ShouldBindJSON(&device); err != nil {
+	var req struct {
+		Code         *string         `json:"code"`
+		Name         *string         `json:"name"`
+		InitialName  *string         `json:"initialName"`
+		Type         *string         `json:"type"`
+		ModelName    *string         `json:"model"`
+		IP           *string         `json:"ip"`
+		Status       *string         `json:"status"`
+		GroupID      json.RawMessage `json:"groupId"`
+		EmployeeCode *string         `json:"employeeCode"`
+		EmployeeName *string         `json:"employeeName"`
+		MainboardSN  *string         `json:"mainboardSn"`
+		Remark       *string         `json:"remark"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": "参数错误",
@@ -208,7 +262,84 @@ func (h *DeviceHandler) UpdateDevice(c *gin.Context) {
 		return
 	}
 
-	h.db.Save(&device)
+	updates := map[string]interface{}{}
+	if req.Code != nil {
+		code := strings.TrimSpace(*req.Code)
+		if code == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "设备编码不能为空",
+			})
+			return
+		}
+		updates["code"] = code
+	}
+	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		if name == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "设备名称不能为空",
+			})
+			return
+		}
+		updates["name"] = name
+	}
+	if req.InitialName != nil {
+		updates["initial_name"] = strings.TrimSpace(*req.InitialName)
+	}
+	if req.Type != nil {
+		updates["type"] = strings.TrimSpace(*req.Type)
+	}
+	if req.ModelName != nil {
+		updates["model_name"] = strings.TrimSpace(*req.ModelName)
+	}
+	if req.IP != nil {
+		updates["ip"] = strings.TrimSpace(*req.IP)
+	}
+	if req.Status != nil {
+		updates["status"] = strings.TrimSpace(*req.Status)
+	}
+	if len(req.GroupID) > 0 {
+		groupRaw := strings.TrimSpace(string(req.GroupID))
+		if groupRaw == "" || groupRaw == "null" {
+			updates["group_id"] = nil
+		} else {
+			var groupID uint
+			if err := json.Unmarshal(req.GroupID, &groupID); err != nil || groupID == 0 {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"code":    400,
+					"message": "分组参数错误",
+				})
+				return
+			}
+			updates["group_id"] = groupID
+		}
+	}
+	if req.EmployeeCode != nil {
+		updates["employee_code"] = strings.TrimSpace(*req.EmployeeCode)
+	}
+	if req.EmployeeName != nil {
+		updates["employee_name"] = strings.TrimSpace(*req.EmployeeName)
+	}
+	if req.MainboardSN != nil {
+		updates["mainboard_sn"] = strings.TrimSpace(*req.MainboardSN)
+	}
+	if req.Remark != nil {
+		updates["remark"] = strings.TrimSpace(*req.Remark)
+	}
+
+	if len(updates) > 0 {
+		if err := h.db.Model(&device).Updates(updates).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "更新失败",
+			})
+			return
+		}
+	}
+
+	_ = h.db.First(&device, device.ID).Error
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,

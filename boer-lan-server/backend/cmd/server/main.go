@@ -7,6 +7,7 @@ import (
 
 	"boer-lan-server/internal/api"
 	"boer-lan-server/internal/model"
+	"boer-lan-server/internal/service"
 	"boer-lan-server/pkg/utils"
 
 	"github.com/gin-gonic/gin"
@@ -63,6 +64,15 @@ func main() {
 
 	// Setup routes
 	api.SetupRouter(r, db, config.JWT.Secret, config.JWT.Expire, config.Server.Port)
+
+	// Start background workers
+	downloadWorker := service.NewDownloadTaskWorker(db)
+	downloadWorker.Start()
+	defer downloadWorker.Stop()
+
+	externalDBSyncWorker := service.NewExternalDBSyncService(db)
+	externalDBSyncWorker.Start()
+	defer externalDBSyncWorker.Stop()
 
 	// Start server
 	addr := fmt.Sprintf(":%d", config.Server.Port)

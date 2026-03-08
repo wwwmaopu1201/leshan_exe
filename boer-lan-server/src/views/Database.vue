@@ -18,6 +18,9 @@
           <p>2. 当前支持 MySQL 完整连接测试；MSSQL 提供网络连通性检测。</p>
           <p>3. 可配置同步间隔（分钟）用于后续数据同步策略。</p>
           <p>4. 最后更新时间：{{ formatTimestamp(form.updatedAt) }}</p>
+          <p>5. 最近同步时间：{{ formatTimestamp(syncStatus.lastSyncAt) }}</p>
+          <p>6. 下次同步时间：{{ formatTimestamp(syncStatus.nextSyncAt) }}</p>
+          <p>7. 同步状态：{{ syncStatusText(syncStatus.status) }}</p>
         </el-card>
       </el-col>
     </el-row>
@@ -92,6 +95,12 @@ export default {
         port: 8088,
         workDir: ''
       },
+      syncStatus: {
+        status: 'disabled',
+        lastSyncAt: 0,
+        nextSyncAt: 0
+      },
+      syncTimer: null,
       form: {
         dbType: 'mysql',
         host: '127.0.0.1',
@@ -117,6 +126,16 @@ export default {
   mounted() {
     this.loadServerInfo()
     this.loadConfig()
+    this.loadSyncStatus()
+    this.syncTimer = setInterval(() => {
+      this.loadSyncStatus()
+    }, 15000)
+  },
+  beforeDestroy() {
+    if (this.syncTimer) {
+      clearInterval(this.syncTimer)
+      this.syncTimer = null
+    }
   },
   methods: {
     formatTimestamp(ts) {
@@ -147,6 +166,29 @@ export default {
       } catch (error) {
         console.error('加载数据库配置失败', error)
       }
+    },
+    async loadSyncStatus() {
+      try {
+        const res = await this.$axios.get('/system/database/sync-status')
+        if (res.code === 0 && res.data) {
+          this.syncStatus = {
+            ...this.syncStatus,
+            ...res.data
+          }
+        }
+      } catch (error) {
+        console.error('加载同步状态失败', error)
+      }
+    },
+    syncStatusText(status) {
+      const map = {
+        disabled: '未启用',
+        waiting_first_sync: '等待首次同步',
+        scheduled: '已调度',
+        due: '待执行',
+        mssql_not_supported: '当前版本未启用MSSQL自动同步'
+      }
+      return map[status] || status || '-'
     },
     handleDBTypeChange(value) {
       if (value === 'mssql' && this.form.port === 3306) {
@@ -179,6 +221,7 @@ export default {
         const res = await this.$axios.post('/system/database/config', this.form)
         if (res.code === 0) {
           this.form.updatedAt = res.data?.updatedAt || this.form.updatedAt
+          this.loadSyncStatus()
           this.$message.success('保存成功')
         } else {
           this.$message.error(res.message || '保存失败')

@@ -82,8 +82,13 @@
         <el-table-column type="selection" width="50" align="center" />
         <el-table-column prop="code" :label="$t('device.deviceCode')" width="120" />
         <el-table-column prop="name" :label="$t('device.deviceName')" min-width="150" />
+        <el-table-column prop="initialName" :label="$t('device.initialName')" width="130" />
         <el-table-column prop="type" :label="$t('device.deviceType')" width="100" />
         <el-table-column prop="model" :label="$t('device.deviceModel')" width="100" />
+        <el-table-column prop="employeeCode" :label="$t('employee.employeeCode')" width="120" />
+        <el-table-column prop="employeeName" :label="$t('employee.employeeName')" width="120" />
+        <el-table-column prop="mainboardSn" :label="$t('device.mainboardSn')" width="140" />
+        <el-table-column prop="remark" :label="$t('common.remark')" min-width="160" show-overflow-tooltip />
         <el-table-column prop="ip" :label="$t('device.ipAddress')" width="140" />
         <el-table-column prop="group" :label="$t('device.group')" width="120">
           <template slot-scope="scope">
@@ -91,6 +96,7 @@
             <span v-else class="ungrouped-text">未分组</span>
           </template>
         </el-table-column>
+        <el-table-column prop="createTime" :label="$t('common.createTime')" width="160" />
         <el-table-column prop="status" :label="$t('device.deviceStatus')" width="100" align="center">
           <template slot-scope="scope">
             <span class="status-dot" :class="'status-' + scope.row.status"></span>
@@ -130,15 +136,18 @@
     <el-dialog
       :title="editForm.id ? $t('device.editDevice') : $t('device.addDevice')"
       :visible.sync="showEditDialog"
-      width="500px"
+      width="620px"
       @close="resetEditForm"
     >
-      <el-form ref="editFormRef" :model="editForm" :rules="editRules" label-width="100px">
+      <el-form ref="editFormRef" :model="editForm" :rules="editRules" label-width="110px">
         <el-form-item :label="$t('device.deviceCode')" prop="code">
           <el-input v-model="editForm.code" />
         </el-form-item>
         <el-form-item :label="$t('device.deviceName')" prop="name">
           <el-input v-model="editForm.name" />
+        </el-form-item>
+        <el-form-item :label="$t('device.initialName')" prop="initialName">
+          <el-input v-model="editForm.initialName" />
         </el-form-item>
         <el-form-item :label="$t('device.deviceType')" prop="type">
           <el-select v-model="editForm.type" style="width: 100%">
@@ -155,6 +164,18 @@
         </el-form-item>
         <el-form-item :label="$t('device.ipAddress')" prop="ip">
           <el-input v-model="editForm.ip" placeholder="192.168.1.xxx" />
+        </el-form-item>
+        <el-form-item :label="$t('employee.employeeCode')" prop="employeeCode">
+          <el-input v-model="editForm.employeeCode" />
+        </el-form-item>
+        <el-form-item :label="$t('employee.employeeName')" prop="employeeName">
+          <el-input v-model="editForm.employeeName" />
+        </el-form-item>
+        <el-form-item :label="$t('device.mainboardSn')" prop="mainboardSn">
+          <el-input v-model="editForm.mainboardSn" />
+        </el-form-item>
+        <el-form-item :label="$t('common.remark')" prop="remark">
+          <el-input v-model="editForm.remark" type="textarea" :rows="3" />
         </el-form-item>
         <el-form-item :label="$t('device.group')" prop="groupId">
           <el-select v-model="editForm.groupId" style="width: 100%" clearable>
@@ -226,9 +247,14 @@ export default {
         id: null,
         code: '',
         name: '',
+        initialName: '',
         type: '',
         model: '',
         ip: '',
+        employeeCode: '',
+        employeeName: '',
+        mainboardSn: '',
+        remark: '',
         groupId: null
       },
       editRules: {
@@ -328,9 +354,14 @@ export default {
         id: null,
         code: '',
         name: '',
+        initialName: '',
         type: '',
         model: '',
         ip: '',
+        employeeCode: '',
+        employeeName: '',
+        mainboardSn: '',
+        remark: '',
         groupId: null
       }
       this.showEditDialog = true
@@ -340,9 +371,14 @@ export default {
         id: row.id,
         code: row.code,
         name: row.name,
+        initialName: row.initialName || '',
         type: row.type,
         model: row.model,
         ip: row.ip,
+        employeeCode: row.employeeCode || '',
+        employeeName: row.employeeName || '',
+        mainboardSn: row.mainboardSn || '',
+        remark: row.remark || '',
         groupId: row.groupId || null
       }
       this.showEditDialog = true
@@ -363,9 +399,14 @@ export default {
         const payload = {
           code: this.editForm.code,
           name: this.editForm.name,
+          initialName: this.editForm.initialName,
           type: this.editForm.type,
           model: this.editForm.model,
           ip: this.editForm.ip,
+          employeeCode: this.editForm.employeeCode,
+          employeeName: this.editForm.employeeName,
+          mainboardSn: this.editForm.mainboardSn,
+          remark: this.editForm.remark,
           groupId: this.editForm.groupId
         }
         let res

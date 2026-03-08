@@ -141,6 +141,7 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, se
 		protected.GET("/system/config", systemHandler.GetServerConfig)
 		protected.POST("/system/config", systemHandler.SetServerConfig)
 		protected.GET("/system/database/config", systemHandler.GetExternalDBConfig)
+		protected.GET("/system/database/sync-status", systemHandler.GetExternalDBSyncStatus)
 		protected.POST("/system/database/config", systemHandler.SetExternalDBConfig)
 		protected.POST("/system/database/test", systemHandler.TestExternalDBConnection)
 	}

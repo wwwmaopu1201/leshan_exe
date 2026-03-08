@@ -39,6 +39,7 @@ type ExternalDBConfig struct {
 }
 
 const externalDBConfigKey = "external_db_config"
+const externalDBLastSyncAtKey = "external_db_last_sync_at"
 
 func NewSystemHandler(db *gorm.DB, serverPort int) *SystemHandler {
 	return &SystemHandler{
@@ -477,6 +478,71 @@ func (h *SystemHandler) GetExternalDBConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": cfg,
+	})
+}
+
+// GetExternalDBSyncStatus 获取外部数据库同步状态
+func (h *SystemHandler) GetExternalDBSyncStatus(c *gin.Context) {
+	cfg, err := h.loadExternalDBConfig()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "读取数据库配置失败",
+		})
+		return
+	}
+
+	lastSyncUnix := int64(0)
+	nextSyncUnix := int64(0)
+
+	var record model.ServerConfig
+	if err := h.db.Where("key = ?", externalDBLastSyncAtKey).First(&record).Error; err == nil {
+		raw := strings.TrimSpace(record.Value)
+		if raw != "" {
+			if parsed, parseErr := time.Parse(time.RFC3339, raw); parseErr == nil {
+				lastSyncUnix = parsed.Unix()
+			} else {
+				var ts int64
+				if _, scanErr := fmt.Sscanf(raw, "%d", &ts); scanErr == nil && ts > 0 {
+					lastSyncUnix = ts
+				}
+			}
+		}
+	}
+
+	if cfg.SyncIntervalMinutes <= 0 {
+		cfg.SyncIntervalMinutes = 30
+	}
+	if lastSyncUnix > 0 {
+		nextSyncUnix = lastSyncUnix + int64(cfg.SyncIntervalMinutes*60)
+	}
+
+	status := "disabled"
+	if cfg.Enabled {
+		if cfg.DBType == "mssql" {
+			status = "mssql_not_supported"
+		} else {
+			status = "waiting_first_sync"
+			if lastSyncUnix > 0 {
+				if time.Now().Unix() >= nextSyncUnix {
+					status = "due"
+				} else {
+					status = "scheduled"
+				}
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": gin.H{
+			"enabled":             cfg.Enabled,
+			"dbType":              cfg.DBType,
+			"syncIntervalMinutes": cfg.SyncIntervalMinutes,
+			"lastSyncAt":          lastSyncUnix,
+			"nextSyncAt":          nextSyncUnix,
+			"status":              status,
+		},
 	})
 }
 

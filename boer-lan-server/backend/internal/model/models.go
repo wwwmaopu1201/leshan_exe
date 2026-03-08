@@ -49,16 +49,21 @@ type Group struct {
 // Device 设备模型
 type Device struct {
 	gorm.Model
-	Code       string    `gorm:"size:50;uniqueIndex;not null" json:"code"`
-	Name       string    `gorm:"size:100;not null" json:"name"`
-	Type       string    `gorm:"size:50" json:"type"`  // 缝纫机, 绣花机
-	ModelName  string    `gorm:"size:50" json:"model"` // BM-2000, BM-3000
-	IP         string    `gorm:"size:50" json:"ip"`
-	Status     string    `gorm:"size:20;default:offline" json:"status"` // online, offline, working, idle, alarm
-	GroupID    *uint     `gorm:"index" json:"groupId"`
-	Group      *Group    `gorm:"foreignKey:GroupID" json:"group,omitempty"`
-	SortOrder  int       `gorm:"default:0" json:"sortOrder"` // 分组内排序
-	LastOnline time.Time `json:"lastOnline"`
+	Code         string    `gorm:"size:50;uniqueIndex;not null" json:"code"`
+	Name         string    `gorm:"size:100;not null" json:"name"`
+	InitialName  string    `gorm:"size:100" json:"initialName"` // 初始名称
+	Type         string    `gorm:"size:50" json:"type"`         // 缝纫机, 绣花机
+	ModelName    string    `gorm:"size:50" json:"model"`        // BM-2000, BM-3000
+	EmployeeCode string    `gorm:"size:50" json:"employeeCode"` // 当前员工工号
+	EmployeeName string    `gorm:"size:50" json:"employeeName"` // 当前员工姓名
+	MainboardSN  string    `gorm:"size:100" json:"mainboardSn"` // 主板编号
+	Remark       string    `gorm:"size:255" json:"remark"`      // 备注
+	IP           string    `gorm:"size:50" json:"ip"`
+	Status       string    `gorm:"size:20;default:offline" json:"status"` // online, offline, working, idle, alarm
+	GroupID      *uint     `gorm:"index" json:"groupId"`
+	Group        *Group    `gorm:"foreignKey:GroupID" json:"group,omitempty"`
+	SortOrder    int       `gorm:"default:0" json:"sortOrder"` // 分组内排序
+	LastOnline   time.Time `json:"lastOnline"`
 }
 
 // Pattern 花型文件
