@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"boer-lan-server/internal/model"
 
@@ -73,7 +74,15 @@ func (h *DeviceHandler) GetDeviceList(c *gin.Context) {
 
 	// Search
 	if keyword := c.Query("keyword"); keyword != "" {
-		query = query.Where("name LIKE ? OR code LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
+		like := "%" + strings.TrimSpace(keyword) + "%"
+		query = query.Where(
+			"name LIKE ? OR code LIKE ? OR type LIKE ? OR model_name LIKE ? OR ip LIKE ?",
+			like,
+			like,
+			like,
+			like,
+			like,
+		)
 	}
 
 	// Filter by status
@@ -89,23 +98,37 @@ func (h *DeviceHandler) GetDeviceList(c *gin.Context) {
 	// Pagination
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 10
+	}
+	if pageSize > 2000 {
+		pageSize = 2000
+	}
 	offset := (page - 1) * pageSize
 
 	var total int64
 	query.Model(&model.Device{}).Count(&total)
-	query.Offset(offset).Limit(pageSize).Find(&devices)
+	query.Order("group_id IS NULL DESC").
+		Order("created_at DESC").
+		Offset(offset).
+		Limit(pageSize).
+		Find(&devices)
 
 	list := make([]gin.H, 0)
 	for _, d := range devices {
 		item := gin.H{
-			"id":     d.ID,
-			"code":   d.Code,
-			"name":   d.Name,
-			"type":   d.Type,
-			"model":  d.ModelName,
-			"ip":     d.IP,
-			"status": d.Status,
-			"groupId": d.GroupID,
+			"id":         d.ID,
+			"code":       d.Code,
+			"name":       d.Name,
+			"type":       d.Type,
+			"model":      d.ModelName,
+			"ip":         d.IP,
+			"status":     d.Status,
+			"groupId":    d.GroupID,
+			"createTime": d.CreatedAt.Format("2006-01-02 15:04:05"),
 		}
 		if d.Group != nil {
 			item["group"] = d.Group.Name
@@ -272,6 +295,15 @@ func (h *DeviceHandler) CreateDeviceGroup(c *gin.Context) {
 		return
 	}
 
+	if group.SortOrder == 0 {
+		var maxSort int
+		h.db.Model(&model.Group{}).
+			Where("parent_id IS ?", group.ParentID).
+			Select("COALESCE(MAX(sort_order), 0)").
+			Scan(&maxSort)
+		group.SortOrder = maxSort + 1
+	}
+
 	h.db.Create(&group)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -292,12 +324,23 @@ func (h *DeviceHandler) UpdateDeviceGroup(c *gin.Context) {
 		return
 	}
 
+	originalParentID := group.ParentID
+
 	if err := c.ShouldBindJSON(&group); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": "参数错误",
 		})
 		return
+	}
+
+	if group.SortOrder == 0 && (originalParentID == nil && group.ParentID != nil || originalParentID != nil && group.ParentID == nil || (originalParentID != nil && group.ParentID != nil && *originalParentID != *group.ParentID)) {
+		var maxSort int
+		h.db.Model(&model.Group{}).
+			Where("parent_id IS ?", group.ParentID).
+			Select("COALESCE(MAX(sort_order), 0)").
+			Scan(&maxSort)
+		group.SortOrder = maxSort + 1
 	}
 
 	h.db.Save(&group)
@@ -311,7 +354,58 @@ func (h *DeviceHandler) UpdateDeviceGroup(c *gin.Context) {
 
 func (h *DeviceHandler) DeleteDeviceGroup(c *gin.Context) {
 	id := c.Param("id")
-	h.db.Delete(&model.Group{}, id)
+	var group model.Group
+	if err := h.db.First(&group, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": "分组不存在",
+		})
+		return
+	}
+
+	tx := h.db.Begin()
+	if tx.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "删除分组失败",
+		})
+		return
+	}
+
+	if err := tx.Model(&model.Device{}).Where("group_id = ?", group.ID).Update("group_id", nil).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "清理设备分组失败",
+		})
+		return
+	}
+
+	if err := tx.Model(&model.Group{}).Where("parent_id = ?", group.ID).Update("parent_id", group.ParentID).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "迁移子分组失败",
+		})
+		return
+	}
+
+	if err := tx.Delete(&model.Group{}, group.ID).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "删除分组失败",
+		})
+		return
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "删除分组失败",
+		})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,

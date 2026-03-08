@@ -28,6 +28,18 @@
                 <span class="device-count">({{ data.deviceCount || 0 }})</span>
               </span>
               <span class="node-actions" v-if="!data.isRoot">
+                <el-button type="text" size="mini" @click.stop="handleAddSibling(data)" title="新增平级组">
+                  <i class="el-icon-plus"></i>
+                </el-button>
+                <el-button type="text" size="mini" @click.stop="handleAddChild(data)" title="新增子组">
+                  <i class="el-icon-circle-plus-outline"></i>
+                </el-button>
+                <el-button type="text" size="mini" @click.stop="handleMoveGroup(data, 'up')" title="上移">
+                  <i class="el-icon-top"></i>
+                </el-button>
+                <el-button type="text" size="mini" @click.stop="handleMoveGroup(data, 'down')" title="下移">
+                  <i class="el-icon-bottom"></i>
+                </el-button>
                 <el-button type="text" size="mini" @click.stop="handleEditGroup(data)">
                   <i class="el-icon-edit"></i>
                 </el-button>
@@ -56,9 +68,21 @@
 
             <div class="mt-20">
               <h4>分组设备列表</h4>
-              <el-table :data="groupDevices" border class="mt-10" v-loading="loadingDevices">
+              <el-table
+                :data="groupDevices"
+                border
+                class="mt-10"
+                v-loading="loadingDevices"
+                :row-class-name="getDeviceRowClass"
+              >
                 <el-table-column prop="code" label="设备编码" width="120" />
                 <el-table-column prop="name" label="设备名称" />
+                <el-table-column prop="group" label="所属分组" width="120">
+                  <template slot-scope="scope">
+                    <span v-if="scope.row.group">{{ scope.row.group }}</span>
+                    <el-tag v-else size="mini" type="danger">未分组</el-tag>
+                  </template>
+                </el-table-column>
                 <el-table-column prop="ip" label="IP地址" width="140" />
                 <el-table-column prop="status" label="状态" width="100">
                   <template slot-scope="scope">
@@ -89,7 +113,7 @@
     </el-row>
 
     <el-dialog
-      :title="groupForm.id ? '编辑分组' : '新增分组'"
+      :title="groupDialogTitle"
       :visible.sync="showGroupDialog"
       width="400px"
       @close="resetGroupForm"
@@ -144,6 +168,7 @@ export default {
       selectedGroup: null,
       groupDevices: [],
       showGroupDialog: false,
+      groupDialogMode: 'addRoot',
       groupForm: {
         id: null,
         name: '',
@@ -155,6 +180,15 @@ export default {
     }
   },
   computed: {
+    groupDialogTitle() {
+      const titleMap = {
+        addRoot: '新增分组',
+        addSibling: '新增平级组',
+        addChild: '新增子组',
+        edit: '编辑分组'
+      }
+      return titleMap[this.groupDialogMode] || '新增分组'
+    },
     parentOptions() {
       const currentId = this.groupForm.id
       if (!currentId) {
@@ -296,6 +330,22 @@ export default {
       const ids = [this.selectedGroup.id, ...this.getDescendantGroupIdsById(this.selectedGroup.id)]
       return new Set(ids)
     },
+    sortDevicesForDisplay(devices) {
+      return [...devices].sort((a, b) => {
+        const aUngrouped = !(a.groupId && Number(a.groupId) > 0)
+        const bUngrouped = !(b.groupId && Number(b.groupId) > 0)
+        if (aUngrouped !== bUngrouped) {
+          return aUngrouped ? -1 : 1
+        }
+        return String(a.code || '').localeCompare(String(b.code || ''))
+      })
+    },
+    getDeviceRowClass({ row }) {
+      if (!(row.groupId && Number(row.groupId) > 0)) {
+        return 'row-ungrouped'
+      }
+      return ''
+    },
     syncGroupDevices() {
       if (!this.selectedGroup) {
         this.groupDevices = []
@@ -303,12 +353,13 @@ export default {
       }
 
       if (this.selectedGroup.id === 'all') {
-        this.groupDevices = [...this.allDevices]
+        this.groupDevices = this.sortDevicesForDisplay(this.allDevices)
         return
       }
 
       const groupIdSet = this.getCurrentGroupIdSet()
-      this.groupDevices = this.allDevices.filter(device => groupIdSet.has(Number(device.groupId || 0)))
+      const devices = this.allDevices.filter(device => groupIdSet.has(Number(device.groupId || 0)))
+      this.groupDevices = this.sortDevicesForDisplay(devices)
     },
     handleNodeClick(data) {
       this.selectedGroup = data
@@ -325,16 +376,77 @@ export default {
       return map[status] || 'info'
     },
     handleAddGroup() {
+      this.groupDialogMode = 'addRoot'
       this.groupForm = { id: null, name: '', parentId: null }
       this.showGroupDialog = true
     },
+    handleAddSibling(data) {
+      this.groupDialogMode = 'addSibling'
+      this.groupForm = {
+        id: null,
+        name: '',
+        parentId: data.parentId || null
+      }
+      this.showGroupDialog = true
+    },
+    handleAddChild(data) {
+      this.groupDialogMode = 'addChild'
+      this.groupForm = {
+        id: null,
+        name: '',
+        parentId: data.id
+      }
+      this.showGroupDialog = true
+    },
     handleEditGroup(data) {
+      this.groupDialogMode = 'edit'
       this.groupForm = {
         id: data.id,
         name: data.label,
         parentId: data.parentId || null
       }
       this.showGroupDialog = true
+    },
+    async handleMoveGroup(data, direction) {
+      const siblings = this.flatGroups
+        .filter(group => Number(group.parentId || 0) === Number(data.parentId || 0))
+        .sort((a, b) => (a.sortOrder - b.sortOrder) || (a.id - b.id))
+
+      const currentIndex = siblings.findIndex(group => group.id === data.id)
+      if (currentIndex === -1) return
+
+      const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
+      if (targetIndex < 0 || targetIndex >= siblings.length) {
+        this.$message.warning(direction === 'up' ? '已经是第一个分组' : '已经是最后一个分组')
+        return
+      }
+
+      const current = siblings[currentIndex]
+      const target = siblings[targetIndex]
+      try {
+        const [resA, resB] = await Promise.all([
+          updateDeviceGroup(current.id, {
+            name: current.name,
+            parentId: current.parentId || null,
+            sortOrder: target.sortOrder || 0
+          }),
+          updateDeviceGroup(target.id, {
+            name: target.name,
+            parentId: target.parentId || null,
+            sortOrder: current.sortOrder || 0
+          })
+        ])
+
+        if (resA.code === 0 && resB.code === 0) {
+          this.$message.success('分组顺序已更新')
+          await this.fetchAll()
+        } else {
+          this.$message.error('更新分组顺序失败')
+        }
+      } catch (error) {
+        console.error('Move group failed:', error)
+        this.$message.error('更新分组顺序失败')
+      }
     },
     handleDeleteGroup(data) {
       this.$confirm(`确定要删除分组"${data.label}"吗？`, '警告', {
@@ -387,6 +499,7 @@ export default {
     },
     resetGroupForm() {
       this.$refs.groupFormRef?.resetFields()
+      this.groupDialogMode = 'addRoot'
     },
     async handleRemoveDevice(row) {
       this.$confirm(`确定要将设备"${row.name}"从当前分组移除吗？`, '提示', {
@@ -456,5 +569,9 @@ export default {
 
 .mt-20 {
   margin-top: 20px;
+}
+
+::v-deep .el-table .row-ungrouped > td {
+  background: #fff1f0;
 }
 </style>

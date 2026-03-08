@@ -76,6 +76,7 @@
         v-loading="loading"
         :data="tableData"
         border
+        :row-class-name="getRowClassName"
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" width="50" align="center" />
@@ -84,9 +85,15 @@
         <el-table-column prop="type" :label="$t('device.deviceType')" width="100" />
         <el-table-column prop="model" :label="$t('device.deviceModel')" width="100" />
         <el-table-column prop="ip" :label="$t('device.ipAddress')" width="140" />
-        <el-table-column prop="group" :label="$t('device.group')" width="100" />
+        <el-table-column prop="group" :label="$t('device.group')" width="120">
+          <template slot-scope="scope">
+            <span v-if="scope.row.group">{{ scope.row.group }}</span>
+            <span v-else class="ungrouped-text">未分组</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="status" :label="$t('device.deviceStatus')" width="100" align="center">
           <template slot-scope="scope">
+            <span class="status-dot" :class="'status-' + scope.row.status"></span>
             <el-tag :type="getStatusType(scope.row.status)" size="small">
               {{ getStatusText(scope.row.status) }}
             </el-tag>
@@ -175,6 +182,7 @@
       <el-form label-width="80px">
         <el-form-item :label="$t('device.group')">
           <el-select v-model="moveTargetGroupId" style="width: 100%" clearable>
+            <el-option label="未分组（移出分组）" :value="null" />
             <el-option
               v-for="group in groupOptions"
               :key="group.id"
@@ -228,8 +236,7 @@ export default {
         name: [{ required: true, message: '请输入设备名称', trigger: 'blur' }],
         type: [{ required: true, message: '请选择设备类型', trigger: 'change' }],
         model: [{ required: true, message: '请选择设备型号', trigger: 'change' }],
-        ip: [{ required: true, message: '请输入IP地址', trigger: 'blur' }],
-        groupId: [{ required: true, message: '请选择分组', trigger: 'change' }]
+        ip: [{ required: true, message: '请输入IP地址', trigger: 'blur' }]
       },
       showMoveDialog: false,
       moveTargetGroupId: null
@@ -309,6 +316,12 @@ export default {
         alarm: this.$t('device.alarm')
       }
       return map[status] || status
+    },
+    getRowClassName({ row }) {
+      if (!row.groupId) {
+        return 'row-ungrouped'
+      }
+      return ''
     },
     handleAdd() {
       this.editForm = {
@@ -415,15 +428,12 @@ export default {
       }).catch(() => {})
     },
     async handleMoveToGroup() {
-      if (!this.moveTargetGroupId) {
-        this.$message.warning('请选择目标分组')
-        return
-      }
       try {
+        const isUngroup = this.moveTargetGroupId === null || this.moveTargetGroupId === undefined || this.moveTargetGroupId === ''
         const deviceIds = this.selectedRows.map(r => r.id)
-        const res = await moveToGroup(deviceIds, this.moveTargetGroupId)
+        const res = await moveToGroup(deviceIds, isUngroup ? null : this.moveTargetGroupId)
         if (res.code === 0) {
-          this.$message.success(this.$t('common.success'))
+          this.$message.success(isUngroup ? '已移出分组' : this.$t('common.success'))
           this.showMoveDialog = false
           this.moveTargetGroupId = null
           this.fetchData()
@@ -442,5 +452,42 @@ export default {
 <style lang="scss" scoped>
 .danger-text {
   color: #F56C6C !important;
+}
+
+.ungrouped-text {
+  color: #F56C6C;
+  font-weight: 600;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+
+  &.status-idle {
+    background: #67C23A;
+  }
+
+  &.status-working {
+    background: #F56C6C;
+  }
+
+  &.status-online {
+    background: #409EFF;
+  }
+
+  &.status-offline {
+    background: #909399;
+  }
+
+  &.status-alarm {
+    background: #E6A23C;
+  }
+}
+
+::v-deep .el-table .row-ungrouped > td {
+  background: #fff1f0;
 }
 </style>
