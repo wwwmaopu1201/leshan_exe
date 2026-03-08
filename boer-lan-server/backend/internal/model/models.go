@@ -14,12 +14,21 @@ type User struct {
 	Nickname    string `gorm:"size:50" json:"nickname"`
 	Email       string `gorm:"size:100" json:"email"`
 	Phone       string `gorm:"size:20" json:"phone"`
-	Role        string `gorm:"size:20;default:user" json:"role"` // admin, user
+	Role        string `gorm:"size:50;default:user" json:"role"` // 角色名称
 	Avatar      string `gorm:"size:255" json:"avatar"`
 	Disabled    bool   `gorm:"default:false" json:"disabled"` // 是否禁用
 	Permissions string `gorm:"type:text" json:"permissions"`  // JSON格式的权限设置
 	GroupID     *uint  `gorm:"index" json:"groupId"`          // 所属分组
 	Group       *Group `gorm:"foreignKey:GroupID" json:"group,omitempty"`
+}
+
+// Role 权限角色模型（服务器端客户端账号管理）
+type Role struct {
+	gorm.Model
+	Name            string `gorm:"size:50;uniqueIndex;not null" json:"name"`
+	Remark          string `gorm:"size:255" json:"remark"`
+	Permissions     string `gorm:"type:text;not null" json:"permissions"` // JSON格式
+	ParentChildLink bool   `gorm:"default:true" json:"parentChildLink"`   // 父子联动勾选
 }
 
 // Operator 操作员模型（用于登录模板机）

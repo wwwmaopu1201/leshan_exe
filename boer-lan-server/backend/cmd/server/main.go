@@ -160,6 +160,7 @@ func initDB() {
 	// Auto migrate
 	if err := db.AutoMigrate(
 		&model.Group{},
+		&model.Role{},
 		&model.User{},
 		&model.Operator{},
 		&model.Device{},
@@ -186,6 +187,23 @@ func initDB() {
 }
 
 func initDefaultData(db *gorm.DB) {
+	// 创建默认权限角色
+	defaultPermissions := `{"home":true,"dashboard":true,"deviceManagement":true,"fileManagement":true,"statistics":true,"employeeManagement":true,"remoteMonitoring":true}`
+	ensureDefaultRole := func(name string, remark string) {
+		var count int64
+		db.Model(&model.Role{}).Where("name = ?", name).Count(&count)
+		if count == 0 {
+			db.Create(&model.Role{
+				Name:            name,
+				Remark:          remark,
+				Permissions:     defaultPermissions,
+				ParentChildLink: true,
+			})
+		}
+	}
+	ensureDefaultRole("admin", "系统默认管理员角色")
+	ensureDefaultRole("user", "系统默认普通角色")
+
 	// 创建默认分组
 	var groupCount int64
 	db.Model(&model.Group{}).Count(&groupCount)
@@ -211,13 +229,19 @@ func initDefaultData(db *gorm.DB) {
 		var firstGroup model.Group
 		db.First(&firstGroup)
 
+		adminPermissions := `{"home":true,"dashboard":true,"deviceManagement":true,"fileManagement":true,"statistics":true,"employeeManagement":true,"remoteMonitoring":true}`
+		var adminRole model.Role
+		if err := db.Where("name = ?", "admin").First(&adminRole).Error; err == nil {
+			adminPermissions = adminRole.Permissions
+		}
+
 		db.Create(&model.User{
 			Username:    "admin",
 			Password:    hashedPassword,
 			Nickname:    "管理员",
 			Role:        "admin",
 			GroupID:     &firstGroup.ID,
-			Permissions: `{"fileManagement":true,"remoteMonitoring":true,"statistics":true,"deviceManagement":true}`,
+			Permissions: adminPermissions,
 		})
 		log.Println("Default admin user created (admin/admin123)")
 	}

@@ -23,8 +23,12 @@
         </el-form-item>
         <el-form-item label="角色">
           <el-select v-model="searchForm.role" clearable placeholder="全部角色">
-            <el-option label="管理员" value="admin" />
-            <el-option label="普通用户" value="user" />
+            <el-option
+              v-for="item in roles"
+              :key="item.id || item.ID"
+              :label="item.name"
+              :value="item.name"
+            />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -101,9 +105,13 @@
         </el-form-item>
 
         <el-form-item label="角色" prop="role">
-          <el-select v-model="form.role" style="width: 100%;">
-            <el-option label="管理员" value="admin" />
-            <el-option label="普通用户" value="user" />
+          <el-select v-model="form.role" style="width: 100%;" @change="handleRoleChange">
+            <el-option
+              v-for="item in roles"
+              :key="item.id || item.ID"
+              :label="item.name"
+              :value="item.name"
+            />
           </el-select>
         </el-form-item>
 
@@ -134,16 +142,18 @@
           />
         </el-form-item>
 
-        <el-form-item label="功能权限">
-          <el-checkbox-group v-model="form.permissionKeys">
-            <el-checkbox
-              v-for="item in permissionOptions"
+        <el-form-item label="角色权限">
+          <div v-if="getRolePermissionTags(form.role).length">
+            <el-tag
+              v-for="item in getRolePermissionTags(form.role)"
               :key="item.key"
-              :label="item.key"
+              size="mini"
+              style="margin-right: 4px; margin-bottom: 4px;"
             >
               {{ item.label }}
-            </el-checkbox>
-          </el-checkbox-group>
+            </el-tag>
+          </div>
+          <div v-else style="color: #909399;">当前角色未配置权限</div>
         </el-form-item>
       </el-form>
 
@@ -156,7 +166,7 @@
 </template>
 
 <script>
-const DEFAULT_PERMISSION_KEYS = ['fileManagement', 'remoteMonitoring', 'statistics', 'deviceManagement']
+const DEFAULT_PERMISSION_KEYS = ['home', 'dashboard', 'deviceManagement', 'remoteMonitoring', 'fileManagement', 'statistics', 'employeeManagement']
 
 export default {
   name: 'Users',
@@ -166,6 +176,7 @@ export default {
       saving: false,
       users: [],
       groups: [],
+      roles: [],
       searchForm: {
         keyword: '',
         dateRange: [],
@@ -173,17 +184,20 @@ export default {
       },
       dialogVisible: false,
       permissionOptions: [
+        { key: 'home', label: '首页' },
+        { key: 'dashboard', label: '数据看板' },
+        { key: 'employeeManagement', label: '员工管理' },
+        { key: 'deviceManagement', label: '设备管理' },
         { key: 'fileManagement', label: '文件管理' },
         { key: 'remoteMonitoring', label: '远程监控' },
-        { key: 'statistics', label: '数据统计' },
-        { key: 'deviceManagement', label: '设备管理' }
+        { key: 'statistics', label: '数据统计' }
       ],
       form: {
         id: null,
         username: '',
         password: '',
         nickname: '',
-        role: 'user',
+        role: '',
         email: '',
         phone: '',
         groupId: null,
@@ -223,9 +237,10 @@ export default {
           endDate: this.searchForm.dateRange?.[1],
           role: this.searchForm.role
         }
-        const [usersRes, groupsRes] = await Promise.all([
+        const [usersRes, groupsRes, rolesRes] = await Promise.all([
           this.$axios.get('/user/all', { params }),
-          this.$axios.get('/group/list')
+          this.$axios.get('/group/list'),
+          this.$axios.get('/role/list')
         ])
         if (usersRes.code === 0) {
           this.users = (Array.isArray(usersRes.data) ? usersRes.data : []).map(item => ({
@@ -236,6 +251,13 @@ export default {
         }
         if (groupsRes.code === 0) {
           this.groups = Array.isArray(groupsRes.data) ? groupsRes.data : []
+        }
+        if (rolesRes.code === 0) {
+          this.roles = Array.isArray(rolesRes.data) ? rolesRes.data : []
+          if (!this.form.id && !this.form.role && this.roles.length > 0) {
+            const defaultRole = this.roles.find(item => item.name === 'user') || this.roles[0]
+            this.form.role = defaultRole.name
+          }
         }
       } catch (error) {
         console.error('加载用户数据失败', error)
@@ -255,24 +277,31 @@ export default {
       this.loadData()
     },
     parsePermissions(raw) {
+      const defaultMap = this.permissionOptions.reduce((acc, item) => {
+        acc[item.key] = true
+        return acc
+      }, {})
       if (!raw) {
-        return {
-          fileManagement: true,
-          remoteMonitoring: true,
-          statistics: true,
-          deviceManagement: true
-        }
+        return defaultMap
+      }
+      if (Array.isArray(raw)) {
+        return raw.reduce((acc, key) => {
+          acc[key] = true
+          return acc
+        }, {})
       }
       if (typeof raw === 'object') return raw
       try {
-        return JSON.parse(raw)
-      } catch {
-        return {
-          fileManagement: true,
-          remoteMonitoring: true,
-          statistics: true,
-          deviceManagement: true
+        const parsed = JSON.parse(raw)
+        if (Array.isArray(parsed)) {
+          return parsed.reduce((acc, key) => {
+            acc[key] = true
+            return acc
+          }, {})
         }
+        return parsed
+      } catch {
+        return defaultMap
       }
     },
     toPermissionKeys(raw) {
@@ -280,12 +309,10 @@ export default {
       return Object.keys(permissions).filter(key => permissions[key])
     },
     buildPermissionJSON(keys) {
-      const permissionMap = {
-        fileManagement: false,
-        remoteMonitoring: false,
-        statistics: false,
-        deviceManagement: false
-      }
+      const permissionMap = this.permissionOptions.reduce((acc, item) => {
+        acc[item.key] = false
+        return acc
+      }, {})
       keys.forEach(key => {
         if (Object.prototype.hasOwnProperty.call(permissionMap, key)) {
           permissionMap[key] = true
@@ -297,6 +324,22 @@ export default {
       const permissions = this.parsePermissions(raw)
       return this.permissionOptions.filter(item => permissions[item.key])
     },
+    getRoleByName(roleName) {
+      return this.roles.find(item => item.name === roleName)
+    },
+    getRolePermissionTags(roleName) {
+      const role = this.getRoleByName(roleName)
+      if (!role) return []
+      return this.getPermissionTags(role.permissions)
+    },
+    applyRolePermissions(roleName) {
+      const role = this.getRoleByName(roleName)
+      if (!role) return
+      this.form.permissionKeys = this.toPermissionKeys(role.permissions)
+    },
+    handleRoleChange(value) {
+      this.applyRolePermissions(value)
+    },
     formatGroupName(user) {
       if (!user.group) return '-'
       if (user.group.parent) {
@@ -305,18 +348,22 @@ export default {
       return user.group.name
     },
     openCreateDialog() {
+      const defaultRole = this.roles.find(item => item.name === 'user') || this.roles[0]
       this.dialogVisible = true
       this.form = {
         id: null,
         username: '',
         password: '',
         nickname: '',
-        role: 'user',
+        role: defaultRole ? defaultRole.name : '',
         email: '',
         phone: '',
         groupId: null,
         disabled: false,
         permissionKeys: [...DEFAULT_PERMISSION_KEYS]
+      }
+      if (this.form.role) {
+        this.applyRolePermissions(this.form.role)
       }
     },
     openEditDialog(row) {
@@ -332,6 +379,9 @@ export default {
         groupId: row.groupId || null,
         disabled: !!row.disabled,
         permissionKeys: this.toPermissionKeys(row.permissions)
+      }
+      if (this.form.role) {
+        this.applyRolePermissions(this.form.role)
       }
     },
     resetForm() {
@@ -350,7 +400,7 @@ export default {
           phone: this.form.phone,
           groupId: this.form.groupId,
           disabled: this.form.disabled,
-          permissions: this.buildPermissionJSON(this.form.permissionKeys)
+          permissions: this.getRoleByName(this.form.role)?.permissions || this.buildPermissionJSON(this.form.permissionKeys)
         }
 
         if (this.form.id) {

@@ -8,7 +8,7 @@
         </div>
         <div class="info-section">
           <h2>{{ userInfo.nickname }}</h2>
-          <p class="role">{{ userInfo.role === 'admin' ? '管理员' : '普通用户' }}</p>
+          <p class="role">{{ formatRoleLabel(userInfo.role) }}</p>
           <p class="join-time">加入时间: {{ userInfo.createTime }}</p>
         </div>
       </div>
@@ -87,7 +87,7 @@ export default {
       },
       userInfo: {
         nickname: '管理员',
-        role: 'admin',
+        role: '',
         createTime: '2024-01-01 10:00:00'
       },
       loginLogs: [],
@@ -105,12 +105,18 @@ export default {
       this.form.phone = this.user.phone || ''
       this.form.department = this.user.department || ''
       this.userInfo.nickname = this.user.nickname || '管理员'
-      this.userInfo.role = this.user.role || 'admin'
+      this.userInfo.role = this.user.role || ''
       this.userInfo.createTime = this.user.createTime || ''
     }
     this.fetchLoginLogs()
   },
   methods: {
+    formatRoleLabel(roleName) {
+      if (!roleName) return '-'
+      if (roleName === 'admin') return '管理员'
+      if (roleName === 'user') return '普通用户'
+      return roleName
+    },
     async fetchLoginLogs() {
       try {
         const res = await getLoginLogs()

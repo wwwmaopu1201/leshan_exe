@@ -166,10 +166,19 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 	if req.Role == "" {
 		req.Role = "user"
 	}
+	if err := ensureRoleExistsByName(h.db, req.Role); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "角色不存在，请先在权限角色中创建"})
+		return
+	}
 
-	// 默认权限
+	// 默认权限：优先使用角色配置
 	if req.Permissions == "" {
-		req.Permissions = `{"fileManagement":true,"remoteMonitoring":true,"statistics":true,"deviceManagement":true}`
+		var role model.Role
+		if err := h.db.Where("name = ?", req.Role).First(&role).Error; err == nil {
+			req.Permissions = role.Permissions
+		} else {
+			req.Permissions = defaultRolePermissionsJSON()
+		}
 	}
 
 	user := model.User{
@@ -265,7 +274,20 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	}
 
 	if req.Role != nil {
-		updates["role"] = strings.TrimSpace(*req.Role)
+		roleName := strings.TrimSpace(*req.Role)
+		if err := ensureRoleExistsByName(h.db, roleName); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "角色不存在，请先在权限角色中创建"})
+			return
+		}
+		updates["role"] = roleName
+
+		// 如果仅切换角色，未显式传权限，则同步到角色默认权限
+		if req.Permissions == nil {
+			var role model.Role
+			if err := h.db.Where("name = ?", roleName).First(&role).Error; err == nil {
+				updates["permissions"] = role.Permissions
+			}
+		}
 	}
 
 	if len(req.GroupID) > 0 {

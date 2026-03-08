@@ -14,6 +14,7 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, se
 	groupHandler := NewGroupHandler(db)
 	userHandler := NewUserHandler(db)
 	operatorHandler := NewOperatorHandler(db)
+	roleHandler := NewRoleHandler(db)
 	systemHandler := NewSystemHandler(db, serverPort)
 
 	// Auth routes (public)
@@ -106,6 +107,12 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, se
 		protected.PUT("/group/:id", groupHandler.UpdateGroup)
 		protected.DELETE("/group/:id", groupHandler.DeleteGroup)
 		protected.POST("/group/sort", groupHandler.SortGroups)
+
+		// User Management
+		protected.GET("/role/list", roleHandler.GetRoleList)
+		protected.POST("/role", roleHandler.CreateRole)
+		protected.PUT("/role/:id", roleHandler.UpdateRole)
+		protected.DELETE("/role/:id", roleHandler.DeleteRole)
 
 		// User Management
 		protected.GET("/user/list", userHandler.GetUserList)
