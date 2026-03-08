@@ -2,6 +2,31 @@
   <div>
     <div class="page-title">操作员管理</div>
     <el-card>
+      <el-form :inline="true" :model="searchForm" style="margin-bottom: 12px;">
+        <el-form-item label="账号/昵称">
+          <el-input
+            v-model="searchForm.keyword"
+            clearable
+            placeholder="输入账号或昵称"
+            @keyup.enter.native="handleSearch"
+          />
+        </el-form-item>
+        <el-form-item label="创建时间">
+          <el-date-picker
+            v-model="searchForm.dateRange"
+            type="daterange"
+            value-format="yyyy-MM-dd"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+          />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" icon="el-icon-search" @click="handleSearch">搜索</el-button>
+          <el-button icon="el-icon-refresh" @click="handleReset">重置</el-button>
+        </el-form-item>
+      </el-form>
+
       <div style="margin-bottom: 16px; display: flex; gap: 8px;">
         <el-button type="primary" icon="el-icon-plus" @click="openCreateDialog">新建操作员</el-button>
         <el-button icon="el-icon-upload2" @click="importDialogVisible = true">批量导入</el-button>
@@ -12,6 +37,7 @@
       <el-table :data="operators" v-loading="loading" style="width: 100%;">
         <el-table-column prop="username" label="用户名" min-width="140" />
         <el-table-column prop="nickname" label="昵称" min-width="130" />
+        <el-table-column prop="createTime" label="创建时间" width="170" />
         <el-table-column label="所属分组" min-width="180">
           <template slot-scope="{ row }">
             {{ formatGroupName(row) }}
@@ -115,6 +141,10 @@ export default {
       importing: false,
       operators: [],
       groups: [],
+      searchForm: {
+        keyword: '',
+        dateRange: []
+      },
       dialogVisible: false,
       importDialogVisible: false,
       importText: '',
@@ -127,8 +157,15 @@ export default {
         disabled: false
       },
       rules: {
-        username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-        password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
+        username: [
+          { required: true, message: '请输入用户名', trigger: 'blur' },
+          { pattern: /^[a-zA-Z0-9_]+$/, message: '账号仅支持字母数字下划线', trigger: 'blur' },
+          { max: 11, message: '账号不能超过11位', trigger: 'blur' }
+        ],
+        password: [
+          { required: true, message: '请输入密码', trigger: 'blur' },
+          { min: 6, max: 32, message: '密码长度需在6-32位', trigger: 'blur' }
+        ],
         nickname: [{ required: true, message: '请输入昵称', trigger: 'blur' }]
       }
     }
@@ -140,14 +177,20 @@ export default {
     async loadData() {
       this.loading = true
       try {
+        const params = {
+          keyword: this.searchForm.keyword,
+          startDate: this.searchForm.dateRange?.[0],
+          endDate: this.searchForm.dateRange?.[1]
+        }
         const [operatorsRes, groupsRes] = await Promise.all([
-          this.$axios.get('/operator/all'),
+          this.$axios.get('/operator/all', { params }),
           this.$axios.get('/group/list')
         ])
         if (operatorsRes.code === 0) {
           this.operators = (Array.isArray(operatorsRes.data) ? operatorsRes.data : []).map(item => ({
             ...item,
-            id: item.id || item.ID
+            id: item.id || item.ID,
+            createTime: item.createTime || item.createdAt || item.CreatedAt || ''
           }))
         }
         if (groupsRes.code === 0) {
@@ -158,6 +201,16 @@ export default {
       } finally {
         this.loading = false
       }
+    },
+    handleSearch() {
+      this.loadData()
+    },
+    handleReset() {
+      this.searchForm = {
+        keyword: '',
+        dateRange: []
+      }
+      this.loadData()
     },
     formatGroupName(row) {
       if (!row.group) return '-'
@@ -295,16 +348,23 @@ export default {
     },
     async exportOperators() {
       try {
-        const res = await this.$axios.get('/operator/export')
+        const res = await this.$axios.get('/operator/export', {
+          params: {
+            keyword: this.searchForm.keyword,
+            startDate: this.searchForm.dateRange?.[0],
+            endDate: this.searchForm.dateRange?.[1]
+          }
+        })
         if (res.code !== 0) return
 
-        const headers = ['用户名', '昵称', '状态', '分组ID', '分组名称']
+        const headers = ['用户名', '昵称', '状态', '分组ID', '分组名称', '创建时间']
         const rows = (Array.isArray(res.data) ? res.data : []).map(item => ([
           item.username || '',
           item.nickname || '',
           item.disabled ? '限制登录' : '正常',
           item.groupId || '',
-          item.groupName || ''
+          item.groupName || '',
+          item.createTime || ''
         ]))
         const csv = [headers, ...rows]
           .map(row => row.map(col => `"${String(col).replace(/"/g, '""')}"`).join(','))

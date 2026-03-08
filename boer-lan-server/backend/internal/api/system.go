@@ -2,12 +2,14 @@ package api
 
 import (
 	"boer-lan-server/internal/model"
+	"boer-lan-server/internal/service"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
@@ -17,6 +19,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/mysql"
+	"gorm.io/driver/sqlserver"
 	"gorm.io/gorm"
 )
 
@@ -519,16 +522,12 @@ func (h *SystemHandler) GetExternalDBSyncStatus(c *gin.Context) {
 
 	status := "disabled"
 	if cfg.Enabled {
-		if cfg.DBType == "mssql" {
-			status = "mssql_not_supported"
-		} else {
-			status = "waiting_first_sync"
-			if lastSyncUnix > 0 {
-				if time.Now().Unix() >= nextSyncUnix {
-					status = "due"
-				} else {
-					status = "scheduled"
-				}
+		status = "waiting_first_sync"
+		if lastSyncUnix > 0 {
+			if time.Now().Unix() >= nextSyncUnix {
+				status = "due"
+			} else {
+				status = "scheduled"
 			}
 		}
 	}
@@ -544,6 +543,18 @@ func (h *SystemHandler) GetExternalDBSyncStatus(c *gin.Context) {
 			"status":              status,
 		},
 	})
+}
+
+func buildMSSQLDSN(cfg ExternalDBConfig) string {
+	u := &url.URL{
+		Scheme: "sqlserver",
+		User:   url.UserPassword(cfg.Username, cfg.Password),
+		Host:   fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
+	}
+	q := url.Values{}
+	q.Set("database", cfg.Database)
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 // SetExternalDBConfig 设置外部数据库配置
@@ -579,6 +590,22 @@ func (h *SystemHandler) SetExternalDBConfig(c *gin.Context) {
 		"code":    0,
 		"message": "配置已保存",
 		"data":    req,
+	})
+}
+
+// SyncExternalDBNow 手动触发一次外部数据库同步
+func (h *SystemHandler) SyncExternalDBNow(c *gin.Context) {
+	if err := service.RunExternalDBSyncOnce(h.db); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    1,
+			"message": "同步失败: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "同步任务已执行",
 	})
 }
 
@@ -661,23 +688,49 @@ func (h *SystemHandler) TestExternalDBConnection(c *gin.Context) {
 		return
 
 	case "mssql":
-		address := net.JoinHostPort(req.Host, strconv.Itoa(req.Port))
-		conn, err := net.DialTimeout("tcp", address, 5*time.Second)
+		dsn := buildMSSQLDSN(req)
+		db, err := gorm.Open(sqlserver.Open(dsn), &gorm.Config{})
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"code":    1,
-				"message": "MSSQL网络连接失败: " + err.Error(),
+				"message": "MSSQL连接失败: " + err.Error(),
 				"data": gin.H{
 					"success": false,
 				},
 			})
 			return
 		}
-		_ = conn.Close()
+
+		sqlDB, err := db.DB()
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    1,
+				"message": "获取MSSQL连接失败: " + err.Error(),
+				"data": gin.H{
+					"success": false,
+				},
+			})
+			return
+		}
+		defer sqlDB.Close()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := sqlDB.PingContext(ctx); err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    1,
+				"message": "MSSQL连通性验证失败: " + err.Error(),
+				"data": gin.H{
+					"success": false,
+				},
+			})
+			return
+		}
 
 		c.JSON(http.StatusOK, gin.H{
 			"code":    0,
-			"message": "MSSQL端口连通，当前版本已完成网络检测",
+			"message": "MSSQL连接成功",
 			"data": gin.H{
 				"success": true,
 			},

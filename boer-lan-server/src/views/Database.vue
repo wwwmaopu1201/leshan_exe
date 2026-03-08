@@ -15,7 +15,7 @@
         <el-card>
           <div slot="header"><span>连接说明</span></div>
           <p>1. 连接外部数据库为可选功能，不连接时系统仍可使用本地数据。</p>
-          <p>2. 当前支持 MySQL 完整连接测试；MSSQL 提供网络连通性检测。</p>
+          <p>2. 当前支持 MySQL、MSSQL 完整连接测试。</p>
           <p>3. 可配置同步间隔（分钟）用于后续数据同步策略。</p>
           <p>4. 最后更新时间：{{ formatTimestamp(form.updatedAt) }}</p>
           <p>5. 最近同步时间：{{ formatTimestamp(syncStatus.lastSyncAt) }}</p>
@@ -31,6 +31,7 @@
         <div>
           <el-button icon="el-icon-refresh" @click="loadConfig">重新加载</el-button>
           <el-button type="warning" :loading="testing" @click="testConnection">测试连接</el-button>
+          <el-button type="success" :loading="syncing" @click="syncNow">立即同步</el-button>
           <el-button type="primary" :loading="saving" @click="saveConfig">保存配置</el-button>
         </div>
       </div>
@@ -90,6 +91,7 @@ export default {
     return {
       saving: false,
       testing: false,
+      syncing: false,
       serverInfo: {
         ips: [],
         port: 8088,
@@ -185,8 +187,7 @@ export default {
         disabled: '未启用',
         waiting_first_sync: '等待首次同步',
         scheduled: '已调度',
-        due: '待执行',
-        mssql_not_supported: '当前版本未启用MSSQL自动同步'
+        due: '待执行'
       }
       return map[status] || status || '-'
     },
@@ -230,6 +231,22 @@ export default {
         console.error('保存数据库配置失败', error)
       } finally {
         this.saving = false
+      }
+    },
+    async syncNow() {
+      try {
+        this.syncing = true
+        const res = await this.$axios.post('/system/database/sync-now')
+        if (res.code === 0) {
+          this.$message.success(res.message || '同步成功')
+          this.loadSyncStatus()
+        } else {
+          this.$message.error(res.message || '同步失败')
+        }
+      } catch (error) {
+        console.error('手动同步失败', error)
+      } finally {
+        this.syncing = false
       }
     }
   }

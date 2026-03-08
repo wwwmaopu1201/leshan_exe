@@ -3,6 +3,7 @@ package api
 import (
 	"boer-lan-server/internal/model"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -18,12 +19,21 @@ func NewEmployeeHandler(db *gorm.DB) *EmployeeHandler {
 	return &EmployeeHandler{db: db}
 }
 
+func isValidEmployeePhone(phone string) bool {
+	if phone == "" {
+		return true
+	}
+	matched, _ := regexp.MatchString(`^1[3-9]\d{9}$`, phone)
+	return matched
+}
+
 func (h *EmployeeHandler) GetEmployeeList(c *gin.Context) {
 	var employees []model.Employee
 	query := h.db.Model(&model.Employee{})
 
 	if keyword := c.Query("keyword"); keyword != "" {
-		query = query.Where("name LIKE ? OR code LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
+		like := "%" + strings.TrimSpace(keyword) + "%"
+		query = query.Where("name LIKE ? OR code LIKE ? OR phone LIKE ? OR remark LIKE ?", like, like, like, like)
 	}
 
 	if department := c.Query("department"); department != "" {
@@ -47,6 +57,7 @@ func (h *EmployeeHandler) GetEmployeeList(c *gin.Context) {
 			"department": e.Department,
 			"position":   e.Position,
 			"phone":      e.Phone,
+			"remark":     e.Remark,
 			"createTime": e.CreatedAt.Format("2006-01-02 15:04:05"),
 		})
 	}
@@ -86,6 +97,7 @@ func (h *EmployeeHandler) CreateEmployee(c *gin.Context) {
 		Department string `json:"department"`
 		Position   string `json:"position"`
 		Phone      string `json:"phone"`
+		Remark     string `json:"remark"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -97,10 +109,19 @@ func (h *EmployeeHandler) CreateEmployee(c *gin.Context) {
 
 	req.Code = strings.TrimSpace(req.Code)
 	req.Name = strings.TrimSpace(req.Name)
+	req.Phone = strings.TrimSpace(req.Phone)
+	req.Remark = strings.TrimSpace(req.Remark)
 	if req.Code == "" || req.Name == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": "员工工号和姓名不能为空",
+		})
+		return
+	}
+	if !isValidEmployeePhone(req.Phone) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "手机号格式不正确",
 		})
 		return
 	}
@@ -120,7 +141,8 @@ func (h *EmployeeHandler) CreateEmployee(c *gin.Context) {
 		Name:       req.Name,
 		Department: strings.TrimSpace(req.Department),
 		Position:   strings.TrimSpace(req.Position),
-		Phone:      strings.TrimSpace(req.Phone),
+		Phone:      req.Phone,
+		Remark:     req.Remark,
 	}
 
 	if err := h.db.Create(&employee).Error; err != nil {
@@ -154,6 +176,7 @@ func (h *EmployeeHandler) UpdateEmployee(c *gin.Context) {
 		Department *string `json:"department"`
 		Position   *string `json:"position"`
 		Phone      *string `json:"phone"`
+		Remark     *string `json:"remark"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -182,7 +205,18 @@ func (h *EmployeeHandler) UpdateEmployee(c *gin.Context) {
 		updates["position"] = strings.TrimSpace(*req.Position)
 	}
 	if req.Phone != nil {
-		updates["phone"] = strings.TrimSpace(*req.Phone)
+		phone := strings.TrimSpace(*req.Phone)
+		if !isValidEmployeePhone(phone) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "手机号格式不正确",
+			})
+			return
+		}
+		updates["phone"] = phone
+	}
+	if req.Remark != nil {
+		updates["remark"] = strings.TrimSpace(*req.Remark)
 	}
 
 	if len(updates) == 0 {
@@ -231,6 +265,7 @@ func (h *EmployeeHandler) ImportEmployees(c *gin.Context) {
 			Department string `json:"department"`
 			Position   string `json:"position"`
 			Phone      string `json:"phone"`
+			Remark     string `json:"remark"`
 		} `json:"employees" binding:"required"`
 	}
 
@@ -249,8 +284,13 @@ func (h *EmployeeHandler) ImportEmployees(c *gin.Context) {
 	for _, item := range req.Employees {
 		code := strings.TrimSpace(item.Code)
 		name := strings.TrimSpace(item.Name)
+		phone := strings.TrimSpace(item.Phone)
 		if code == "" || name == "" {
 			errorsList = append(errorsList, "存在空工号或空姓名记录")
+			continue
+		}
+		if !isValidEmployeePhone(phone) {
+			errorsList = append(errorsList, code+" 手机号格式不正确")
 			continue
 		}
 
@@ -266,7 +306,8 @@ func (h *EmployeeHandler) ImportEmployees(c *gin.Context) {
 			Name:       name,
 			Department: strings.TrimSpace(item.Department),
 			Position:   strings.TrimSpace(item.Position),
-			Phone:      strings.TrimSpace(item.Phone),
+			Phone:      phone,
+			Remark:     strings.TrimSpace(item.Remark),
 		}
 
 		if err := tx.Create(&employee).Error; err != nil {
@@ -293,7 +334,8 @@ func (h *EmployeeHandler) ExportEmployees(c *gin.Context) {
 	query := h.db.Model(&model.Employee{})
 
 	if keyword := c.Query("keyword"); keyword != "" {
-		query = query.Where("name LIKE ? OR code LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
+		like := "%" + strings.TrimSpace(keyword) + "%"
+		query = query.Where("name LIKE ? OR code LIKE ? OR phone LIKE ? OR remark LIKE ?", like, like, like, like)
 	}
 	if department := c.Query("department"); department != "" {
 		query = query.Where("department = ?", department)
@@ -316,6 +358,7 @@ func (h *EmployeeHandler) ExportEmployees(c *gin.Context) {
 			"department": e.Department,
 			"position":   e.Position,
 			"phone":      e.Phone,
+			"remark":     e.Remark,
 			"createTime": e.CreatedAt.Format("2006-01-02 15:04:05"),
 		})
 	}

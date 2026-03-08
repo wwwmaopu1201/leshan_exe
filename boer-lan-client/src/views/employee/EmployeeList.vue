@@ -11,14 +11,6 @@
             @keyup.enter.native="handleSearch"
           />
         </el-form-item>
-        <el-form-item :label="$t('employee.department')">
-          <el-select v-model="searchForm.department" clearable>
-            <el-option label="全部" value="" />
-            <el-option label="生产部" value="生产部" />
-            <el-option label="质检部" value="质检部" />
-            <el-option label="技术部" value="技术部" />
-          </el-select>
-        </el-form-item>
         <el-form-item>
           <el-button type="primary" icon="el-icon-search" @click="handleSearch">
             {{ $t('common.search') }}
@@ -67,17 +59,8 @@
         <el-table-column type="selection" width="50" align="center" />
         <el-table-column prop="code" :label="$t('employee.employeeCode')" width="100" />
         <el-table-column prop="name" :label="$t('employee.employeeName')" width="120" />
-        <el-table-column prop="department" :label="$t('employee.department')" width="100" />
-        <el-table-column prop="position" :label="$t('employee.position')" width="100" />
         <el-table-column prop="phone" :label="$t('employee.phone')" width="140" />
-        <el-table-column prop="bindDevice" label="绑定设备" min-width="150">
-          <template slot-scope="scope">
-            <el-tag v-for="device in scope.row.bindDevices" :key="device" size="small" class="mr-5">
-              {{ device }}
-            </el-tag>
-            <span v-if="!scope.row.bindDevices || !scope.row.bindDevices.length" class="text-muted">未绑定</span>
-          </template>
-        </el-table-column>
+        <el-table-column prop="remark" :label="$t('common.remark')" min-width="180" show-overflow-tooltip />
         <el-table-column prop="createTime" :label="$t('common.createTime')" width="160" />
         <el-table-column :label="$t('common.operation')" width="150" align="center" fixed="right">
           <template slot-scope="scope">
@@ -112,31 +95,16 @@
     >
       <el-form ref="editFormRef" :model="editForm" :rules="editRules" label-width="80px">
         <el-form-item :label="$t('employee.employeeCode')" prop="code">
-          <el-input v-model="editForm.code" placeholder="员工编号会自动生成" :disabled="!!editForm.id" />
+          <el-input v-model="editForm.code" placeholder="请输入11位以内员工工号" :disabled="!!editForm.id" />
         </el-form-item>
         <el-form-item :label="$t('employee.employeeName')" prop="name">
           <el-input v-model="editForm.name" />
         </el-form-item>
-        <el-form-item :label="$t('employee.department')" prop="department">
-          <el-select v-model="editForm.department" style="width: 100%">
-            <el-option label="生产部" value="生产部" />
-            <el-option label="质检部" value="质检部" />
-            <el-option label="技术部" value="技术部" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="$t('employee.position')" prop="position">
-          <el-input v-model="editForm.position" />
-        </el-form-item>
         <el-form-item :label="$t('employee.phone')" prop="phone">
           <el-input v-model="editForm.phone" />
         </el-form-item>
-        <el-form-item label="绑定设备">
-          <el-select v-model="editForm.bindDevices" multiple style="width: 100%" placeholder="选择要绑定的设备">
-            <el-option label="A-001" value="A-001" />
-            <el-option label="A-002" value="A-002" />
-            <el-option label="B-001" value="B-001" />
-            <el-option label="B-002" value="B-002" />
-          </el-select>
+        <el-form-item :label="$t('common.remark')" prop="remark">
+          <el-input v-model="editForm.remark" type="textarea" :rows="3" />
         </el-form-item>
       </el-form>
       <span slot="footer" class="dialog-footer">
@@ -151,13 +119,13 @@
       width="680px"
     >
       <div style="margin-bottom: 8px; color: #606266;">
-        每行格式：`员工工号,员工姓名,部门,职位,手机号`（至少需要前两列）
+        每行格式：`员工工号,员工姓名,手机号,备注`（至少需要前两列）
       </div>
       <el-input
         v-model="importText"
         type="textarea"
         :rows="10"
-        placeholder="例如：&#10;E10001,张三,生产部,组长,13800138000&#10;E10002,李四,质检部,质检员,13900139000"
+        placeholder="例如：&#10;E10001,张三,13800138000,一组员工&#10;E10002,李四,13900139000,"
       />
       <span slot="footer" class="dialog-footer">
         <el-button @click="showImportDialog = false">{{ $t('common.cancel') }}</el-button>
@@ -178,8 +146,7 @@ export default {
       tableData: [],
       selectedRows: [],
       searchForm: {
-        keyword: '',
-        department: ''
+        keyword: ''
       },
       pagination: {
         page: 1,
@@ -194,15 +161,15 @@ export default {
         id: null,
         code: '',
         name: '',
-        department: '',
-        position: '',
         phone: '',
-        bindDevices: []
+        remark: ''
       },
       editRules: {
+        code: [
+          { required: true, message: '请输入员工工号', trigger: 'blur' },
+          { max: 11, message: '员工工号不能超过11位', trigger: 'blur' }
+        ],
         name: [{ required: true, message: '请输入员工姓名', trigger: 'blur' }],
-        department: [{ required: true, message: '请选择部门', trigger: 'change' }],
-        position: [{ required: true, message: '请输入职位', trigger: 'blur' }],
         phone: [
           { required: true, message: '请输入联系电话', trigger: 'blur' },
           { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号', trigger: 'blur' }
@@ -219,7 +186,6 @@ export default {
       try {
         const res = await getEmployeeList({
           keyword: this.searchForm.keyword,
-          department: this.searchForm.department,
           page: this.pagination.page,
           pageSize: this.pagination.pageSize
         })
@@ -239,7 +205,7 @@ export default {
       this.fetchData()
     },
     handleReset() {
-      this.searchForm = { keyword: '', department: '' }
+      this.searchForm = { keyword: '' }
       this.handleSearch()
     },
     handleSelectionChange(rows) {
@@ -256,17 +222,21 @@ export default {
     handleAdd() {
       this.editForm = {
         id: null,
-        code: 'E' + String(Date.now()).slice(-5),
+        code: '',
         name: '',
-        department: '',
-        position: '',
         phone: '',
-        bindDevices: []
+        remark: ''
       }
       this.showEditDialog = true
     },
     handleEdit(row) {
-      this.editForm = { ...row }
+      this.editForm = {
+        id: row.id,
+        code: row.code || '',
+        name: row.name || '',
+        phone: row.phone || '',
+        remark: row.remark || ''
+      }
       this.showEditDialog = true
     },
     resetEditForm() {
@@ -344,14 +314,13 @@ export default {
 
       const employees = []
       for (const line of lines) {
-        const [code, name, department, position, phone] = line.split(',').map(part => part?.trim())
+        const [code, name, phone, remark] = line.split(',').map(part => part?.trim())
         if (!code || !name) continue
         employees.push({
           code,
           name,
-          department: department || '',
-          position: position || '',
-          phone: phone || ''
+          phone: phone || '',
+          remark: remark || ''
         })
       }
 
@@ -386,21 +355,19 @@ export default {
     async handleExport() {
       try {
         const res = await exportEmployees({
-          keyword: this.searchForm.keyword,
-          department: this.searchForm.department
+          keyword: this.searchForm.keyword
         })
         if (res.code !== 0) {
           this.$message.error(res.message || '导出失败')
           return
         }
 
-        const headers = ['员工工号', '员工姓名', '部门', '职位', '手机号', '创建时间']
+        const headers = ['员工工号', '员工姓名', '手机号', '备注', '创建时间']
         const rows = (Array.isArray(res.data) ? res.data : []).map(item => ([
           item.code || '',
           item.name || '',
-          item.department || '',
-          item.position || '',
           item.phone || '',
+          item.remark || '',
           item.createTime || ''
         ]))
         const csv = [headers, ...rows]
@@ -429,13 +396,5 @@ export default {
 <style lang="scss" scoped>
 .danger-text {
   color: #F56C6C !important;
-}
-
-.text-muted {
-  color: #909399;
-}
-
-.mr-5 {
-  margin-right: 5px;
 }
 </style>

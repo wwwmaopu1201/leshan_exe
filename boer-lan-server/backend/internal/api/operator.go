@@ -3,8 +3,11 @@ package api
 import (
 	"boer-lan-server/internal/model"
 	"boer-lan-server/pkg/utils"
+	"encoding/json"
 	"net/http"
+	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -16,6 +19,14 @@ type OperatorHandler struct {
 
 func NewOperatorHandler(db *gorm.DB) *OperatorHandler {
 	return &OperatorHandler{db: db}
+}
+
+func isValidOperatorUsername(username string) bool {
+	if username == "" || len(username) > 11 {
+		return false
+	}
+	matched, _ := regexp.MatchString(`^[a-zA-Z0-9_]+$`, username)
+	return matched
 }
 
 // GetOperatorList 获取操作员列表
@@ -42,16 +53,44 @@ func (h *OperatorHandler) GetOperatorList(c *gin.Context) {
 
 // GetAllOperators 加载全部操作员
 func (h *OperatorHandler) GetAllOperators(c *gin.Context) {
-	var operators []model.Operator
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	startDate := strings.TrimSpace(c.Query("startDate"))
+	endDate := strings.TrimSpace(c.Query("endDate"))
 
-	if err := h.db.Preload("Group.Parent").Find(&operators).Error; err != nil {
+	query := h.db.Preload("Group.Parent").Model(&model.Operator{})
+	if keyword != "" {
+		like := "%" + keyword + "%"
+		query = query.Where("username LIKE ? OR nickname LIKE ?", like, like)
+	}
+	if startDate != "" {
+		query = query.Where("DATE(created_at) >= ?", startDate)
+	}
+	if endDate != "" {
+		query = query.Where("DATE(created_at) <= ?", endDate)
+	}
+
+	var operators []model.Operator
+	if err := query.Order("created_at DESC").Find(&operators).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
+	list := make([]gin.H, 0, len(operators))
+	for _, op := range operators {
+		list = append(list, gin.H{
+			"id":         op.ID,
+			"username":   op.Username,
+			"nickname":   op.Nickname,
+			"groupId":    op.GroupID,
+			"group":      op.Group,
+			"disabled":   op.Disabled,
+			"createTime": op.CreatedAt.Format("2006-01-02 15:04:05"),
+		})
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
-		"data": operators,
+		"data": list,
 	})
 }
 
@@ -66,6 +105,19 @@ func (h *OperatorHandler) CreateOperator(c *gin.Context) {
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	req.Username = strings.TrimSpace(req.Username)
+	req.Password = strings.TrimSpace(req.Password)
+	req.Nickname = strings.TrimSpace(req.Nickname)
+
+	if !isValidOperatorUsername(req.Username) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "账号仅支持字母数字下划线，且不超过11位"})
+		return
+	}
+	if len(req.Password) < 6 || len(req.Password) > 32 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "密码长度需在6-32位"})
 		return
 	}
 
@@ -107,10 +159,11 @@ func (h *OperatorHandler) UpdateOperator(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 
 	var req struct {
-		Username *string `json:"username"`
-		Password *string `json:"password"`
-		Nickname *string `json:"nickname"`
-		Disabled *bool   `json:"disabled"`
+		Username *string         `json:"username"`
+		Password *string         `json:"password"`
+		Nickname *string         `json:"nickname"`
+		GroupID  json.RawMessage `json:"groupId"`
+		Disabled *bool           `json:"disabled"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -121,18 +174,28 @@ func (h *OperatorHandler) UpdateOperator(c *gin.Context) {
 	updates := make(map[string]interface{})
 
 	if req.Username != nil {
+		username := strings.TrimSpace(*req.Username)
+		if !isValidOperatorUsername(username) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "账号仅支持字母数字下划线，且不超过11位"})
+			return
+		}
 		// 检查用户名是否已被其他操作员使用
 		var count int64
-		h.db.Model(&model.Operator{}).Where("username = ? AND id != ?", *req.Username, id).Count(&count)
+		h.db.Model(&model.Operator{}).Where("username = ? AND id != ?", username, id).Count(&count)
 		if count > 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "用户名已存在"})
 			return
 		}
-		updates["username"] = *req.Username
+		updates["username"] = username
 	}
 
 	if req.Password != nil && *req.Password != "" {
-		hashedPassword, err := utils.HashPassword(*req.Password)
+		password := strings.TrimSpace(*req.Password)
+		if len(password) < 6 || len(password) > 32 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "密码长度需在6-32位"})
+			return
+		}
+		hashedPassword, err := utils.HashPassword(password)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
 			return
@@ -141,7 +204,21 @@ func (h *OperatorHandler) UpdateOperator(c *gin.Context) {
 	}
 
 	if req.Nickname != nil {
-		updates["nickname"] = *req.Nickname
+		updates["nickname"] = strings.TrimSpace(*req.Nickname)
+	}
+
+	if len(req.GroupID) > 0 {
+		raw := strings.TrimSpace(string(req.GroupID))
+		if raw == "" || raw == "null" {
+			updates["group_id"] = nil
+		} else {
+			var groupID uint
+			if err := json.Unmarshal(req.GroupID, &groupID); err != nil || groupID == 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "分组参数错误"})
+				return
+			}
+			updates["group_id"] = groupID
+		}
 	}
 
 	if req.Disabled != nil {
@@ -226,29 +303,44 @@ func (h *OperatorHandler) ImportOperators(c *gin.Context) {
 	var errors []string
 
 	for _, op := range req.Operators {
-		// 检查用户名是否已存在
-		var count int64
-		tx.Model(&model.Operator{}).Where("username = ?", op.Username).Count(&count)
-		if count > 0 {
-			errors = append(errors, op.Username+" 已存在")
+		username := strings.TrimSpace(op.Username)
+		password := strings.TrimSpace(op.Password)
+		nickname := strings.TrimSpace(op.Nickname)
+		if nickname == "" {
+			nickname = username
+		}
+		if !isValidOperatorUsername(username) {
+			errors = append(errors, op.Username+" 账号格式错误")
+			continue
+		}
+		if len(password) < 6 || len(password) > 32 {
+			errors = append(errors, op.Username+" 密码长度需在6-32位")
 			continue
 		}
 
-		hashedPassword, err := utils.HashPassword(op.Password)
+		// 检查用户名是否已存在
+		var count int64
+		tx.Model(&model.Operator{}).Where("username = ?", username).Count(&count)
+		if count > 0 {
+			errors = append(errors, username+" 已存在")
+			continue
+		}
+
+		hashedPassword, err := utils.HashPassword(password)
 		if err != nil {
-			errors = append(errors, op.Username+" 密码加密失败")
+			errors = append(errors, username+" 密码加密失败")
 			continue
 		}
 
 		operator := model.Operator{
-			Username: op.Username,
+			Username: username,
 			Password: hashedPassword,
-			Nickname: op.Nickname,
+			Nickname: nickname,
 			GroupID:  op.GroupID,
 		}
 
 		if err := tx.Create(&operator).Error; err != nil {
-			errors = append(errors, op.Username+" 创建失败: "+err.Error())
+			errors = append(errors, username+" 创建失败: "+err.Error())
 			continue
 		}
 
@@ -269,6 +361,9 @@ func (h *OperatorHandler) ImportOperators(c *gin.Context) {
 // ExportOperators 导出操作员列表
 func (h *OperatorHandler) ExportOperators(c *gin.Context) {
 	groupID := c.Query("groupId")
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	startDate := strings.TrimSpace(c.Query("startDate"))
+	endDate := strings.TrimSpace(c.Query("endDate"))
 
 	var operators []model.Operator
 	query := h.db.Preload("Group")
@@ -276,8 +371,18 @@ func (h *OperatorHandler) ExportOperators(c *gin.Context) {
 	if groupID != "" {
 		query = query.Where("group_id = ?", groupID)
 	}
+	if keyword != "" {
+		like := "%" + keyword + "%"
+		query = query.Where("username LIKE ? OR nickname LIKE ?", like, like)
+	}
+	if startDate != "" {
+		query = query.Where("DATE(created_at) >= ?", startDate)
+	}
+	if endDate != "" {
+		query = query.Where("DATE(created_at) <= ?", endDate)
+	}
 
-	if err := query.Find(&operators).Error; err != nil {
+	if err := query.Order("created_at DESC").Find(&operators).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -286,10 +391,11 @@ func (h *OperatorHandler) ExportOperators(c *gin.Context) {
 	exportData := make([]gin.H, len(operators))
 	for i, op := range operators {
 		exportData[i] = gin.H{
-			"username": op.Username,
-			"nickname": op.Nickname,
-			"disabled": op.Disabled,
-			"groupId":  op.GroupID,
+			"username":   op.Username,
+			"nickname":   op.Nickname,
+			"disabled":   op.Disabled,
+			"groupId":    op.GroupID,
+			"createTime": op.CreatedAt.Format("2006-01-02 15:04:05"),
 		}
 		if op.Group != nil {
 			exportData[i]["groupName"] = op.Group.Name

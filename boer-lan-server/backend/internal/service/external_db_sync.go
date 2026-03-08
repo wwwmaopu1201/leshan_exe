@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"boer-lan-server/internal/model"
 
 	"gorm.io/driver/mysql"
+	"gorm.io/driver/sqlserver"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -48,6 +50,12 @@ func NewExternalDBSyncService(db *gorm.DB) *ExternalDBSyncService {
 	}
 }
 
+// RunExternalDBSyncOnce 提供给API层的手动触发入口
+func RunExternalDBSyncOnce(db *gorm.DB) error {
+	service := NewExternalDBSyncService(db)
+	return service.syncOnce(true)
+}
+
 func (s *ExternalDBSyncService) Start() {
 	go s.loop()
 }
@@ -62,21 +70,21 @@ func (s *ExternalDBSyncService) loop() {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
-	_ = s.trySyncOnce()
+	_ = s.syncOnce(false)
 
 	for {
 		select {
 		case <-s.stopCh:
 			return
 		case <-ticker.C:
-			if err := s.trySyncOnce(); err != nil {
+			if err := s.syncOnce(false); err != nil {
 				log.Printf("external db sync error: %v", err)
 			}
 		}
 	}
 }
 
-func (s *ExternalDBSyncService) trySyncOnce() error {
+func (s *ExternalDBSyncService) syncOnce(force bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -97,7 +105,7 @@ func (s *ExternalDBSyncService) trySyncOnce() error {
 	if err != nil {
 		return err
 	}
-	if time.Since(lastSyncAt) < time.Duration(interval)*time.Minute {
+	if !force && time.Since(lastSyncAt) < time.Duration(interval)*time.Minute {
 		return nil
 	}
 
@@ -107,8 +115,7 @@ func (s *ExternalDBSyncService) trySyncOnce() error {
 			return err
 		}
 	case "mssql":
-		log.Printf("external db sync skipped: mssql sync not enabled in current version")
-		if err := s.saveLastSyncAt(time.Now()); err != nil {
+		if err := s.syncToMSSQL(cfg, lastSyncAt); err != nil {
 			return err
 		}
 	default:
@@ -260,6 +267,67 @@ func (s *ExternalDBSyncService) syncToMySQL(cfg externalDBConfig, lastSyncAt tim
 	}
 
 	log.Printf("external db sync completed: mysql %s:%d/%s", cfg.Host, cfg.Port, cfg.Database)
+	return nil
+}
+
+func buildMSSQLDSN(cfg externalDBConfig) string {
+	u := &url.URL{
+		Scheme: "sqlserver",
+		User:   url.UserPassword(cfg.Username, cfg.Password),
+		Host:   fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
+	}
+	q := url.Values{}
+	q.Set("database", cfg.Database)
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+func (s *ExternalDBSyncService) syncToMSSQL(cfg externalDBConfig, lastSyncAt time.Time) error {
+	if cfg.Host == "" || cfg.Username == "" || cfg.Database == "" {
+		return fmt.Errorf("external mssql config incomplete")
+	}
+
+	dsn := buildMSSQLDSN(cfg)
+	externalDB, err := gorm.Open(sqlserver.Open(dsn), &gorm.Config{})
+	if err != nil {
+		return err
+	}
+
+	if err := externalDB.AutoMigrate(
+		&model.Device{},
+		&model.Employee{},
+		&model.Pattern{},
+		&model.ProductionRecord{},
+		&model.AlarmRecord{},
+		&model.SalaryRecord{},
+	); err != nil {
+		return err
+	}
+
+	if err := s.syncDevices(externalDB, lastSyncAt); err != nil {
+		return err
+	}
+	if err := s.syncEmployees(externalDB, lastSyncAt); err != nil {
+		return err
+	}
+	if err := s.syncPatterns(externalDB, lastSyncAt); err != nil {
+		return err
+	}
+	if err := s.syncProductionRecords(externalDB, lastSyncAt); err != nil {
+		return err
+	}
+	if err := s.syncAlarmRecords(externalDB, lastSyncAt); err != nil {
+		return err
+	}
+	if err := s.syncSalaryRecords(externalDB, lastSyncAt); err != nil {
+		return err
+	}
+
+	if err := s.saveLastSyncAt(time.Now()); err != nil {
+		return err
+	}
+
+	log.Printf("external db sync completed: mssql %s:%d/%s", cfg.Host, cfg.Port, cfg.Database)
 	return nil
 }
 

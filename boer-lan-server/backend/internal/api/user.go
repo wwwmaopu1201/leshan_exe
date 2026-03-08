@@ -3,8 +3,11 @@ package api
 import (
 	"boer-lan-server/internal/model"
 	"boer-lan-server/pkg/utils"
+	"encoding/json"
 	"net/http"
+	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -16,6 +19,22 @@ type UserHandler struct {
 
 func NewUserHandler(db *gorm.DB) *UserHandler {
 	return &UserHandler{db: db}
+}
+
+func isValidUserPhone(phone string) bool {
+	if phone == "" {
+		return true
+	}
+	matched, _ := regexp.MatchString(`^1[3-9]\d{9}$`, phone)
+	return matched
+}
+
+func isValidUsername(username string) bool {
+	if username == "" || len(username) > 11 {
+		return false
+	}
+	matched, _ := regexp.MatchString(`^[a-zA-Z0-9_]+$`, username)
+	return matched
 }
 
 // GetUserList 获取用户列表
@@ -42,16 +61,52 @@ func (h *UserHandler) GetUserList(c *gin.Context) {
 
 // GetAllUsers 加载全部用户
 func (h *UserHandler) GetAllUsers(c *gin.Context) {
-	var users []model.User
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	startDate := strings.TrimSpace(c.Query("startDate"))
+	endDate := strings.TrimSpace(c.Query("endDate"))
+	role := strings.TrimSpace(c.Query("role"))
 
-	if err := h.db.Preload("Group.Parent").Find(&users).Error; err != nil {
+	query := h.db.Preload("Group.Parent").Model(&model.User{})
+	if keyword != "" {
+		like := "%" + keyword + "%"
+		query = query.Where("username LIKE ? OR nickname LIKE ? OR phone LIKE ?", like, like, like)
+	}
+	if role != "" {
+		query = query.Where("role = ?", role)
+	}
+	if startDate != "" {
+		query = query.Where("DATE(created_at) >= ?", startDate)
+	}
+	if endDate != "" {
+		query = query.Where("DATE(created_at) <= ?", endDate)
+	}
+
+	var users []model.User
+	if err := query.Order("created_at DESC").Find(&users).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
+	list := make([]gin.H, 0, len(users))
+	for _, user := range users {
+		list = append(list, gin.H{
+			"id":          user.ID,
+			"username":    user.Username,
+			"nickname":    user.Nickname,
+			"email":       user.Email,
+			"phone":       user.Phone,
+			"role":        user.Role,
+			"groupId":     user.GroupID,
+			"group":       user.Group,
+			"disabled":    user.Disabled,
+			"permissions": user.Permissions,
+			"createTime":  user.CreatedAt.Format("2006-01-02 15:04:05"),
+		})
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
-		"data": users,
+		"data": list,
 	})
 }
 
@@ -70,6 +125,25 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	req.Username = strings.TrimSpace(req.Username)
+	req.Password = strings.TrimSpace(req.Password)
+	req.Nickname = strings.TrimSpace(req.Nickname)
+	req.Phone = strings.TrimSpace(req.Phone)
+	req.Email = strings.TrimSpace(req.Email)
+
+	if !isValidUsername(req.Username) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "账号仅支持字母数字下划线，且不超过11位"})
+		return
+	}
+	if len(req.Password) < 6 || len(req.Password) > 32 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "密码长度需在6-32位"})
+		return
+	}
+	if !isValidUserPhone(req.Phone) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "手机号格式不正确"})
 		return
 	}
 
@@ -125,14 +199,15 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 
 	var req struct {
-		Username    *string `json:"username"`
-		Password    *string `json:"password"`
-		Nickname    *string `json:"nickname"`
-		Email       *string `json:"email"`
-		Phone       *string `json:"phone"`
-		Role        *string `json:"role"`
-		Disabled    *bool   `json:"disabled"`
-		Permissions *string `json:"permissions"`
+		Username    *string         `json:"username"`
+		Password    *string         `json:"password"`
+		Nickname    *string         `json:"nickname"`
+		Email       *string         `json:"email"`
+		Phone       *string         `json:"phone"`
+		Role        *string         `json:"role"`
+		GroupID     json.RawMessage `json:"groupId"`
+		Disabled    *bool           `json:"disabled"`
+		Permissions *string         `json:"permissions"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -143,18 +218,28 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	updates := make(map[string]interface{})
 
 	if req.Username != nil {
+		username := strings.TrimSpace(*req.Username)
+		if !isValidUsername(username) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "账号仅支持字母数字下划线，且不超过11位"})
+			return
+		}
 		// 检查用户名是否已被其他用户使用
 		var count int64
-		h.db.Model(&model.User{}).Where("username = ? AND id != ?", *req.Username, id).Count(&count)
+		h.db.Model(&model.User{}).Where("username = ? AND id != ?", username, id).Count(&count)
 		if count > 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "用户名已存在"})
 			return
 		}
-		updates["username"] = *req.Username
+		updates["username"] = username
 	}
 
 	if req.Password != nil && *req.Password != "" {
-		hashedPassword, err := utils.HashPassword(*req.Password)
+		password := strings.TrimSpace(*req.Password)
+		if len(password) < 6 || len(password) > 32 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "密码长度需在6-32位"})
+			return
+		}
+		hashedPassword, err := utils.HashPassword(password)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
 			return
@@ -163,19 +248,38 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	}
 
 	if req.Nickname != nil {
-		updates["nickname"] = *req.Nickname
+		updates["nickname"] = strings.TrimSpace(*req.Nickname)
 	}
 
 	if req.Email != nil {
-		updates["email"] = *req.Email
+		updates["email"] = strings.TrimSpace(*req.Email)
 	}
 
 	if req.Phone != nil {
-		updates["phone"] = *req.Phone
+		phone := strings.TrimSpace(*req.Phone)
+		if !isValidUserPhone(phone) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "手机号格式不正确"})
+			return
+		}
+		updates["phone"] = phone
 	}
 
 	if req.Role != nil {
-		updates["role"] = *req.Role
+		updates["role"] = strings.TrimSpace(*req.Role)
+	}
+
+	if len(req.GroupID) > 0 {
+		raw := strings.TrimSpace(string(req.GroupID))
+		if raw == "" || raw == "null" {
+			updates["group_id"] = nil
+		} else {
+			var groupID uint
+			if err := json.Unmarshal(req.GroupID, &groupID); err != nil || groupID == 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "分组参数错误"})
+				return
+			}
+			updates["group_id"] = groupID
+		}
 	}
 
 	if req.Disabled != nil {

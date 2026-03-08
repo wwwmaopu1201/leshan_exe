@@ -127,6 +127,7 @@ type Employee struct {
 	Department string `gorm:"size:50" json:"department"`
 	Position   string `gorm:"size:50" json:"position"`
 	Phone      string `gorm:"size:20" json:"phone"`
+	Remark     string `gorm:"size:255" json:"remark"`
 }
 
 // EmployeeDevice 员工设备绑定
