@@ -6,9 +6,6 @@ import (
 )
 
 func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int) {
-	// 静态文件服务 - 管理界面
-	r.Static("/admin", "./web/admin")
-
 	// API group
 	api := r.Group("/api")
 

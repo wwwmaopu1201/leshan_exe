@@ -1,0 +1,29 @@
+{
+  "name": "boer-lan-server",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "vite",
+    "dev:backend": "cd backend && go run cmd/server/main.go",
+    "dev:all": "concurrently \"npm run dev:backend\" \"npm run tauri:dev\" --names \"backend,tauri\" --prefix-colors \"blue,green\"",
+    "build": "vite build",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "build:backend": "cd backend && go build -ldflags=\"-s -w\" -o ../src-tauri/backend-server cmd/server/main.go",
+    "build:all": "npm run build:backend && npm run tauri:build"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0",
+    "axios": "^1.6.7",
+    "element-ui": "^2.15.14",
+    "vue": "^2.7.16",
+    "vue-router": "^3.6.5"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
+    "concurrently": "^9.2.1",
+    "sass": "^1.32.13",
+    "sass-loader": "^10.5.2",
+    "vite": "^4.5.0",
+    "vite-plugin-vue2": "^2.0.3"
+  }
+}

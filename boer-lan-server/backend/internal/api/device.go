@@ -19,7 +19,7 @@ func NewDeviceHandler(db *gorm.DB) *DeviceHandler {
 }
 
 func (h *DeviceHandler) GetDeviceTree(c *gin.Context) {
-	var groups []model.DeviceGroup
+	var groups []model.Group
 	h.db.Preload("Devices").Where("parent_id IS NULL").Find(&groups)
 
 	tree := h.buildTree(groups)
@@ -31,7 +31,7 @@ func (h *DeviceHandler) GetDeviceTree(c *gin.Context) {
 	})
 }
 
-func (h *DeviceHandler) buildTree(groups []model.DeviceGroup) []gin.H {
+func (h *DeviceHandler) buildTree(groups []model.Group) []gin.H {
 	result := make([]gin.H, 0)
 	for _, g := range groups {
 		node := gin.H{
@@ -40,7 +40,7 @@ func (h *DeviceHandler) buildTree(groups []model.DeviceGroup) []gin.H {
 		}
 
 		// Get children
-		var children []model.DeviceGroup
+		var children []model.Group
 		h.db.Preload("Devices").Where("parent_id = ?", g.ID).Find(&children)
 
 		if len(children) > 0 {
@@ -251,7 +251,7 @@ func (h *DeviceHandler) MoveToGroup(c *gin.Context) {
 }
 
 func (h *DeviceHandler) GetDeviceGroups(c *gin.Context) {
-	var groups []model.DeviceGroup
+	var groups []model.Group
 	h.db.Find(&groups)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -262,7 +262,7 @@ func (h *DeviceHandler) GetDeviceGroups(c *gin.Context) {
 }
 
 func (h *DeviceHandler) CreateDeviceGroup(c *gin.Context) {
-	var group model.DeviceGroup
+	var group model.Group
 	if err := c.ShouldBindJSON(&group); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
@@ -282,7 +282,7 @@ func (h *DeviceHandler) CreateDeviceGroup(c *gin.Context) {
 
 func (h *DeviceHandler) UpdateDeviceGroup(c *gin.Context) {
 	id := c.Param("id")
-	var group model.DeviceGroup
+	var group model.Group
 	if err := h.db.First(&group, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"code":    404,
@@ -310,7 +310,7 @@ func (h *DeviceHandler) UpdateDeviceGroup(c *gin.Context) {
 
 func (h *DeviceHandler) DeleteDeviceGroup(c *gin.Context) {
 	id := c.Param("id")
-	h.db.Delete(&model.DeviceGroup{}, id)
+	h.db.Delete(&model.Group{}, id)
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,

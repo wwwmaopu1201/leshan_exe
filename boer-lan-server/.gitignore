@@ -1,0 +1,29 @@
+# Node
+node_modules/
+dist/
+*.log
+
+# Tauri
+src-tauri/target/
+src-tauri/backend-server*
+src-tauri/Cargo.lock
+
+# Go
+backend/data/
+*.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.exe
+*.dmg
+*.msi
+*.AppImage

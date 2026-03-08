@@ -73,7 +73,13 @@ func main() {
 }
 
 func loadConfig() {
-	data, err := os.ReadFile("configs/config.yaml")
+	// 支持从环境变量读取配置文件路径
+	configPath := os.Getenv("CONFIG_PATH")
+	if configPath == "" {
+		configPath = "configs/config.yaml"
+	}
+
+	data, err := os.ReadFile(configPath)
 	if err != nil {
 		log.Fatalf("Failed to read config file: %v", err)
 	}
@@ -84,6 +90,7 @@ func loadConfig() {
 
 	utils.JWTSecret = config.JWT.Secret
 	utils.JWTExpire = config.JWT.Expire
+	log.Printf("Config loaded from: %s", configPath)
 }
 
 func initDB() {
@@ -94,14 +101,20 @@ func initDB() {
 		config.Database.Type = "sqlite"
 	}
 
+	// 支持从环境变量读取数据目录
 	if config.Database.Path == "" {
-		config.Database.Path = "./data/boer-lan.db"
+		dataDir := os.Getenv("DATA_DIR")
+		if dataDir == "" {
+			dataDir = "./data"
+		}
+		config.Database.Path = fmt.Sprintf("%s/boer-lan.db", dataDir)
 	}
 
 	switch config.Database.Type {
 	case "sqlite":
 		// 确保数据目录存在
-		if err := os.MkdirAll("./data", 0755); err != nil {
+		dbDir := config.Database.Path[:len(config.Database.Path)-len("/boer-lan.db")]
+		if err := os.MkdirAll(dbDir, 0755); err != nil {
 			log.Fatalf("Failed to create data directory: %v", err)
 		}
 
