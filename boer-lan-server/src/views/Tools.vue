@@ -350,6 +350,11 @@ export default {
         const output = String(res?.data?.output || '')
         const filtered = this.filterPortLines(output, port)
         const errText = String(res?.data?.error || '')
+        let processLines = []
+        if (this.isWindowsPlatform() && filtered.length > 0) {
+          const pids = this.extractWindowsPids(filtered)
+          processLines = await this.fetchWindowsProcessLines(pids)
+        }
 
         const header = filtered.length
           ? `端口 ${port} 占用记录（共 ${filtered.length} 行）`
@@ -358,6 +363,7 @@ export default {
           header,
           '',
           filtered.length ? filtered.join('\n') : output || '命令无输出',
+          processLines.length ? `\n[进程信息]\n${processLines.join('\n')}` : '',
           errText ? `\n[错误信息]\n${errText}` : ''
         ].join('\n')
         this.latestCommandOutput = content
@@ -372,6 +378,47 @@ export default {
       const lines = String(output || '').split(/\r?\n/)
       const pattern = new RegExp(`[:.]${port}(\\s|$)`)
       return lines.filter(line => pattern.test(line))
+    },
+    extractWindowsPids(lines = []) {
+      const set = new Set()
+      lines.forEach(line => {
+        const parts = String(line || '').trim().split(/\s+/)
+        const pid = parts[parts.length - 1]
+        if (/^\d+$/.test(pid)) {
+          set.add(pid)
+        }
+      })
+      return Array.from(set)
+    },
+    async fetchWindowsProcessLines(pids = []) {
+      if (!Array.isArray(pids) || pids.length === 0) {
+        return []
+      }
+      const lines = []
+      for (const pid of pids) {
+        try {
+          const res = await this.$axios.post('/system/command', {
+            command: 'tasklist',
+            args: ['/FI', `PID eq ${pid}`]
+          })
+          const output = String(res?.data?.output || '').trim()
+          if (!output) {
+            lines.push(`PID ${pid}: 无输出`)
+            continue
+          }
+          const outputLines = output.split(/\r?\n/).map(item => item.trim()).filter(Boolean)
+          const matchedLine = outputLines.find(item =>
+            item.includes(pid) &&
+            !item.includes('映像名称') &&
+            !item.includes('Image Name') &&
+            !item.startsWith('=')
+          )
+          lines.push(`PID ${pid}: ${matchedLine || outputLines[outputLines.length - 1]}`)
+        } catch (error) {
+          lines.push(`PID ${pid}: 查询失败`)
+        }
+      }
+      return lines
     },
     isWindowsPlatform() {
       return String(this.serverInfo.os || '').toLowerCase().includes('windows')

@@ -281,6 +281,7 @@ func (h *SystemHandler) ExecuteCommand(c *gin.Context) {
 		"hostname": true,
 		"netsh":    true,
 		"control":  true,
+		"tasklist": true,
 	}
 
 	if !allowedCommands[req.Command] {
