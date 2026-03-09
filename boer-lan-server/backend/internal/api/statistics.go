@@ -25,29 +25,35 @@ func NewStatisticsHandler(db *gorm.DB) *StatisticsHandler {
 }
 
 func (h *StatisticsHandler) GetHomeStats(c *gin.Context) {
+	_, scopedDeviceIDs := h.scopeDeviceFilter(c, "", nil)
+
 	// 设备状态统计
 	var totalDevices, onlineDevices, workingDevices, offlineDevices, alarmDevices int64
-	h.db.Model(&model.Device{}).Count(&totalDevices)
-	h.db.Model(&model.Device{}).Where("status IN ?", []string{"online", "working", "idle"}).Count(&onlineDevices)
-	h.db.Model(&model.Device{}).Where("status = ?", "working").Count(&workingDevices)
-	h.db.Model(&model.Device{}).Where("status = ?", "offline").Count(&offlineDevices)
-	h.db.Model(&model.Device{}).Where("status = ?", "alarm").Count(&alarmDevices)
+	deviceBaseQuery := h.db.Model(&model.Device{})
+	if len(scopedDeviceIDs) > 0 {
+		deviceBaseQuery = deviceBaseQuery.Where("id IN ?", scopedDeviceIDs)
+	}
+	deviceBaseQuery.Session(&gorm.Session{}).Count(&totalDevices)
+	deviceBaseQuery.Session(&gorm.Session{}).Where("status IN ?", []string{"online", "working", "idle"}).Count(&onlineDevices)
+	deviceBaseQuery.Session(&gorm.Session{}).Where("status = ?", "working").Count(&workingDevices)
+	deviceBaseQuery.Session(&gorm.Session{}).Where("status = ?", "offline").Count(&offlineDevices)
+	deviceBaseQuery.Session(&gorm.Session{}).Where("status = ?", "alarm").Count(&alarmDevices)
 
 	// 近7日设备使用效率
-	weeklyEfficiency := h.getWeeklyEfficiency()
+	weeklyEfficiency := h.getWeeklyEfficiency(scopedDeviceIDs)
 
 	// 花型使用占比
-	patternUsage := h.getPatternUsage()
+	patternUsage := h.getPatternUsage(scopedDeviceIDs)
 
 	// 设备机型占比
-	modelRatio := h.getModelRatio()
+	modelRatio := h.getModelRatio(scopedDeviceIDs)
 
 	// 前三设备生产量
-	topProduction := h.getTopProduction()
+	topProduction := h.getTopProduction(scopedDeviceIDs)
 
 	// 24小时设备运行状态 + 近7日产量
-	runningStatusByHour := h.getRunningStatusByHour()
-	productionByDay := h.getProductionByDay()
+	runningStatusByHour := h.getRunningStatusByHour(scopedDeviceIDs)
+	productionByDay := h.getProductionByDay(scopedDeviceIDs)
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
@@ -70,12 +76,16 @@ func (h *StatisticsHandler) GetHomeStats(c *gin.Context) {
 	})
 }
 
-func (h *StatisticsHandler) getWeeklyEfficiency() []gin.H {
+func (h *StatisticsHandler) getWeeklyEfficiency(deviceIDs []uint) []gin.H {
 	result := make([]gin.H, 0)
 	weekdays := []string{"周一", "周二", "周三", "周四", "周五", "周六", "周日"}
 	now := time.Now()
 	var totalDevices int64
-	h.db.Model(&model.Device{}).Count(&totalDevices)
+	totalDeviceQuery := h.db.Model(&model.Device{})
+	if len(deviceIDs) > 0 {
+		totalDeviceQuery = totalDeviceQuery.Where("id IN ?", deviceIDs)
+	}
+	totalDeviceQuery.Count(&totalDevices)
 
 	for i := 6; i >= 0; i-- {
 		date := now.AddDate(0, 0, -i)
@@ -89,11 +99,13 @@ func (h *StatisticsHandler) getWeeklyEfficiency() []gin.H {
 			RunningTime float64
 			IdleTime    float64
 		}
-		h.db.Model(&model.ProductionRecord{}).
+		dailyQuery := h.db.Model(&model.ProductionRecord{}).
 			Select("device_id, COALESCE(SUM(running_time), 0) as running_time, COALESCE(SUM(idle_time), 0) as idle_time").
-			Where("DATE(record_date) = DATE(?)", date).
-			Group("device_id").
-			Scan(&rows)
+			Where("DATE(record_date) = DATE(?)", date)
+		if len(deviceIDs) > 0 {
+			dailyQuery = dailyQuery.Where("device_id IN ?", deviceIDs)
+		}
+		dailyQuery.Group("device_id").Scan(&rows)
 
 		efficiency := 0.0
 		validDeviceCount := 0
@@ -119,21 +131,21 @@ func (h *StatisticsHandler) getWeeklyEfficiency() []gin.H {
 	return result
 }
 
-func (h *StatisticsHandler) getPatternUsage() []gin.H {
+func (h *StatisticsHandler) getPatternUsage(deviceIDs []uint) []gin.H {
 	var results []struct {
 		PatternID uint
 		Name      string
 		Count     int
 	}
 
-	h.db.Table("production_records pr").
+	query := h.db.Table("production_records pr").
 		Select("pr.pattern_id, p.name, COUNT(*) as count").
 		Joins("LEFT JOIN patterns p ON pr.pattern_id = p.id").
-		Where("pr.pattern_id IS NOT NULL").
-		Group("pr.pattern_id, p.name").
-		Order("count DESC").
-		Limit(10).
-		Scan(&results)
+		Where("pr.pattern_id IS NOT NULL")
+	if len(deviceIDs) > 0 {
+		query = query.Where("pr.device_id IN ?", deviceIDs)
+	}
+	query.Group("pr.pattern_id, p.name").Order("count DESC").Limit(10).Scan(&results)
 
 	patternUsage := make([]gin.H, 0)
 	for _, r := range results {
@@ -154,13 +166,17 @@ func (h *StatisticsHandler) getPatternUsage() []gin.H {
 	return patternUsage
 }
 
-func (h *StatisticsHandler) getModelRatio() []gin.H {
+func (h *StatisticsHandler) getModelRatio(deviceIDs []uint) []gin.H {
 	var results []struct {
 		Model string
 		Count int
 	}
 
-	h.db.Model(&model.Device{}).
+	query := h.db.Model(&model.Device{})
+	if len(deviceIDs) > 0 {
+		query = query.Where("id IN ?", deviceIDs)
+	}
+	query.
 		Select("model, COUNT(*) as count").
 		Group("model").
 		Order("count DESC").
@@ -177,21 +193,21 @@ func (h *StatisticsHandler) getModelRatio() []gin.H {
 	return modelRatio
 }
 
-func (h *StatisticsHandler) getTopProduction() []gin.H {
+func (h *StatisticsHandler) getTopProduction(deviceIDs []uint) []gin.H {
 	var results []struct {
 		DeviceID uint
 		Name     string
 		Total    int
 	}
 
-	h.db.Table("production_records pr").
+	query := h.db.Table("production_records pr").
 		Select("pr.device_id, d.name, SUM(pr.pieces) as total").
 		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
-		Where("pr.record_date >= ?", time.Now().AddDate(0, 0, -7)).
-		Group("pr.device_id, d.name").
-		Order("total DESC").
-		Limit(3).
-		Scan(&results)
+		Where("pr.record_date >= ?", time.Now().AddDate(0, 0, -7))
+	if len(deviceIDs) > 0 {
+		query = query.Where("pr.device_id IN ?", deviceIDs)
+	}
+	query.Group("pr.device_id, d.name").Order("total DESC").Limit(3).Scan(&results)
 
 	topProduction := make([]gin.H, 0)
 	for _, r := range results {
@@ -204,16 +220,24 @@ func (h *StatisticsHandler) getTopProduction() []gin.H {
 	return topProduction
 }
 
-func (h *StatisticsHandler) getRunningStatusByHour() []gin.H {
+func (h *StatisticsHandler) getRunningStatusByHour(deviceIDs []uint) []gin.H {
 	var totalDevices int64
-	h.db.Model(&model.Device{}).Count(&totalDevices)
+	totalDeviceQuery := h.db.Model(&model.Device{})
+	if len(deviceIDs) > 0 {
+		totalDeviceQuery = totalDeviceQuery.Where("id IN ?", deviceIDs)
+	}
+	totalDeviceQuery.Count(&totalDevices)
 	total := int(totalDevices)
 	if total < 0 {
 		total = 0
 	}
 
 	var currentOnlineDevices int64
-	h.db.Model(&model.Device{}).Where("status IN ?", []string{"online", "working", "idle"}).Count(&currentOnlineDevices)
+	onlineQuery := h.db.Model(&model.Device{}).Where("status IN ?", []string{"online", "working", "idle"})
+	if len(deviceIDs) > 0 {
+		onlineQuery = onlineQuery.Where("id IN ?", deviceIDs)
+	}
+	onlineQuery.Count(&currentOnlineDevices)
 
 	now := time.Now()
 	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
@@ -223,10 +247,13 @@ func (h *StatisticsHandler) getRunningStatusByHour() []gin.H {
 		DeviceID   uint
 		RecordDate time.Time
 	}
-	h.db.Model(&model.ProductionRecord{}).
+	hourlyQuery := h.db.Model(&model.ProductionRecord{}).
 		Select("device_id, record_date").
-		Where("record_date >= ? AND record_date < ?", dayStart, dayEnd).
-		Scan(&records)
+		Where("record_date >= ? AND record_date < ?", dayStart, dayEnd)
+	if len(deviceIDs) > 0 {
+		hourlyQuery = hourlyQuery.Where("device_id IN ?", deviceIDs)
+	}
+	hourlyQuery.Scan(&records)
 
 	hourDeviceMap := make(map[int]map[uint]struct{}, 24)
 	for _, record := range records {
@@ -265,19 +292,20 @@ func (h *StatisticsHandler) getRunningStatusByHour() []gin.H {
 	return result
 }
 
-func (h *StatisticsHandler) getProductionByDay() []gin.H {
+func (h *StatisticsHandler) getProductionByDay(deviceIDs []uint) []gin.H {
 	startDate := time.Now().AddDate(0, 0, -6).Format("2006-01-02")
 	var rows []struct {
 		Date  string
 		Value int
 	}
 
-	h.db.Model(&model.ProductionRecord{}).
+	query := h.db.Model(&model.ProductionRecord{}).
 		Select("DATE(record_date) as date, COALESCE(SUM(pieces), 0) as value").
-		Where("DATE(record_date) >= ?", startDate).
-		Group("DATE(record_date)").
-		Order("DATE(record_date) ASC").
-		Scan(&rows)
+		Where("DATE(record_date) >= ?", startDate)
+	if len(deviceIDs) > 0 {
+		query = query.Where("device_id IN ?", deviceIDs)
+	}
+	query.Group("DATE(record_date)").Order("DATE(record_date) ASC").Scan(&rows)
 
 	valueMap := make(map[string]int, len(rows))
 	for _, row := range rows {
