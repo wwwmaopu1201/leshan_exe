@@ -267,10 +267,41 @@ func (h *GroupHandler) DeleteGroup(c *gin.Context) {
 	}
 
 	// 删除分组时，将其用户、设备、操作员迁移为未分组，同时将子分组提升到当前层级
-	if err := tx.Model(&model.User{}).Where("group_id = ?", id).Update("group_id", nil).Error; err != nil {
+	deletedGroupID := uint(id)
+	var users []model.User
+	if err := tx.Select("id", "role", "group_id", "group_ids").Find(&users).Error; err != nil {
 		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "清理分组用户失败"})
 		return
+	}
+	for _, user := range users {
+		existingGroupIDs := collectUserGroupIDs(user)
+		if !containsGroupID(existingGroupIDs, deletedGroupID) {
+			continue
+		}
+		nextGroupIDs := make([]uint, 0, len(existingGroupIDs))
+		for _, gid := range existingGroupIDs {
+			if gid != deletedGroupID {
+				nextGroupIDs = append(nextGroupIDs, gid)
+			}
+		}
+		if !isAdminRole(user.Role) && len(nextGroupIDs) > 1 {
+			nextGroupIDs = nextGroupIDs[:1]
+		}
+
+		updates := map[string]interface{}{
+			"group_ids": encodeGroupIDs(nextGroupIDs),
+		}
+		if len(nextGroupIDs) > 0 {
+			updates["group_id"] = nextGroupIDs[0]
+		} else {
+			updates["group_id"] = nil
+		}
+		if err := tx.Model(&model.User{}).Where("id = ?", user.ID).Updates(updates).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "清理分组用户失败"})
+			return
+		}
 	}
 	if err := tx.Model(&model.Device{}).Where("group_id = ?", id).
 		Updates(map[string]interface{}{"group_id": nil, "sort_order": 0}).Error; err != nil {
