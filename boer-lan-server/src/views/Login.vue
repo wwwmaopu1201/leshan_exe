@@ -5,8 +5,8 @@
         博尔局域网服务器管理
       </div>
       <el-form :model="loginForm">
-        <el-form-item label="用户名">
-          <el-input v-model="loginForm.username" placeholder="请输入用户名" />
+        <el-form-item label="账号">
+          <el-input v-model="loginForm.username" placeholder="请输入账号" />
         </el-form-item>
         <el-form-item label="密码">
           <el-input

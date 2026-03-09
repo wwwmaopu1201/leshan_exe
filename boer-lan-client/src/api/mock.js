@@ -157,7 +157,7 @@ export const mockLogin = async (username, password) => {
       message: 'success'
     }
   }
-  throw new Error('用户名或密码错误')
+  throw new Error('账号或密码错误')
 }
 
 // Mock获取设备树
