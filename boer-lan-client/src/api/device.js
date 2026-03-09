@@ -52,7 +52,7 @@ export function updateDevice(id, data) {
   })
 }
 
-// 删除设备
+// 删除设备（业务语义：移出分组并保留设备）
 export function deleteDevice(id) {
   return request({
     url: `/device/${id}`,
@@ -60,7 +60,7 @@ export function deleteDevice(id) {
   })
 }
 
-// 批量删除设备
+// 批量删除设备（业务语义：批量移出分组并保留设备）
 export function batchDeleteDevices(ids) {
   return request({
     url: '/device/batch',

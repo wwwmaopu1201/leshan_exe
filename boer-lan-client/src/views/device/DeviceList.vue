@@ -66,7 +66,7 @@
             :disabled="!selectedRows.length"
             @click="handleBatchDelete"
           >
-            {{ $t('device.batchDelete') }}
+            {{ $t('device.batchRemoveFromGroup') }}
           </el-button>
           <el-button
             icon="el-icon-folder-add"
@@ -129,7 +129,7 @@
               监控
             </el-button>
             <el-button type="text" size="small" class="danger-text" @click="handleDelete(scope.row)">
-              {{ $t('common.delete') }}
+              {{ $t('device.removeFromGroup') }}
             </el-button>
           </template>
         </el-table-column>
@@ -463,7 +463,7 @@ export default {
       }
     },
     handleDelete(row) {
-      this.$confirm(this.$t('device.confirmDelete'), this.$t('common.warning'), {
+      this.$confirm(this.$t('device.confirmRemoveFromGroup'), this.$t('common.warning'), {
         confirmButtonText: this.$t('common.confirm'),
         cancelButtonText: this.$t('common.cancel'),
         type: 'warning'
@@ -471,35 +471,39 @@ export default {
         try {
           const res = await deleteDevice(row.id)
           if (res.code === 0) {
-            this.$message.success(this.$t('common.success'))
+            this.$message.success(res.message || this.$t('device.removedFromGroup'))
             this.fetchData()
           } else {
-            this.$message.error(res.message || '删除失败')
+            this.$message.error(res.message || '移出分组失败')
           }
         } catch (error) {
           console.error('Delete device failed:', error)
-          this.$message.error('删除设备失败')
+          this.$message.error('移出分组失败')
         }
       }).catch(() => {})
     },
     handleBatchDelete() {
-      this.$confirm(`确定要删除选中的 ${this.selectedRows.length} 个设备吗？`, this.$t('common.warning'), {
+      this.$confirm(
+        this.$t('device.confirmBatchRemoveFromGroup', { count: this.selectedRows.length }),
+        this.$t('common.warning'),
+        {
         confirmButtonText: this.$t('common.confirm'),
         cancelButtonText: this.$t('common.cancel'),
         type: 'warning'
-      }).then(async () => {
+        }
+      ).then(async () => {
         try {
           const ids = this.selectedRows.map(r => r.id)
           const res = await batchDeleteDevices(ids)
           if (res.code === 0) {
-            this.$message.success(this.$t('common.success'))
+            this.$message.success(res.message || this.$t('device.batchRemovedFromGroup'))
             this.fetchData()
           } else {
-            this.$message.error(res.message || '批量删除失败')
+            this.$message.error(res.message || '批量移出分组失败')
           }
         } catch (error) {
           console.error('Batch delete devices failed:', error)
-          this.$message.error('批量删除设备失败')
+          this.$message.error('批量移出分组失败')
         }
       }).catch(() => {})
     },

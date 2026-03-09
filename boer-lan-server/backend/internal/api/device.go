@@ -418,17 +418,33 @@ func (h *DeviceHandler) UpdateDevice(c *gin.Context) {
 
 func (h *DeviceHandler) DeleteDevice(c *gin.Context) {
 	id := c.Param("id")
-	if err := h.db.Delete(&model.Device{}, id).Error; err != nil {
+	var device model.Device
+	if err := h.db.First(&device, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": "设备不存在",
+		})
+		return
+	}
+
+	updates := map[string]interface{}{
+		"group_id":   nil,
+		"sort_order": 0,
+		// 删除设备仅移出分组并清空备注名，显示名回退为初始名（无初始名则回退到设备编码）
+		"name": gorm.Expr("COALESCE(NULLIF(initial_name, ''), code)"),
+	}
+
+	if err := h.db.Model(&device).Updates(updates).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
-			"message": "删除失败",
+			"message": "移出分组失败",
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
-		"message": "success",
+		"message": "设备已移出分组",
 	})
 }
 
@@ -444,11 +460,39 @@ func (h *DeviceHandler) BatchDeleteDevices(c *gin.Context) {
 		return
 	}
 
-	h.db.Delete(&model.Device{}, req.IDs)
+	if len(req.IDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "设备ID不能为空",
+		})
+		return
+	}
+
+	updates := map[string]interface{}{
+		"group_id":   nil,
+		"sort_order": 0,
+		// 批量删除与单个删除语义一致：移出分组并恢复为初始名/设备编码
+		"name": gorm.Expr("COALESCE(NULLIF(initial_name, ''), code)"),
+	}
+	result := h.db.Model(&model.Device{}).Where("id IN ?", req.IDs).Updates(updates)
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "批量移出分组失败",
+		})
+		return
+	}
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": "设备不存在",
+		})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
-		"message": "success",
+		"message": "设备已批量移出分组",
 	})
 }
 
