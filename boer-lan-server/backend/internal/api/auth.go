@@ -45,7 +45,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	if err := h.db.Where("username = ?", req.Username).First(&user).Error; err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"code":    401,
-			"message": "用户名或密码错误",
+			"message": "账号或密码错误",
 		})
 		return
 	}
@@ -53,7 +53,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	if !utils.CheckPassword(req.Password, user.Password) {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"code":    401,
-			"message": "用户名或密码错误",
+			"message": "账号或密码错误",
 		})
 		return
 	}

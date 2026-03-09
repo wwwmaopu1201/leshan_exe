@@ -125,7 +125,7 @@ func (h *OperatorHandler) CreateOperator(c *gin.Context) {
 	var count int64
 	h.db.Model(&model.Operator{}).Where("username = ?", req.Username).Count(&count)
 	if count > 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "用户名已存在"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "账号已存在"})
 		return
 	}
 
@@ -183,7 +183,7 @@ func (h *OperatorHandler) UpdateOperator(c *gin.Context) {
 		var count int64
 		h.db.Model(&model.Operator{}).Where("username = ? AND id != ?", username, id).Count(&count)
 		if count > 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "用户名已存在"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "账号已存在"})
 			return
 		}
 		updates["username"] = username
@@ -322,7 +322,7 @@ func (h *OperatorHandler) ImportOperators(c *gin.Context) {
 		var count int64
 		tx.Model(&model.Operator{}).Where("username = ?", username).Count(&count)
 		if count > 0 {
-			errors = append(errors, username+" 已存在")
+			errors = append(errors, username+" 账号已存在")
 			continue
 		}
 

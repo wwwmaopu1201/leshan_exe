@@ -155,7 +155,7 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 	var count int64
 	h.db.Model(&model.User{}).Where("username = ?", req.Username).Count(&count)
 	if count > 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "用户名已存在"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "账号已存在"})
 		return
 	}
 
