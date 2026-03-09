@@ -75,7 +75,8 @@
                 <i class="el-icon-sort"></i>
               </div>
               <div class="stat-info">
-                <div class="stat-value">{{ dashboardData.threadLength }}<small>m</small></div>
+                <div class="stat-value">{{ dashboardData.totalThreadLength }}<small>m</small></div>
+                <div class="stat-extra">已用 {{ dashboardData.usedThreadLength }}m</div>
                 <div class="stat-label">{{ $t('dashboard.threadLength') }}</div>
               </div>
             </div>
@@ -87,6 +88,7 @@
               </div>
               <div class="stat-info">
                 <div class="stat-value">{{ dashboardData.runningTime }}<small>h</small></div>
+                <div class="stat-extra">加工 {{ dashboardData.processingTime }}h</div>
                 <div class="stat-label">{{ $t('dashboard.runningTime') }}</div>
               </div>
             </div>
@@ -150,6 +152,8 @@ export default {
       dashboardData: {
         totalPieces: 0,
         threadLength: 0,
+        totalThreadLength: 0,
+        usedThreadLength: 0,
         spindleSpeed: 0,
         runningTime: 0,
         processingTime: 0,
@@ -247,6 +251,8 @@ export default {
           this.dashboardData = {
             totalPieces: res.data.totalPieces || 0,
             threadLength: res.data.threadLength || 0,
+            totalThreadLength: res.data.totalThreadLength || res.data.threadLength || 0,
+            usedThreadLength: res.data.usedThreadLength || res.data.threadLength || 0,
             spindleSpeed: res.data.spindleSpeed || 0,
             runningTime: res.data.runningTime || 0,
             processingTime: res.data.processingTime || 0,
@@ -259,6 +265,8 @@ export default {
         this.dashboardData = {
           totalPieces: 0,
           threadLength: 0,
+          totalThreadLength: 0,
+          usedThreadLength: 0,
           spindleSpeed: 0,
           runningTime: 0,
           processingTime: 0,
@@ -583,23 +591,29 @@ export default {
     &.purple { background: linear-gradient(135deg, #9b59b6, #8e44ad); }
   }
 
-  .stat-info {
-    .stat-value {
-      font-size: 24px;
-      font-weight: bold;
-      color: #303133;
+    .stat-info {
+      .stat-value {
+        font-size: 24px;
+        font-weight: bold;
+        color: #303133;
 
       small {
         font-size: 14px;
         font-weight: normal;
         color: #909399;
         margin-left: 2px;
+        }
       }
-    }
 
-    .stat-label {
-      font-size: 14px;
-      color: #909399;
+      .stat-extra {
+        margin-top: 2px;
+        font-size: 12px;
+        color: #606266;
+      }
+
+      .stat-label {
+        font-size: 14px;
+        color: #909399;
       margin-top: 5px;
     }
   }

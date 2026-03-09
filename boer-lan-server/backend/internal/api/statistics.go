@@ -319,6 +319,11 @@ func (h *StatisticsHandler) GetDashboardData(c *gin.Context) {
 	if totalTime > 0 {
 		utilizationRate = (runningTime / totalTime) * 100
 	}
+	usedThreadLength := threadLength
+	totalThreadLength := usedThreadLength * 1.25
+	if totalThreadLength < usedThreadLength {
+		totalThreadLength = usedThreadLength
+	}
 
 	// 近10天产量趋势
 	hourlyProduction := h.getHourlyProduction(deviceId, deviceIDs)
@@ -326,13 +331,15 @@ func (h *StatisticsHandler) GetDashboardData(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
-			"totalPieces":      totalPieces,
-			"threadLength":     threadLength,
-			"spindleSpeed":     3500, // 实时数据需从设备获取
-			"runningTime":      runningTime,
-			"processingTime":   runningTime * 0.8,
-			"utilizationRate":  utilizationRate,
-			"hourlyProduction": hourlyProduction,
+			"totalPieces":       totalPieces,
+			"threadLength":      roundFloat(usedThreadLength, 2), // 兼容旧字段，表示已用底线
+			"totalThreadLength": roundFloat(totalThreadLength, 2),
+			"usedThreadLength":  roundFloat(usedThreadLength, 2),
+			"spindleSpeed":      3500, // 实时数据需从设备获取
+			"runningTime":       roundFloat(runningTime, 2),
+			"processingTime":    roundFloat(runningTime*0.8, 2),
+			"utilizationRate":   roundFloat(utilizationRate, 2),
+			"hourlyProduction":  hourlyProduction,
 		},
 		"message": "success",
 	})
