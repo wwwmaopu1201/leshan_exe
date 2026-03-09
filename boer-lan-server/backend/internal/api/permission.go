@@ -115,6 +115,40 @@ func hasPermissionForUser(db *gorm.DB, userID uint, roleName string, required ..
 	return hasAnyPermission(permissionMap, required...), nil
 }
 
+func EnsureActiveAccount(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID := c.GetUint("userId")
+		if userID == 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"code":    401,
+				"message": "账号认证失效，请重新登录",
+			})
+			c.Abort()
+			return
+		}
+
+		var user model.User
+		if err := db.Select("id", "disabled").First(&user, userID).Error; err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"code":    401,
+				"message": "账号认证失效，请重新登录",
+			})
+			c.Abort()
+			return
+		}
+		if user.Disabled {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"message": "账号已被禁用",
+			})
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
 func RequirePermission(db *gorm.DB, required ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		roleName := c.GetString("role")

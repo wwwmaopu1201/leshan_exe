@@ -25,6 +25,7 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, se
 	// Protected routes
 	protected := api.Group("")
 	protected.Use(AuthMiddleware(jwtSecret))
+	protected.Use(EnsureActiveAccount(db))
 	{
 		permDevice := RequirePermission(db, "deviceManagement", "deviceInfo")
 		permRemoteMonitoring := RequirePermission(db, "remoteMonitoring", "deviceManagement")
