@@ -87,8 +87,45 @@ func (h *UserHandler) GetAllUsers(c *gin.Context) {
 		return
 	}
 
+	userGroupIDs := make(map[uint][]uint, len(users))
+	groupIDSet := make(map[uint]struct{})
+	for _, user := range users {
+		ids := collectUserGroupIDs(user)
+		userGroupIDs[user.ID] = ids
+		for _, groupID := range ids {
+			groupIDSet[groupID] = struct{}{}
+		}
+	}
+
+	groupInfoMap := make(map[uint]gin.H)
+	if len(groupIDSet) > 0 {
+		groupIDs := make([]uint, 0, len(groupIDSet))
+		for groupID := range groupIDSet {
+			groupIDs = append(groupIDs, groupID)
+		}
+
+		var relatedGroups []model.Group
+		if err := h.db.Preload("Parent").Where("id IN ?", groupIDs).Find(&relatedGroups).Error; err == nil {
+			for _, group := range relatedGroups {
+				groupInfoMap[group.ID] = gin.H{
+					"id":       group.ID,
+					"name":     group.Name,
+					"parentId": group.ParentID,
+					"parent":   group.Parent,
+				}
+			}
+		}
+	}
+
 	list := make([]gin.H, 0, len(users))
 	for _, user := range users {
+		groupIDs := userGroupIDs[user.ID]
+		groups := make([]gin.H, 0, len(groupIDs))
+		for _, groupID := range groupIDs {
+			if groupInfo, ok := groupInfoMap[groupID]; ok {
+				groups = append(groups, groupInfo)
+			}
+		}
 		list = append(list, gin.H{
 			"id":          user.ID,
 			"username":    user.Username,
@@ -97,7 +134,9 @@ func (h *UserHandler) GetAllUsers(c *gin.Context) {
 			"phone":       user.Phone,
 			"role":        user.Role,
 			"groupId":     user.GroupID,
+			"groupIds":    groupIDs,
 			"group":       user.Group,
+			"groups":      groups,
 			"disabled":    user.Disabled,
 			"permissions": user.Permissions,
 			"createTime":  user.CreatedAt.Format("2006-01-02 15:04:05"),
@@ -120,6 +159,7 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		Phone       string `json:"phone"`
 		Role        string `json:"role"`
 		GroupID     *uint  `json:"groupId"`
+		GroupIDs    []uint `json:"groupIds"`
 		Permissions string `json:"permissions"` // JSON字符串
 	}
 
@@ -176,6 +216,31 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		return
 	}
 
+	groupIDs := append([]uint{}, req.GroupIDs...)
+	if req.GroupID != nil && *req.GroupID > 0 {
+		groupIDs = append(groupIDs, *req.GroupID)
+	}
+	groupIDs = normalizeGroupIDs(groupIDs)
+	if !isAdminRole(req.Role) && len(groupIDs) > 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "非管理员仅允许选择一个分组"})
+		return
+	}
+	if err := ensureGroupIDsExist(h.db, groupIDs); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "分组参数错误"})
+		return
+	}
+
+	// 管理员未显式配置可见分组时，默认可查看全部分组。
+	if isAdminRole(req.Role) && req.GroupID == nil && len(req.GroupIDs) == 0 {
+		groupIDs = nil
+	}
+
+	var primaryGroupID *uint
+	if len(groupIDs) > 0 {
+		gid := groupIDs[0]
+		primaryGroupID = &gid
+	}
+
 	// 默认权限：优先使用角色配置
 	if req.Permissions == "" {
 		var role model.Role
@@ -193,7 +258,8 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		Email:       req.Email,
 		Phone:       req.Phone,
 		Role:        req.Role,
-		GroupID:     req.GroupID,
+		GroupID:     primaryGroupID,
+		GroupIDs:    encodeGroupIDs(groupIDs),
 		Permissions: req.Permissions,
 	}
 
@@ -225,6 +291,7 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 		Phone       *string         `json:"phone"`
 		Role        *string         `json:"role"`
 		GroupID     json.RawMessage `json:"groupId"`
+		GroupIDs    json.RawMessage `json:"groupIds"`
 		Disabled    *bool           `json:"disabled"`
 		Permissions *string         `json:"permissions"`
 	}
@@ -279,12 +346,14 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 		updates["phone"] = phone
 	}
 
+	effectiveRole := strings.TrimSpace(user.Role)
 	if req.Role != nil {
 		roleName := strings.TrimSpace(*req.Role)
 		if err := ensureRoleExistsByName(h.db, roleName); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "角色不存在，请先在权限角色中创建"})
 			return
 		}
+		effectiveRole = roleName
 		updates["role"] = roleName
 
 		// 如果仅切换角色，未显式传权限，则同步到角色默认权限
@@ -296,17 +365,66 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 		}
 	}
 
+	nextGroupIDs := collectUserGroupIDs(user)
+	groupConfigProvided := false
+
+	if len(req.GroupIDs) > 0 {
+		groupConfigProvided = true
+		raw := strings.TrimSpace(string(req.GroupIDs))
+		if raw == "" || raw == "null" {
+			nextGroupIDs = nil
+		} else {
+			var groupIDs []uint
+			if err := json.Unmarshal(req.GroupIDs, &groupIDs); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "分组参数错误"})
+				return
+			}
+			nextGroupIDs = normalizeGroupIDs(groupIDs)
+		}
+	}
+
 	if len(req.GroupID) > 0 {
+		groupConfigProvided = true
 		raw := strings.TrimSpace(string(req.GroupID))
 		if raw == "" || raw == "null" {
-			updates["group_id"] = nil
+			if len(req.GroupIDs) == 0 {
+				nextGroupIDs = nil
+			}
 		} else {
 			var groupID uint
 			if err := json.Unmarshal(req.GroupID, &groupID); err != nil || groupID == 0 {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "分组参数错误"})
 				return
 			}
-			updates["group_id"] = groupID
+			if len(req.GroupIDs) > 0 {
+				nextGroupIDs = normalizeGroupIDs(append(nextGroupIDs, groupID))
+			} else {
+				nextGroupIDs = []uint{groupID}
+			}
+		}
+	}
+
+	if !isAdminRole(effectiveRole) {
+		if groupConfigProvided && len(nextGroupIDs) > 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "非管理员仅允许选择一个分组"})
+			return
+		}
+		if !groupConfigProvided && len(nextGroupIDs) > 1 {
+			nextGroupIDs = nextGroupIDs[:1]
+			groupConfigProvided = true
+		}
+	}
+
+	if groupConfigProvided {
+		if err := ensureGroupIDsExist(h.db, nextGroupIDs); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "分组参数错误"})
+			return
+		}
+		updates["group_ids"] = encodeGroupIDs(nextGroupIDs)
+		if len(nextGroupIDs) > 0 {
+			updates["group_id"] = nextGroupIDs[0]
+		} else {
+			updates["group_id"] = nil
 		}
 	}
 
@@ -371,8 +489,15 @@ func (h *UserHandler) MoveUsersToGroup(c *gin.Context) {
 		return
 	}
 
+	groupIDs := []uint{}
+	if req.GroupID != nil && *req.GroupID > 0 {
+		groupIDs = []uint{*req.GroupID}
+	}
 	if err := h.db.Model(&model.User{}).Where("id IN ?", req.UserIDs).
-		Update("group_id", req.GroupID).Error; err != nil {
+		Updates(map[string]interface{}{
+			"group_id":  req.GroupID,
+			"group_ids": encodeGroupIDs(groupIDs),
+		}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

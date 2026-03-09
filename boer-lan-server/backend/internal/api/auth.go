@@ -65,6 +65,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	groupIDs := collectUserGroupIDs(user)
+
 	// Generate token
 	token, err := utils.GenerateToken(user.ID, user.Username, user.Role)
 	if err != nil {
@@ -95,6 +97,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 				"role":        user.Role,
 				"email":       user.Email,
 				"phone":       user.Phone,
+				"groupId":     user.GroupID,
+				"groupIds":    groupIDs,
 				"disabled":    user.Disabled,
 				"permissions": user.Permissions,
 				"createTime":  user.CreatedAt.Format("2006-01-02 15:04:05"),
@@ -123,6 +127,8 @@ func (h *AuthHandler) GetUserInfo(c *gin.Context) {
 		return
 	}
 
+	groupIDs := collectUserGroupIDs(user)
+
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
@@ -132,6 +138,8 @@ func (h *AuthHandler) GetUserInfo(c *gin.Context) {
 			"role":        user.Role,
 			"email":       user.Email,
 			"phone":       user.Phone,
+			"groupId":     user.GroupID,
+			"groupIds":    groupIDs,
 			"disabled":    user.Disabled,
 			"permissions": user.Permissions,
 			"createTime":  user.CreatedAt.Format("2006-01-02 15:04:05"),

@@ -19,6 +19,7 @@ type User struct {
 	Disabled    bool   `gorm:"default:false" json:"disabled"` // 是否禁用
 	Permissions string `gorm:"type:text" json:"permissions"`  // JSON格式的权限设置
 	GroupID     *uint  `gorm:"index" json:"groupId"`          // 所属分组
+	GroupIDs    string `gorm:"type:text" json:"groupIds"`     // 可见分组ID列表（JSON数组）
 	Group       *Group `gorm:"foreignKey:GroupID" json:"group,omitempty"`
 }
 

@@ -59,7 +59,129 @@ func (h *DeviceHandler) isDescendantGroup(groupID uint, potentialDescendantID ui
 	return false
 }
 
+func (h *DeviceHandler) getCurrentUserScope(c *gin.Context) userGroupScope {
+	userID := c.GetUint("userId")
+	if userID == 0 {
+		return userGroupScope{All: true}
+	}
+
+	scope, err := loadUserGroupScope(h.db, userID, c.GetString("role"))
+	if err != nil {
+		return userGroupScope{All: false, GroupIDs: nil}
+	}
+	return scope
+}
+
+func buildVisibleGroupSet(groups []model.Group, allowedGroupIDs []uint) map[uint]struct{} {
+	groupMap := make(map[uint]model.Group, len(groups))
+	for _, group := range groups {
+		groupMap[group.ID] = group
+	}
+
+	visibleSet := make(map[uint]struct{})
+	for _, groupID := range normalizeGroupIDs(allowedGroupIDs) {
+		current := groupID
+		for {
+			if _, exists := visibleSet[current]; exists {
+				break
+			}
+			visibleSet[current] = struct{}{}
+			group, ok := groupMap[current]
+			if !ok || group.ParentID == nil {
+				break
+			}
+			current = *group.ParentID
+		}
+	}
+	return visibleSet
+}
+
+func (h *DeviceHandler) buildScopedTree(allowedGroupIDs []uint) []gin.H {
+	allowedGroupIDs = normalizeGroupIDs(allowedGroupIDs)
+	if len(allowedGroupIDs) == 0 {
+		return []gin.H{}
+	}
+
+	var groups []model.Group
+	h.db.Order("sort_order ASC, id ASC").Find(&groups)
+	if len(groups) == 0 {
+		return []gin.H{}
+	}
+
+	allowedSet := make(map[uint]struct{}, len(allowedGroupIDs))
+	for _, groupID := range allowedGroupIDs {
+		allowedSet[groupID] = struct{}{}
+	}
+	visibleSet := buildVisibleGroupSet(groups, allowedGroupIDs)
+
+	parentGroups := make(map[uint][]model.Group)
+	for _, group := range groups {
+		parentKey := uint(0)
+		if group.ParentID != nil {
+			parentKey = *group.ParentID
+		}
+		parentGroups[parentKey] = append(parentGroups[parentKey], group)
+	}
+
+	var devices []model.Device
+	h.db.Where("group_id IN ?", allowedGroupIDs).
+		Order("sort_order ASC, code ASC, id ASC").
+		Find(&devices)
+
+	devicesByGroup := make(map[uint][]model.Device)
+	for _, device := range devices {
+		if device.GroupID == nil {
+			continue
+		}
+		devicesByGroup[*device.GroupID] = append(devicesByGroup[*device.GroupID], device)
+	}
+
+	var buildGroupNodes func(parentID *uint) []gin.H
+	buildGroupNodes = func(parentID *uint) []gin.H {
+		parentKey := uint(0)
+		if parentID != nil {
+			parentKey = *parentID
+		}
+
+		nodes := make([]gin.H, 0)
+		for _, group := range parentGroups[parentKey] {
+			if _, visible := visibleSet[group.ID]; !visible {
+				continue
+			}
+
+			children := buildGroupNodes(&group.ID)
+			if _, directAllowed := allowedSet[group.ID]; directAllowed {
+				if deviceNodes := h.buildDeviceNodes(devicesByGroup[group.ID]); len(deviceNodes) > 0 {
+					children = append(children, deviceNodes...)
+				}
+			}
+
+			node := gin.H{
+				"id":    group.ID,
+				"label": group.Name,
+			}
+			if len(children) > 0 {
+				node["children"] = children
+			}
+			nodes = append(nodes, node)
+		}
+		return nodes
+	}
+
+	return buildGroupNodes(nil)
+}
+
 func (h *DeviceHandler) GetDeviceTree(c *gin.Context) {
+	scope := h.getCurrentUserScope(c)
+	if !scope.All {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    0,
+			"data":    h.buildScopedTree(scope.GroupIDs),
+			"message": "success",
+		})
+		return
+	}
+
 	var groups []model.Group
 	h.db.
 		Preload("Devices", func(db *gorm.DB) *gorm.DB { return db.Order("sort_order ASC, code ASC, id ASC") }).
@@ -139,6 +261,21 @@ func (h *DeviceHandler) buildTree(groups []model.Group) []gin.H {
 func (h *DeviceHandler) GetDeviceList(c *gin.Context) {
 	var devices []model.Device
 	query := h.db.Preload("Group")
+	scope := h.getCurrentUserScope(c)
+	if !scope.All {
+		if len(scope.GroupIDs) == 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"code": 0,
+				"data": gin.H{
+					"list":  []gin.H{},
+					"total": 0,
+				},
+				"message": "success",
+			})
+			return
+		}
+		query = query.Where("group_id IN ?", scope.GroupIDs)
+	}
 
 	// Search
 	if keyword := c.Query("keyword"); keyword != "" {
@@ -242,6 +379,17 @@ func (h *DeviceHandler) GetDevice(c *gin.Context) {
 			"message": "设备不存在",
 		})
 		return
+	}
+
+	scope := h.getCurrentUserScope(c)
+	if !scope.All {
+		if device.GroupID == nil || !containsGroupID(scope.GroupIDs, *device.GroupID) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"message": "无权访问该设备",
+			})
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -610,8 +758,19 @@ func (h *DeviceHandler) MoveToGroup(c *gin.Context) {
 }
 
 func (h *DeviceHandler) GetDeviceGroups(c *gin.Context) {
+	scope := h.getCurrentUserScope(c)
 	var groups []model.Group
 	h.db.Order("parent_id IS NOT NULL, parent_id, sort_order, id").Find(&groups)
+	if !scope.All {
+		visibleSet := buildVisibleGroupSet(groups, scope.GroupIDs)
+		filtered := make([]model.Group, 0, len(groups))
+		for _, group := range groups {
+			if _, ok := visibleSet[group.ID]; ok {
+				filtered = append(filtered, group)
+			}
+		}
+		groups = filtered
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,

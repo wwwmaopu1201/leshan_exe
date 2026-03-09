@@ -51,7 +51,7 @@
         <el-table-column prop="nickname" label="账号姓名" min-width="120" />
         <el-table-column prop="role" label="角色" width="100" />
         <el-table-column prop="createTime" label="创建时间" width="170" />
-        <el-table-column label="所属分组" min-width="180">
+        <el-table-column label="可见分组" min-width="180">
           <template slot-scope="{ row }">
             {{ formatGroupName(row) }}
           </template>
@@ -131,8 +131,16 @@
           <el-input v-model="form.phone" placeholder="请输入手机号" />
         </el-form-item>
 
-        <el-form-item label="所属分组">
-          <el-select v-model="form.groupId" style="width: 100%;" clearable placeholder="可不选">
+        <el-form-item :label="isAdminRole(form.role) ? '可见分组' : '所属分组'">
+          <el-select
+            v-if="isAdminRole(form.role)"
+            v-model="form.groupIds"
+            style="width: 100%;"
+            multiple
+            collapse-tags
+            clearable
+            placeholder="不选则可查看全部分组"
+          >
             <el-option
               v-for="item in groups"
               :key="item.id"
@@ -140,6 +148,17 @@
               :value="item.id"
             />
           </el-select>
+          <el-select v-else v-model="form.groupId" style="width: 100%;" clearable placeholder="可不选">
+            <el-option
+              v-for="item in groups"
+              :key="item.id"
+              :label="item.parent ? `${item.parent.name} / ${item.name}` : item.name"
+              :value="item.id"
+            />
+          </el-select>
+          <div v-if="isAdminRole(form.role)" style="margin-top: 4px; color: #909399; line-height: 1.4;">
+            管理员未选择分组时，默认可查看全部分组设备。
+          </div>
         </el-form-item>
 
         <el-form-item label="账户状态">
@@ -237,6 +256,7 @@ export default {
         email: '',
         phone: '',
         groupId: null,
+        groupIds: [],
         disabled: false,
         permissionKeys: [...DEFAULT_PERMISSION_KEYS]
       },
@@ -283,6 +303,7 @@ export default {
           this.users = (Array.isArray(usersRes.data) ? usersRes.data : []).map(item => ({
             ...item,
             id: item.id || item.ID,
+            groupIds: this.normalizeGroupIds(item.groupIds, item.groupId),
             createTime: item.createTime || item.createdAt || item.CreatedAt || ''
           }))
         }
@@ -350,6 +371,23 @@ export default {
       }
       this.loadData()
     },
+    isAdminRole(roleName) {
+      return String(roleName || '').trim().toLowerCase() === 'admin'
+    },
+    normalizeGroupIds(groupIds, groupId) {
+      const merged = []
+      if (Array.isArray(groupIds)) {
+        merged.push(...groupIds)
+      }
+      if (groupId !== null && groupId !== undefined && groupId !== '') {
+        merged.push(groupId)
+      }
+      return Array.from(new Set(
+        merged
+          .map(item => Number(item))
+          .filter(item => Number.isFinite(item) && item > 0)
+      ))
+    },
     parsePermissions(raw) {
       const defaultMap = this.permissionOptions.reduce((acc, item) => {
         acc[item.key] = true
@@ -413,8 +451,26 @@ export default {
     },
     handleRoleChange(value) {
       this.applyRolePermissions(value)
+      if (this.isAdminRole(value)) {
+        if (this.form.groupId) {
+          this.form.groupIds = this.normalizeGroupIds(this.form.groupIds, this.form.groupId)
+        }
+      } else {
+        const first = this.normalizeGroupIds(this.form.groupIds, this.form.groupId)[0]
+        this.form.groupId = first || null
+        this.form.groupIds = first ? [first] : []
+      }
     },
     formatGroupName(user) {
+      const groupList = Array.isArray(user.groups) ? user.groups : []
+      if (groupList.length) {
+        return groupList.map(item => {
+          if (item?.parent?.name) {
+            return `${item.parent.name} / ${item.name}`
+          }
+          return item?.name || '-'
+        }).join('；')
+      }
       if (!user.group) return '-'
       if (user.group.parent) {
         return `${user.group.parent.name} / ${user.group.name}`
@@ -433,6 +489,7 @@ export default {
         email: '',
         phone: '',
         groupId: null,
+        groupIds: [],
         disabled: false,
         permissionKeys: [...DEFAULT_PERMISSION_KEYS]
       }
@@ -460,6 +517,7 @@ export default {
       this.form.username = candidate
     },
     openEditDialog(row) {
+      const groupIds = this.normalizeGroupIds(row.groupIds, row.groupId)
       this.dialogVisible = true
       this.form = {
         id: row.id || row.ID,
@@ -469,7 +527,8 @@ export default {
         role: row.role || 'user',
         email: row.email || '',
         phone: row.phone || '',
-        groupId: row.groupId || null,
+        groupId: groupIds[0] || null,
+        groupIds,
         disabled: !!row.disabled,
         permissionKeys: this.toPermissionKeys(row.permissions)
       }
@@ -491,9 +550,18 @@ export default {
           role: this.form.role,
           email: this.form.email,
           phone: String(this.form.phone || '').trim(),
-          groupId: this.form.groupId,
           disabled: this.form.disabled,
           permissions: this.getRoleByName(this.form.role)?.permissions || this.buildPermissionJSON(this.form.permissionKeys)
+        }
+
+        if (this.isAdminRole(this.form.role)) {
+          const groupIds = this.normalizeGroupIds(this.form.groupIds, null)
+          payload.groupIds = groupIds
+          payload.groupId = groupIds.length ? groupIds[0] : null
+        } else {
+          const singleGroupId = this.normalizeGroupIds([], this.form.groupId)[0] || null
+          payload.groupId = singleGroupId
+          payload.groupIds = singleGroupId ? [singleGroupId] : []
         }
 
         if (this.form.id) {
