@@ -196,12 +196,12 @@ func (h *RoleHandler) UpdateRole(c *gin.Context) {
 		return
 	}
 
-	// 角色名称变更时，同步用户表中的角色名
+	// 角色名称变更时，同步账号表中的角色名
 	if nameAny, ok := updates["name"]; ok {
 		newName := nameAny.(string)
 		if newName != role.Name {
 			if err := h.db.Model(&model.User{}).Where("role = ?", role.Name).Update("role", newName).Error; err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "更新用户角色失败: " + err.Error()})
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "更新账号角色失败: " + err.Error()})
 				return
 			}
 		}

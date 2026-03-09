@@ -52,7 +52,7 @@ export default {
         { path: '/database', label: '连接数据库', icon: 'el-icon-connection' },
         { path: '/groups', label: '分组管理', icon: 'el-icon-folder' },
         { path: '/roles', label: '权限角色', icon: 'el-icon-s-check' },
-        { path: '/users', label: '用户管理', icon: 'el-icon-user' },
+        { path: '/users', label: '账号管理', icon: 'el-icon-user' },
         { path: '/operators', label: '操作员管理', icon: 'el-icon-user-solid' },
         { path: '/devices', label: '设备管理', icon: 'el-icon-monitor' }
       ],

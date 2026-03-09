@@ -1,6 +1,6 @@
 <template>
   <div>
-    <div class="page-title">用户管理</div>
+    <div class="page-title">账号管理</div>
     <el-card>
       <el-form :inline="true" :model="searchForm" style="margin-bottom: 12px;">
         <el-form-item label="账号/账号姓名">
@@ -38,7 +38,7 @@
       </el-form>
 
       <div style="margin-bottom: 16px; display: flex; gap: 8px;">
-        <el-button type="primary" icon="el-icon-plus" @click="openCreateDialog">新建用户</el-button>
+        <el-button type="primary" icon="el-icon-plus" @click="openCreateDialog">新建账号</el-button>
         <el-button icon="el-icon-share" :disabled="selectedUserIds.length === 0" @click="openMoveDialog">
           批量移动分组
         </el-button>
@@ -85,7 +85,7 @@
     </el-card>
 
     <el-dialog
-      :title="form.id ? '编辑用户' : '新建用户'"
+      :title="form.id ? '编辑账号' : '新建账号'"
       :visible.sync="dialogVisible"
       width="640px"
       @close="resetForm"
@@ -191,7 +191,7 @@
     </el-dialog>
 
     <el-dialog
-      title="批量移动用户分组"
+      title="批量移动账号分组"
       :visible.sync="moveDialogVisible"
       width="420px"
     >
@@ -206,7 +206,7 @@
             />
           </el-select>
         </el-form-item>
-        <div style="color: #606266;">已选择 {{ selectedUserIds.length }} 个用户</div>
+        <div style="color: #606266;">已选择 {{ selectedUserIds.length }} 个账号</div>
       </el-form>
       <span slot="footer" class="dialog-footer">
         <el-button @click="moveDialogVisible = false">取消</el-button>
@@ -322,7 +322,7 @@ export default {
           this.$refs.userTableRef?.clearSelection()
         })
       } catch (error) {
-        console.error('加载用户数据失败', error)
+        console.error('加载账号数据失败', error)
       } finally {
         this.loading = false
       }
@@ -340,7 +340,7 @@ export default {
         return
       }
       if (!this.selectedUserIds.length) {
-        this.$message.warning('请先选择用户')
+        this.$message.warning('请先选择账号')
         return
       }
       this.moving = true
@@ -355,7 +355,7 @@ export default {
           await this.loadData()
         }
       } catch (error) {
-        console.error('移动用户分组失败', error)
+        console.error('移动账号分组失败', error)
       } finally {
         this.moving = false
       }
@@ -585,14 +585,14 @@ export default {
           await this.loadData()
         }
       } catch (error) {
-        console.error('保存用户失败', error)
+        console.error('保存账号失败', error)
       } finally {
         this.saving = false
       }
     },
     async deleteUser(row) {
       try {
-        await this.$confirm(`确定要删除用户「${row.username}」吗?`, '警告', {
+        await this.$confirm(`确定要删除账号「${row.username}」吗?`, '警告', {
           type: 'warning'
         })
         const res = await this.$axios.delete('/user', {
@@ -604,7 +604,7 @@ export default {
         }
       } catch (error) {
         if (error !== 'cancel') {
-          console.error('删除用户失败', error)
+          console.error('删除账号失败', error)
         }
       }
     }

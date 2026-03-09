@@ -37,7 +37,7 @@ func isValidUsername(username string) bool {
 	return matched
 }
 
-// GetUserList 获取用户列表
+// GetUserList 获取账号列表
 func (h *UserHandler) GetUserList(c *gin.Context) {
 	groupID := c.Query("groupId")
 	var users []model.User
@@ -59,7 +59,7 @@ func (h *UserHandler) GetUserList(c *gin.Context) {
 	})
 }
 
-// GetAllUsers 加载全部用户
+// GetAllUsers 加载全部账号
 func (h *UserHandler) GetAllUsers(c *gin.Context) {
 	keyword := strings.TrimSpace(c.Query("keyword"))
 	startDate := strings.TrimSpace(c.Query("startDate"))
@@ -149,7 +149,7 @@ func (h *UserHandler) GetAllUsers(c *gin.Context) {
 	})
 }
 
-// CreateUser 创建用户
+// CreateUser 创建账号
 func (h *UserHandler) CreateUser(c *gin.Context) {
 	var req struct {
 		Username    string `json:"username" binding:"required"`
@@ -191,7 +191,7 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		return
 	}
 
-	// 检查用户名是否已存在
+	// 检查账号是否已存在
 	var count int64
 	h.db.Model(&model.User{}).Where("username = ?", req.Username).Count(&count)
 	if count > 0 {
@@ -274,12 +274,12 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 	})
 }
 
-// UpdateUser 更新用户
+// UpdateUser 更新账号
 func (h *UserHandler) UpdateUser(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var user model.User
 	if err := h.db.First(&user, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "账号不存在"})
 		return
 	}
 
@@ -447,7 +447,7 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	})
 }
 
-// DeleteUser 删除用户
+// DeleteUser 删除账号
 func (h *UserHandler) DeleteUser(c *gin.Context) {
 	var req struct {
 		IDs []uint `json:"ids" binding:"required"`
@@ -458,7 +458,7 @@ func (h *UserHandler) DeleteUser(c *gin.Context) {
 		return
 	}
 
-	// 不允许删除admin用户
+	// 不允许删除admin账号
 	var adminCount int64
 	h.db.Model(&model.User{}).Where("id IN ? AND username = ?", req.IDs, "admin").Count(&adminCount)
 	if adminCount > 0 {
@@ -477,7 +477,7 @@ func (h *UserHandler) DeleteUser(c *gin.Context) {
 	})
 }
 
-// MoveUsersToGroup 移动用户到其他分组
+// MoveUsersToGroup 移动账号到其他分组
 func (h *UserHandler) MoveUsersToGroup(c *gin.Context) {
 	var req struct {
 		UserIDs []uint `json:"userIds" binding:"required"`

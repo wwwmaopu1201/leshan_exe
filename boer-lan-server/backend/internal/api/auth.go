@@ -122,7 +122,7 @@ func (h *AuthHandler) GetUserInfo(c *gin.Context) {
 	if err := h.db.First(&user, userId).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"code":    404,
-			"message": "用户不存在",
+			"message": "账号不存在",
 		})
 		return
 	}
@@ -185,7 +185,7 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	if err := h.db.First(&user, userId).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"code":    404,
-			"message": "用户不存在",
+			"message": "账号不存在",
 		})
 		return
 	}
@@ -263,7 +263,7 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 	if err := h.db.First(&user, userId).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"code":    404,
-			"message": "用户不存在",
+			"message": "账号不存在",
 		})
 		return
 	}
