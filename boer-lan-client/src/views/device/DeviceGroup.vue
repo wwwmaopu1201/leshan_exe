@@ -569,7 +569,10 @@ export default {
     allowDragGroupNode(draggingNode) {
       const data = draggingNode?.data
       if (!data) return false
-      if (data.isRoot || data.isVirtual || data.isDevice || data.id === 'all' || data.id === 'ungrouped') {
+      if (data.isDevice) {
+        return true
+      }
+      if (data.isRoot || data.isVirtual || data.id === 'all' || data.id === 'ungrouped') {
         return false
       }
       return true
@@ -596,6 +599,15 @@ export default {
       if (!dragging || !target) {
         return false
       }
+      if (dragging.isDevice) {
+        if (type !== 'inner') {
+          return false
+        }
+        if (target.isDevice || target.id === 'all') {
+          return false
+        }
+        return true
+      }
       if (target.isDevice) {
         return false
       }
@@ -616,7 +628,36 @@ export default {
       }
       return true
     },
-    async handleGroupNodeDrop() {
+    async handleGroupNodeDrop(draggingNode, dropNode) {
+      const dragging = draggingNode?.data
+      const target = dropNode?.data
+      if (!dragging || !target) {
+        return
+      }
+
+      if (dragging.isDevice) {
+        const targetGroupId = target.id === 'ungrouped' ? null : Number(target.id || 0)
+        if (target.id !== 'ungrouped' && targetGroupId <= 0) {
+          this.$message.warning('请选择有效的目标分组')
+          return
+        }
+        try {
+          const res = await moveToGroup([Number(dragging.deviceId)], targetGroupId)
+          if (res.code === 0) {
+            this.$message.success(targetGroupId ? '设备已移动到目标分组' : '设备已移出分组')
+            await this.fetchDevices()
+            this.buildGroupTree()
+            this.syncGroupDevices()
+          } else {
+            this.$message.error(res.message || '拖动设备失败')
+          }
+        } catch (error) {
+          console.error('Drag device failed:', error)
+          this.$message.error('拖动设备失败')
+        }
+        return
+      }
+
       const root = this.groupTree.find(node => node.id === 'all')
       if (!root) {
         return
