@@ -1,85 +1,110 @@
 <template>
   <div class="page-container">
     <div class="monitor-layout">
-      <div class="device-selector">
-        <el-select
-          v-model="selectedDeviceId"
-          placeholder="选择要监控的设备"
-          filterable
-          @change="handleDeviceChange"
-        >
-          <el-option
-            v-for="device in deviceList"
-            :key="device.id"
-            :label="device.name"
-            :value="device.id"
-          >
-            <span>{{ device.name }}</span>
-            <span :class="['status-dot', device.status]"></span>
-          </el-option>
-        </el-select>
+      <div class="monitor-columns">
+        <aside class="device-tree-panel">
+          <div class="panel-header">
+            <span>设备树</span>
+            <el-button type="text" size="mini" @click="resetTreeFilter">重置</el-button>
+          </div>
 
-        <el-input
-          v-model="deviceKeyword"
-          clearable
-          placeholder="按设备名称搜索"
-          @keyup.enter.native="handleDeviceFilter"
-          @clear="handleDeviceFilter"
-        />
+          <el-input
+            v-model="treeKeyword"
+            size="small"
+            clearable
+            placeholder="搜索树节点"
+          />
 
-        <el-date-picker
-          v-model="deviceDateRange"
-          type="daterange"
-          value-format="yyyy-MM-dd"
-          range-separator="至"
-          start-placeholder="开始日期"
-          end-placeholder="结束日期"
-          clearable
-          @change="handleDeviceFilter"
-        />
+          <el-input
+            v-model="deviceKeyword"
+            class="mt-10"
+            clearable
+            placeholder="按设备名称搜索"
+            @keyup.enter.native="handleDeviceFilter"
+            @clear="handleDeviceFilter"
+          />
 
-        <el-button plain icon="el-icon-search" @click="handleDeviceFilter">筛选设备</el-button>
+          <el-date-picker
+            v-model="deviceDateRange"
+            class="mt-10"
+            type="daterange"
+            value-format="yyyy-MM-dd"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            clearable
+            @change="handleDeviceFilter"
+          />
 
-        <el-input-number
-          v-model="vnc.port"
-          :min="1"
-          :max="65535"
-          controls-position="right"
-          placeholder="VNC端口"
-        />
+          <el-button class="mt-10" plain icon="el-icon-search" @click="handleDeviceFilter">筛选设备</el-button>
 
-        <el-input
-          v-model="vnc.password"
-          placeholder="VNC密码(可选)"
-          show-password
-          clearable
-        />
+          <div class="tree-wrapper mt-10">
+            <el-tree
+              ref="deviceTree"
+              :data="deviceTree"
+              :props="treeProps"
+              node-key="_nodeKey"
+              default-expand-all
+              highlight-current
+              :filter-node-method="filterTreeNode"
+              @node-click="handleTreeNodeClick"
+            >
+              <span slot-scope="{ node, data }" class="tree-node">
+                <i :class="getNodeIcon(data)"></i>
+                <span>{{ node.label }}</span>
+                <span v-if="data.type === 'device'" :class="['status-dot', data.status]"></span>
+              </span>
+            </el-tree>
+          </div>
+        </aside>
 
-        <el-radio-group v-model="vnc.mode" @change="handleModeChange">
-          <el-radio-button label="monitor">远程监控</el-radio-button>
-          <el-radio-button label="control">远程控制</el-radio-button>
-        </el-radio-group>
+        <section class="monitor-content">
+          <div class="device-selector">
+            <div class="selected-device-label">
+              当前设备：{{ selectedDevice ? selectedDevice.name : '未选择' }}
+              <span v-if="selectedDevice" :class="['status-dot', selectedDevice.status]"></span>
+            </div>
 
-        <el-button
-          type="primary"
-          :loading="vnc.connecting"
-          :disabled="!selectedDevice || vnc.connected"
-          @click="connectVNC"
-        >
-          连接
-        </el-button>
-        <el-button
-          type="danger"
-          plain
-          :disabled="!vnc.connected && !vnc.connecting"
-          @click="disconnectVNC()"
-        >
-          关闭监控
-        </el-button>
-        <el-button icon="el-icon-refresh" @click="refreshData">刷新数据</el-button>
-      </div>
+            <el-input-number
+              v-model="vnc.port"
+              :min="1"
+              :max="65535"
+              controls-position="right"
+              placeholder="VNC端口"
+            />
 
-      <template v-if="selectedDevice">
+            <el-input
+              v-model="vnc.password"
+              placeholder="VNC密码(可选)"
+              show-password
+              clearable
+            />
+
+            <el-radio-group v-model="vnc.mode" @change="handleModeChange">
+              <el-radio-button label="monitor">远程监控</el-radio-button>
+              <el-radio-button label="control">远程控制</el-radio-button>
+            </el-radio-group>
+
+            <el-button
+              type="primary"
+              :loading="vnc.connecting"
+              :disabled="!selectedDevice || vnc.connected"
+              @click="connectVNC"
+            >
+              连接
+            </el-button>
+            <el-button
+              type="danger"
+              plain
+              :disabled="!vnc.connected && !vnc.connecting"
+              @click="disconnectVNC()"
+            >
+              关闭监控
+            </el-button>
+            <el-button icon="el-icon-refresh" @click="refreshData">刷新数据</el-button>
+          </div>
+
+          <template v-if="selectedDevice">
         <el-row :gutter="20" class="status-row">
           <el-col :span="6">
             <div class="status-card">
@@ -188,14 +213,16 @@
           <div class="card-header">实时数据趋势</div>
           <div ref="realtimeChart" class="chart-container"></div>
         </div>
-      </template>
+          </template>
 
-      <template v-else>
-        <div class="empty-state">
-          <i class="el-icon-monitor"></i>
-          <p>请选择要监控的设备</p>
-        </div>
-      </template>
+          <template v-else>
+            <div class="empty-state">
+              <i class="el-icon-monitor"></i>
+              <p>请选择要监控的设备</p>
+            </div>
+          </template>
+        </section>
+      </div>
     </div>
   </div>
 </template>
@@ -203,17 +230,24 @@
 <script>
 import * as echarts from 'echarts'
 import RFB from '@novnc/novnc/lib/rfb'
-import { getDeviceList } from '@/api/device'
+import { getDeviceList, getDeviceTree } from '@/api/device'
 import { getDashboardData, getAlarmStats } from '@/api/statistics'
 
 export default {
   name: 'RemoteMonitor',
   data() {
     return {
+      treeKeyword: '',
       selectedDeviceId: null,
       deviceKeyword: '',
       deviceDateRange: [],
       deviceList: [],
+      fullDeviceTree: [],
+      deviceTree: [],
+      treeProps: {
+        children: 'children',
+        label: 'label'
+      },
       selectedDevice: null,
       realtimeData: {
         spindleSpeed: 0,
@@ -234,7 +268,13 @@ export default {
       }
     }
   },
+  watch: {
+    treeKeyword(val) {
+      this.$refs.deviceTree?.filter(val)
+    }
+  },
   mounted() {
+    this.fetchDeviceTree()
     this.fetchDevices()
     window.addEventListener('resize', this.handleResize)
   },
@@ -247,6 +287,82 @@ export default {
     }
   },
   methods: {
+    attachTreeNodeKeys(nodes) {
+      return (nodes || []).map(node => {
+        const nodeType = node.type === 'device' ? 'device' : 'group'
+        const children = this.attachTreeNodeKeys(node.children || [])
+        return {
+          ...node,
+          _nodeKey: `${nodeType}-${node.id}`,
+          children
+        }
+      })
+    },
+    filterTreeNode(value, data) {
+      if (!value) return true
+      return String(data.label || '').toLowerCase().includes(value.toLowerCase())
+    },
+    getNodeIcon(data) {
+      if (data?.type === 'device') return 'el-icon-monitor'
+      return data?.children?.length ? 'el-icon-folder-opened' : 'el-icon-folder'
+    },
+    collectDeviceIds(node) {
+      if (!node) return []
+      if (node.type === 'device') return [Number(node.id)]
+
+      const ids = []
+      const stack = [...(node.children || [])]
+      while (stack.length > 0) {
+        const current = stack.pop()
+        if (!current) continue
+        if (current.type === 'device') {
+          ids.push(Number(current.id))
+        } else if (Array.isArray(current.children) && current.children.length > 0) {
+          stack.push(...current.children)
+        }
+      }
+      return ids
+    },
+    pruneTreeByDeviceIds(nodes, allowedDeviceIDs) {
+      return (nodes || []).reduce((result, node) => {
+        if (node.type === 'device') {
+          if (allowedDeviceIDs.has(Number(node.id))) {
+            result.push({ ...node, children: [] })
+          }
+          return result
+        }
+        const children = this.pruneTreeByDeviceIds(node.children || [], allowedDeviceIDs)
+        if (children.length > 0) {
+          result.push({ ...node, children })
+        }
+        return result
+      }, [])
+    },
+    applyDeviceTreeFilter() {
+      if (!Array.isArray(this.fullDeviceTree) || this.fullDeviceTree.length === 0) {
+        this.deviceTree = []
+        return
+      }
+      const allowed = new Set((this.deviceList || []).map(item => Number(item.id)))
+      this.deviceTree = this.pruneTreeByDeviceIds(this.fullDeviceTree, allowed)
+      this.$nextTick(() => {
+        this.$refs.deviceTree?.filter(this.treeKeyword)
+        if (this.selectedDeviceId) {
+          this.$refs.deviceTree?.setCurrentKey(`device-${this.selectedDeviceId}`)
+        }
+      })
+    },
+    async fetchDeviceTree() {
+      try {
+        const res = await getDeviceTree()
+        if (res.code === 0) {
+          this.fullDeviceTree = this.attachTreeNodeKeys(res.data || [])
+          this.applyDeviceTreeFilter()
+        }
+      } catch (error) {
+        console.error('Failed to fetch device tree:', error)
+      }
+    },
     async fetchDevices() {
       try {
         const res = await getDeviceList({
@@ -258,6 +374,7 @@ export default {
         })
         if (res.code === 0) {
           this.deviceList = res.data.list || []
+          this.applyDeviceTreeFilter()
         }
 
         const routeDeviceId = Number(this.$route.query.id)
@@ -282,6 +399,32 @@ export default {
     },
     handleDeviceFilter() {
       this.fetchDevices()
+    },
+    resetTreeFilter() {
+      this.treeKeyword = ''
+      this.deviceKeyword = ''
+      this.deviceDateRange = []
+      this.fetchDevices()
+    },
+    handleTreeNodeClick(node) {
+      if (!node) return
+      if (node.type === 'device') {
+        this.selectedDeviceId = Number(node.id)
+        this.handleDeviceChange(this.selectedDeviceId)
+        return
+      }
+      const deviceIds = this.collectDeviceIds(node)
+      if (!deviceIds.length) {
+        this.selectedDeviceId = null
+        this.selectedDevice = null
+        this.disconnectVNC(false)
+        return
+      }
+      const preferredId = deviceIds.includes(Number(this.selectedDeviceId))
+        ? Number(this.selectedDeviceId)
+        : Number(deviceIds[0])
+      this.selectedDeviceId = preferredId
+      this.handleDeviceChange(preferredId)
     },
     handleDeviceChange(deviceId) {
       if (this.selectedDevice && this.selectedDevice.id !== deviceId) {
@@ -332,7 +475,7 @@ export default {
       }
     },
     async refreshData() {
-      await this.fetchDevices()
+      await Promise.all([this.fetchDeviceTree(), this.fetchDevices()])
       if (this.selectedDevice) {
         this.loadDeviceData()
       }
@@ -587,14 +730,60 @@ export default {
   min-height: calc(100vh - 120px);
 }
 
+.monitor-columns {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.device-tree-panel {
+  width: 320px;
+  flex: 0 0 320px;
+  background: #fff;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.tree-wrapper {
+  max-height: calc(100vh - 280px);
+  min-height: 360px;
+  overflow: auto;
+  border: 1px solid #ebeef5;
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.tree-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.monitor-content {
+  flex: 1;
+  min-width: 0;
+}
+
 .device-selector {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 20px;
+  align-items: center;
 
-  .el-select {
-    width: 300px;
+  .selected-device-label {
+    min-width: 220px;
+    font-weight: 500;
+    color: #303133;
   }
 
   .el-input-number {
@@ -615,7 +804,7 @@ export default {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  margin-left: 8px;
+  margin-left: 6px;
 
   &.online,
   &.working {
@@ -807,6 +996,20 @@ export default {
 }
 
 @media (max-width: 1280px) {
+  .monitor-columns {
+    flex-direction: column;
+  }
+
+  .device-tree-panel {
+    width: 100%;
+    flex: none;
+  }
+
+  .tree-wrapper {
+    max-height: 260px;
+    min-height: 220px;
+  }
+
   .monitor-screen {
     height: 380px;
   }
