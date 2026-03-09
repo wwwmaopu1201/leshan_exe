@@ -62,7 +62,7 @@ func (h *DeviceHandler) isDescendantGroup(groupID uint, potentialDescendantID ui
 func (h *DeviceHandler) GetDeviceTree(c *gin.Context) {
 	var groups []model.Group
 	h.db.
-		Preload("Devices", func(db *gorm.DB) *gorm.DB { return db.Order("code ASC") }).
+		Preload("Devices", func(db *gorm.DB) *gorm.DB { return db.Order("sort_order ASC, code ASC, id ASC") }).
 		Where("parent_id IS NULL").
 		Order("sort_order ASC, id ASC").
 		Find(&groups)
@@ -115,7 +115,7 @@ func (h *DeviceHandler) buildTree(groups []model.Group) []gin.H {
 		// Get children
 		var children []model.Group
 		h.db.
-			Preload("Devices", func(db *gorm.DB) *gorm.DB { return db.Order("code ASC") }).
+			Preload("Devices", func(db *gorm.DB) *gorm.DB { return db.Order("sort_order ASC, code ASC, id ASC") }).
 			Where("parent_id = ?", g.ID).
 			Order("sort_order ASC, id ASC").
 			Find(&children)
@@ -213,6 +213,7 @@ func (h *DeviceHandler) GetDeviceList(c *gin.Context) {
 			"ip":           d.IP,
 			"status":       d.Status,
 			"groupId":      d.GroupID,
+			"sortOrder":    d.SortOrder,
 			"createTime":   d.CreatedAt.Format("2006-01-02 15:04:05"),
 		}
 		if d.Group != nil {
@@ -311,6 +312,7 @@ func (h *DeviceHandler) UpdateDevice(c *gin.Context) {
 		Code         *string         `json:"code"`
 		Name         *string         `json:"name"`
 		InitialName  *string         `json:"initialName"`
+		SortOrder    *int            `json:"sortOrder"`
 		Type         *string         `json:"type"`
 		ModelName    *string         `json:"model"`
 		IP           *string         `json:"ip"`
@@ -355,6 +357,9 @@ func (h *DeviceHandler) UpdateDevice(c *gin.Context) {
 	}
 	if req.InitialName != nil {
 		updates["initial_name"] = strings.TrimSpace(*req.InitialName)
+	}
+	if req.SortOrder != nil {
+		updates["sort_order"] = *req.SortOrder
 	}
 	if req.Type != nil {
 		updates["type"] = strings.TrimSpace(*req.Type)
@@ -509,7 +514,93 @@ func (h *DeviceHandler) MoveToGroup(c *gin.Context) {
 		return
 	}
 
-	h.db.Model(&model.Device{}).Where("id IN ?", req.DeviceIDs).Update("group_id", req.GroupID)
+	if len(req.DeviceIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "设备ID不能为空",
+		})
+		return
+	}
+
+	if req.GroupID != nil {
+		var groupCount int64
+		if err := h.db.Model(&model.Group{}).Where("id = ?", *req.GroupID).Count(&groupCount).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "分组校验失败",
+			})
+			return
+		}
+		if groupCount == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "目标分组不存在",
+			})
+			return
+		}
+	}
+
+	tx := h.db.Begin()
+	if tx.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "移动失败",
+		})
+		return
+	}
+
+	if req.GroupID == nil {
+		if err := tx.Model(&model.Device{}).
+			Where("id IN ?", req.DeviceIDs).
+			Updates(map[string]interface{}{
+				"group_id":   nil,
+				"sort_order": 0,
+			}).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "移出分组失败",
+			})
+			return
+		}
+	} else {
+		var maxSort int
+		if err := tx.Model(&model.Device{}).
+			Where("group_id = ?", *req.GroupID).
+			Select("COALESCE(MAX(sort_order), 0)").
+			Scan(&maxSort).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "读取分组排序失败",
+			})
+			return
+		}
+
+		for index, deviceID := range req.DeviceIDs {
+			if err := tx.Model(&model.Device{}).
+				Where("id = ?", deviceID).
+				Updates(map[string]interface{}{
+					"group_id":   req.GroupID,
+					"sort_order": maxSort + index + 1,
+				}).Error; err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"code":    500,
+					"message": "移动设备失败",
+				})
+				return
+			}
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "移动失败",
+		})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,

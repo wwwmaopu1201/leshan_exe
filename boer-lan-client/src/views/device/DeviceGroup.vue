@@ -134,16 +134,31 @@
                     </el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column label="操作" width="100" align="center" v-if="selectedGroup.id !== 'all' && selectedGroup.id !== 'ungrouped'">
+                <el-table-column label="操作" width="180" align="center" v-if="selectedGroup.id !== 'all' && selectedGroup.id !== 'ungrouped'">
                   <template slot-scope="scope">
-                    <el-button
-                      v-if="scope.row.groupId && Number(scope.row.groupId) > 0"
-                      type="text"
-                      size="small"
-                      @click="handleRemoveDevice(scope.row)"
-                    >
-                      移除
-                    </el-button>
+                    <template v-if="scope.row.groupId && Number(scope.row.groupId) > 0">
+                      <el-button
+                        type="text"
+                        size="small"
+                        icon="el-icon-top"
+                        :disabled="!canMoveDevice(scope.row, 'up')"
+                        @click="handleMoveDevice(scope.row, 'up')"
+                      />
+                      <el-button
+                        type="text"
+                        size="small"
+                        icon="el-icon-bottom"
+                        :disabled="!canMoveDevice(scope.row, 'down')"
+                        @click="handleMoveDevice(scope.row, 'down')"
+                      />
+                      <el-button
+                        type="text"
+                        size="small"
+                        @click="handleRemoveDevice(scope.row)"
+                      >
+                        移除
+                      </el-button>
+                    </template>
                     <span v-else class="text-muted">-</span>
                   </template>
                 </el-table-column>
@@ -445,7 +460,13 @@ export default {
       nodeMap.forEach(node => {
         const devices = groupedDevices.get(Number(node.id)) || []
         if (!devices.length) return
-        devices.sort((a, b) => String(a.code || '').localeCompare(String(b.code || '')))
+        devices.sort((a, b) => {
+          const sortDiff = Number(a.sortOrder || 0) - Number(b.sortOrder || 0)
+          if (sortDiff !== 0) {
+            return sortDiff
+          }
+          return String(a.code || '').localeCompare(String(b.code || ''))
+        })
         const deviceNodes = devices.map(device => this.toDeviceNode(device, node.label))
         node.children = [...node.children, ...deviceNodes]
       })
@@ -513,6 +534,14 @@ export default {
         const bUngrouped = !(b.groupId && Number(b.groupId) > 0)
         if (aUngrouped !== bUngrouped) {
           return aUngrouped ? -1 : 1
+        }
+        const groupDiff = Number(a.groupId || 0) - Number(b.groupId || 0)
+        if (groupDiff !== 0) {
+          return groupDiff
+        }
+        const sortDiff = Number(a.sortOrder || 0) - Number(b.sortOrder || 0)
+        if (sortDiff !== 0) {
+          return sortDiff
         }
         return String(a.code || '').localeCompare(String(b.code || ''))
       })
@@ -1010,6 +1039,74 @@ export default {
       } catch (error) {
         console.error('Move group failed:', error)
         this.$message.error('更新分组顺序失败')
+      }
+    },
+    getSortedGroupDevices(groupId) {
+      return this.groupDevices
+        .filter(item => Number(item.groupId || 0) === Number(groupId || 0))
+        .sort((a, b) => {
+          const sortDiff = Number(a.sortOrder || 0) - Number(b.sortOrder || 0)
+          if (sortDiff !== 0) {
+            return sortDiff
+          }
+          return String(a.code || '').localeCompare(String(b.code || ''))
+        })
+    },
+    canMoveDevice(row, direction) {
+      const groupId = Number(row?.groupId || 0)
+      if (groupId <= 0) {
+        return false
+      }
+      const siblings = this.getSortedGroupDevices(groupId)
+      const currentIndex = siblings.findIndex(item => Number(item.id) === Number(row.id))
+      if (currentIndex < 0) {
+        return false
+      }
+      if (direction === 'up') {
+        return currentIndex > 0
+      }
+      return currentIndex < siblings.length - 1
+    },
+    async handleMoveDevice(row, direction) {
+      const groupId = Number(row?.groupId || 0)
+      if (groupId <= 0) {
+        return
+      }
+
+      const siblings = this.getSortedGroupDevices(groupId)
+      const normalized = siblings.map((item, index) => ({
+        ...item,
+        normalizedSortOrder: Number(item.sortOrder || 0) > 0 ? Number(item.sortOrder) : (index + 1) * 10
+      }))
+      const currentIndex = normalized.findIndex(item => Number(item.id) === Number(row.id))
+      if (currentIndex < 0) {
+        return
+      }
+
+      const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
+      if (targetIndex < 0 || targetIndex >= normalized.length) {
+        this.$message.warning(direction === 'up' ? '已经是第一个设备' : '已经是最后一个设备')
+        return
+      }
+
+      const current = normalized[currentIndex]
+      const target = normalized[targetIndex]
+      try {
+        const [resA, resB] = await Promise.all([
+          updateDevice(current.id, { sortOrder: target.normalizedSortOrder }),
+          updateDevice(target.id, { sortOrder: current.normalizedSortOrder })
+        ])
+        if (resA.code === 0 && resB.code === 0) {
+          this.$message.success('设备顺序已更新')
+          await this.fetchDevices()
+          this.buildGroupTree()
+          this.syncGroupDevices()
+        } else {
+          this.$message.error('更新设备顺序失败')
+        }
+      } catch (error) {
+        console.error('Move device failed:', error)
+        this.$message.error('更新设备顺序失败')
       }
     },
     handleDeleteGroup(data) {
