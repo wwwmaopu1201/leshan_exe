@@ -74,6 +74,8 @@ func (h *StatisticsHandler) getWeeklyEfficiency() []gin.H {
 	result := make([]gin.H, 0)
 	weekdays := []string{"周一", "周二", "周三", "周四", "周五", "周六", "周日"}
 	now := time.Now()
+	var totalDevices int64
+	h.db.Model(&model.Device{}).Count(&totalDevices)
 
 	for i := 6; i >= 0; i-- {
 		date := now.AddDate(0, 0, -i)
@@ -103,7 +105,9 @@ func (h *StatisticsHandler) getWeeklyEfficiency() []gin.H {
 			efficiency += (row.RunningTime / totalTime) * 100
 			validDeviceCount++
 		}
-		if validDeviceCount > 0 {
+		if totalDevices > 0 {
+			efficiency = efficiency / float64(totalDevices)
+		} else if validDeviceCount > 0 {
 			efficiency = efficiency / float64(validDeviceCount)
 		}
 
