@@ -172,7 +172,7 @@ export default {
     avatar: '头像',
     account: '账号',
     accountName: '账号姓名',
-    nickname: '昵称',
+    nickname: '账号姓名',
     email: '邮箱',
     phone: '手机号',
     roleName: '角色名称',

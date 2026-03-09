@@ -3,11 +3,11 @@
     <div class="page-title">操作员管理</div>
     <el-card>
       <el-form :inline="true" :model="searchForm" style="margin-bottom: 12px;">
-        <el-form-item label="账号/昵称">
+        <el-form-item label="账号/操作员姓名">
           <el-input
             v-model="searchForm.keyword"
             clearable
-            placeholder="输入账号或昵称"
+            placeholder="输入账号或操作员姓名"
             @keyup.enter.native="handleSearch"
           />
         </el-form-item>
@@ -46,7 +46,7 @@
       >
         <el-table-column type="selection" width="48" />
         <el-table-column prop="username" label="用户名" min-width="140" />
-        <el-table-column prop="nickname" label="昵称" min-width="130" />
+        <el-table-column prop="nickname" label="操作员姓名" min-width="130" />
         <el-table-column prop="createTime" label="创建时间" width="170" />
         <el-table-column label="所属分组" min-width="180">
           <template slot-scope="{ row }">
@@ -89,8 +89,8 @@
           />
         </el-form-item>
 
-        <el-form-item label="昵称" prop="nickname">
-          <el-input v-model="form.nickname" placeholder="请输入昵称" />
+        <el-form-item label="操作员姓名" prop="nickname">
+          <el-input v-model="form.nickname" placeholder="请输入操作员姓名" />
         </el-form-item>
 
         <el-form-item label="所属分组">
@@ -125,7 +125,7 @@
       width="640px"
     >
       <div style="margin-bottom: 8px; color: #606266;">
-        每行一个操作员，格式：`用户名,密码,昵称,分组ID(可选)`
+        每行一个操作员，格式：`用户名,密码,操作员姓名,分组ID(可选)`
       </div>
       <el-input
         v-model="importText"
@@ -204,7 +204,7 @@ export default {
           { required: true, message: '请输入密码', trigger: 'blur' },
           { min: 6, max: 32, message: '密码长度需在6-32位', trigger: 'blur' }
         ],
-        nickname: [{ required: true, message: '请输入昵称', trigger: 'blur' }]
+        nickname: [{ required: true, message: '请输入操作员姓名', trigger: 'blur' }]
       }
     }
   },
@@ -432,7 +432,7 @@ export default {
         })
         if (res.code !== 0) return
 
-        const headers = ['用户名', '昵称', '状态', '分组ID', '分组名称', '创建时间']
+        const headers = ['用户名', '操作员姓名', '状态', '分组ID', '分组名称', '创建时间']
         const rows = (Array.isArray(res.data) ? res.data : []).map(item => ([
           item.username || '',
           item.nickname || '',

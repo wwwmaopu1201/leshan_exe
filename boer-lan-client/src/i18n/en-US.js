@@ -172,7 +172,7 @@ export default {
     avatar: 'Avatar',
     account: 'Account',
     accountName: 'Account Name',
-    nickname: 'Nickname',
+    nickname: 'Account Name',
     email: 'Email',
     phone: 'Phone',
     roleName: 'Role',
