@@ -102,11 +102,11 @@ export default {
 
     return {
       loginForm: {
-        serverIp: localStorage.getItem('serverIp') || '127.0.0.1',
+        serverIp: localStorage.getItem('serverIp') || '',
         port: localStorage.getItem('serverPort') || '8088',
-        username: localStorage.getItem('rememberedUsername') || 'admin',
-        password: localStorage.getItem('rememberedPassword') || 'admin123',
-        remember: !!localStorage.getItem('rememberedUsername')
+        username: localStorage.getItem('rememberedUsername') || '',
+        password: localStorage.getItem('rememberedPassword') || '',
+        remember: !!localStorage.getItem('rememberedUsername') && !!localStorage.getItem('rememberedPassword')
       },
       loginRules: {
         serverIp: [
