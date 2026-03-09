@@ -77,7 +77,12 @@
               </div>
               <div class="stat-info">
                 <div class="stat-value">{{ dashboardData.totalThreadLength }}<small>m</small></div>
-                <div class="stat-extra">已用 {{ dashboardData.usedThreadLength }}m</div>
+                <div v-if="selectedScope.nodeType === 'device'" class="stat-extra">
+                  已用 {{ dashboardData.usedThreadLength }}m
+                </div>
+                <div v-else class="stat-extra">
+                  平均已用 {{ dashboardData.avgUsedThreadLength }}m · 累计已用 {{ dashboardData.usedThreadLength }}m
+                </div>
                 <div class="stat-label">{{ $t('dashboard.threadLength') }}</div>
               </div>
             </div>
@@ -177,6 +182,7 @@ export default {
         threadLength: 0,
         totalThreadLength: 0,
         usedThreadLength: 0,
+        avgUsedThreadLength: 0,
         spindleSpeed: 0,
         runningTime: 0,
         processingTime: 0,
@@ -280,6 +286,7 @@ export default {
             threadLength: res.data.threadLength || 0,
             totalThreadLength: res.data.totalThreadLength || res.data.threadLength || 0,
             usedThreadLength: res.data.usedThreadLength || res.data.threadLength || 0,
+            avgUsedThreadLength: res.data.avgUsedThreadLength || res.data.usedThreadLength || res.data.threadLength || 0,
             spindleSpeed: res.data.spindleSpeed || 0,
             runningTime: res.data.runningTime || 0,
             processingTime: res.data.processingTime || 0,
@@ -298,6 +305,7 @@ export default {
           threadLength: 0,
           totalThreadLength: 0,
           usedThreadLength: 0,
+          avgUsedThreadLength: 0,
           spindleSpeed: 0,
           runningTime: 0,
           processingTime: 0,

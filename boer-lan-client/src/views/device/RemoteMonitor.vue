@@ -720,7 +720,7 @@ export default {
       if (!chartDom) return
       this.chart = echarts.init(chartDom)
 
-      const timeData = hourlyProduction.map(item => item.hour)
+      const timeData = hourlyProduction.map(item => item.hour || item.date || '-')
       const productionData = hourlyProduction.map(item => Number(item.value || 0))
       const spindleBase = Number(this.realtimeData.spindleSpeed || 0)
       const speedData = timeData.map((_, index) => {

@@ -116,7 +116,7 @@ func (h *StatisticsHandler) getPatternUsage() []gin.H {
 		Where("pr.pattern_id IS NOT NULL").
 		Group("pr.pattern_id, p.name").
 		Order("count DESC").
-		Limit(4).
+		Limit(10).
 		Scan(&results)
 
 	patternUsage := make([]gin.H, 0)
@@ -136,6 +136,12 @@ func (h *StatisticsHandler) getPatternUsage() []gin.H {
 			{"name": "Pattern-001", "value": 35},
 			{"name": "Pattern-002", "value": 28},
 			{"name": "Pattern-003", "value": 22},
+			{"name": "Pattern-004", "value": 18},
+			{"name": "Pattern-005", "value": 16},
+			{"name": "Pattern-006", "value": 14},
+			{"name": "Pattern-007", "value": 12},
+			{"name": "Pattern-008", "value": 10},
+			{"name": "Pattern-009", "value": 8},
 			{"name": "其他", "value": 15},
 		}
 	}
@@ -299,6 +305,7 @@ func (h *StatisticsHandler) GetDashboardData(c *gin.Context) {
 	var totalPieces int
 	var todayPieces int
 	var threadLength float64
+	var avgUsedThreadLength float64
 
 	var todayRunningTime, todayIdleTime float64
 	summaryQuery := applyDashboardDeviceFilter(h.db.Model(&model.ProductionRecord{}), deviceId, deviceIDs)
@@ -320,10 +327,16 @@ func (h *StatisticsHandler) GetDashboardData(c *gin.Context) {
 		utilizationRate = (todayRunningTime / (todayRunningTime + todayIdleTime)) * 100
 	}
 	usedThreadLength := threadLength
+	deviceCount := h.countDashboardScopeDevices(deviceId, deviceIDs)
+	if deviceCount > 0 {
+		avgUsedThreadLength = usedThreadLength / float64(deviceCount)
+	}
 	totalThreadLength := usedThreadLength * 1.25
 	if totalThreadLength < usedThreadLength {
 		totalThreadLength = usedThreadLength
 	}
+
+	spindleSpeed := h.getDashboardSpindleSpeed(deviceId, deviceIDs)
 
 	// 近10天产量趋势
 	hourlyProduction := h.getHourlyProduction(deviceId, deviceIDs)
@@ -355,7 +368,8 @@ func (h *StatisticsHandler) GetDashboardData(c *gin.Context) {
 			"threadLength":           roundFloat(usedThreadLength, 2), // 兼容旧字段，表示已用底线
 			"totalThreadLength":      roundFloat(totalThreadLength, 2),
 			"usedThreadLength":       roundFloat(usedThreadLength, 2),
-			"spindleSpeed":           3500, // 实时数据需从设备获取
+			"avgUsedThreadLength":    roundFloat(avgUsedThreadLength, 2),
+			"spindleSpeed":           spindleSpeed,
 			"runningTime":            roundFloat(todayRunningTime, 2),
 			"processingTime":         roundFloat(processingTime, 2),
 			"utilizationRate":        roundFloat(utilizationRate, 2),
@@ -375,6 +389,85 @@ func applyDashboardDeviceFilter(query *gorm.DB, deviceId string, deviceIDs []uin
 		return query.Where("device_id IN ?", deviceIDs)
 	}
 	return query
+}
+
+func (h *StatisticsHandler) countDashboardScopeDevices(deviceId string, deviceIDs []uint) int64 {
+	if strings.TrimSpace(deviceId) != "" {
+		return 1
+	}
+	if len(deviceIDs) > 0 {
+		unique := make(map[uint]struct{}, len(deviceIDs))
+		for _, id := range deviceIDs {
+			if id == 0 {
+				continue
+			}
+			unique[id] = struct{}{}
+		}
+		return int64(len(unique))
+	}
+
+	var count int64
+	h.db.Model(&model.Device{}).Count(&count)
+	return count
+}
+
+func calculateSpindleSpeed(stitches int64, runningHours float64) float64 {
+	if stitches <= 0 || runningHours <= 0 {
+		return 0
+	}
+
+	// 采用“针数/分钟”近似主轴转速（RPM），并限制在合理量程。
+	rpm := float64(stitches) / (runningHours * 60)
+	if rpm <= 0 {
+		return 0
+	}
+	if rpm > 5000 {
+		rpm = 5000
+	}
+	return rpm
+}
+
+func (h *StatisticsHandler) getDashboardSpindleSpeed(deviceId string, deviceIDs []uint) int {
+	var rows []struct {
+		DeviceID    uint
+		Stitches    int64
+		RunningTime float64
+	}
+
+	applyDashboardDeviceFilter(h.db.Model(&model.ProductionRecord{}), deviceId, deviceIDs).
+		Select("device_id, stitches, running_time").
+		Order("record_date DESC, created_at DESC, id DESC").
+		Limit(500).
+		Scan(&rows)
+
+	if len(rows) == 0 {
+		return 3500
+	}
+
+	deviceSpeeds := make(map[uint]float64)
+	for _, row := range rows {
+		if row.DeviceID == 0 {
+			continue
+		}
+		if _, exists := deviceSpeeds[row.DeviceID]; exists {
+			continue
+		}
+		speed := calculateSpindleSpeed(row.Stitches, row.RunningTime)
+		if speed <= 0 {
+			continue
+		}
+		deviceSpeeds[row.DeviceID] = speed
+	}
+
+	if len(deviceSpeeds) == 0 {
+		return 3500
+	}
+
+	total := 0.0
+	for _, speed := range deviceSpeeds {
+		total += speed
+	}
+	return int(math.Round(total / float64(len(deviceSpeeds))))
 }
 
 func (h *StatisticsHandler) getHourlyProduction(deviceId string, deviceIDs []uint) []gin.H {
