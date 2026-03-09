@@ -47,7 +47,7 @@ export default {
     languageSwitch: 'Language',
     support: 'Support',
     contact: 'Contact Us',
-    manual: 'User Manual'
+    manual: 'Operation Guide'
   },
   login: {
     title: 'Boer LAN Management',
@@ -192,7 +192,7 @@ export default {
     email: 'Email',
     workingHours: 'Working Hours',
     address: 'Address',
-    userManual: 'User Manual',
+    userManual: 'Operation Guide',
     faq: 'FAQ',
     version: 'Version'
   }

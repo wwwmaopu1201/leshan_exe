@@ -151,7 +151,7 @@ export default {
 
         // 检查用户是否被禁用
         if (res.data.user && res.data.user.disabled) {
-          this.$message.error('您的账户已被禁用，请联系管理员')
+          this.$message.error('您的账号已被禁用，请联系管理员')
           this.loading = false
           return
         }

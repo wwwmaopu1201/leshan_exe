@@ -192,7 +192,7 @@ export default {
     email: '邮箱地址',
     workingHours: '工作时间',
     address: '公司地址',
-    userManual: '用户手册',
+    userManual: '操作说明',
     faq: '常见问题',
     version: '软件版本'
   }

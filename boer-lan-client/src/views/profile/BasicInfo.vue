@@ -110,7 +110,7 @@ export default {
     formatRoleLabel(roleName) {
       if (!roleName) return '-'
       if (roleName === 'admin') return '管理员'
-      if (roleName === 'user') return '普通用户'
+      if (roleName === 'user') return '普通账号'
       return roleName
     },
     async fetchLoginLogs() {

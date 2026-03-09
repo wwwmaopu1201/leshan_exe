@@ -224,7 +224,7 @@ router.beforeEach((to, from, next) => {
           if (res.code === 0 && res.data) {
             store.commit('SET_USER', res.data)
           } else {
-            throw new Error('获取用户信息失败')
+            throw new Error('获取账号信息失败')
           }
         } catch (error) {
           store.dispatch('logout')
@@ -235,7 +235,7 @@ router.beforeEach((to, from, next) => {
 
       // 检查用户是否被禁用
       if (store.getters.isUserDisabled) {
-        Message.error('您的账户已被禁用，请联系管理员')
+        Message.error('您的账号已被禁用，请联系管理员')
         store.dispatch('logout')
         next({ name: 'Login' })
         return

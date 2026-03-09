@@ -6,7 +6,7 @@ const delay = (ms = 300) => new Promise(resolve => setTimeout(resolve, ms))
 // Mock用户
 const mockUsers = [
   { id: 1, username: 'admin', password: 'admin123', nickname: '管理员', role: 'admin' },
-  { id: 2, username: 'user', password: 'user123', nickname: '普通用户', role: 'user' }
+  { id: 2, username: 'user', password: 'user123', nickname: '普通账号', role: 'user' }
 ]
 
 // Mock设备树
