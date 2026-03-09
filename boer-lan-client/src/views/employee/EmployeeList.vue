@@ -107,7 +107,7 @@
           <el-input v-model="editForm.phone" />
         </el-form-item>
         <el-form-item :label="$t('common.remark')" prop="remark">
-          <el-input v-model="editForm.remark" type="textarea" :rows="3" />
+          <el-input v-model="editForm.remark" type="textarea" :rows="3" :disabled="!!editForm.id" />
         </el-form-item>
       </el-form>
       <span slot="footer" class="dialog-footer">
@@ -401,9 +401,19 @@ export default {
         await this.$refs.editFormRef.validate()
         let res
         if (this.editForm.id) {
-          res = await updateEmployee(this.editForm.id, this.editForm)
+          const updatePayload = {
+            name: this.editForm.name,
+            phone: this.editForm.phone
+          }
+          res = await updateEmployee(this.editForm.id, updatePayload)
         } else {
-          res = await createEmployee(this.editForm)
+          const createPayload = {
+            code: this.editForm.code,
+            name: this.editForm.name,
+            phone: this.editForm.phone,
+            remark: this.editForm.remark || ''
+          }
+          res = await createEmployee(createPayload)
         }
         if (res.code === 0) {
           this.$message.success(this.$t('common.success'))
