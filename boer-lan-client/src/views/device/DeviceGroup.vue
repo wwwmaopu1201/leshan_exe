@@ -20,6 +20,7 @@
             highlight-current
             :expand-on-click-node="false"
             @node-click="handleNodeClick"
+            @node-contextmenu="handleNodeContextMenu"
           >
             <div class="tree-node flex-between" style="width: 100%" slot-scope="{ node, data }">
               <span class="tree-node-label" @dblclick.stop="handleNodeDoubleClick(data)" title="双击可重命名分组">
@@ -146,6 +147,24 @@
         <el-button type="primary" :loading="savingGroup" @click="handleSaveGroup">确定</el-button>
       </span>
     </el-dialog>
+
+    <ul
+      v-if="contextMenu.visible"
+      class="group-context-menu"
+      :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
+      @click.stop
+      @contextmenu.prevent
+    >
+      <li @click="handleContextMenuAction('addRoot')">新增分组</li>
+      <template v-if="contextMenu.node && !contextMenu.node.isRoot && !contextMenu.node.isVirtual">
+        <li @click="handleContextMenuAction('addSibling')">新增平级组</li>
+        <li @click="handleContextMenuAction('addChild')">新增子组</li>
+        <li @click="handleContextMenuAction('moveUp')">上移</li>
+        <li @click="handleContextMenuAction('moveDown')">下移</li>
+        <li @click="handleContextMenuAction('edit')">重命名</li>
+        <li class="danger" @click="handleContextMenuAction('delete')">删除分组</li>
+      </template>
+    </ul>
   </div>
 </template>
 
@@ -178,6 +197,12 @@ export default {
         name: '',
         parentId: null
       },
+      contextMenu: {
+        visible: false,
+        x: 0,
+        y: 0,
+        node: null
+      },
       groupRules: {
         name: [{ required: true, message: '请输入分组名称', trigger: 'blur' }]
       }
@@ -207,7 +232,13 @@ export default {
     }
   },
   mounted() {
+    document.addEventListener('click', this.hideContextMenu)
+    window.addEventListener('resize', this.hideContextMenu)
     this.fetchAll()
+  },
+  beforeDestroy() {
+    document.removeEventListener('click', this.hideContextMenu)
+    window.removeEventListener('resize', this.hideContextMenu)
   },
   methods: {
     async fetchAll() {
@@ -400,6 +431,58 @@ export default {
     handleNodeClick(data) {
       this.selectedGroup = data
       this.syncGroupDevices()
+      this.hideContextMenu()
+    },
+    handleNodeContextMenu(event, data) {
+      event.preventDefault()
+      this.selectedGroup = data
+      this.syncGroupDevices()
+      this.contextMenu = {
+        visible: true,
+        x: event.clientX,
+        y: event.clientY,
+        node: data
+      }
+    },
+    hideContextMenu() {
+      if (!this.contextMenu.visible) {
+        return
+      }
+      this.contextMenu.visible = false
+    },
+    handleContextMenuAction(action) {
+      const data = this.contextMenu.node
+      this.hideContextMenu()
+      if (action === 'addRoot') {
+        this.handleAddGroup()
+        return
+      }
+      if (!data || data.isRoot || data.isVirtual) {
+        return
+      }
+      if (action === 'addSibling') {
+        this.handleAddSibling(data)
+        return
+      }
+      if (action === 'addChild') {
+        this.handleAddChild(data)
+        return
+      }
+      if (action === 'moveUp') {
+        this.handleMoveGroup(data, 'up')
+        return
+      }
+      if (action === 'moveDown') {
+        this.handleMoveGroup(data, 'down')
+        return
+      }
+      if (action === 'edit') {
+        this.handleEditGroup(data)
+        return
+      }
+      if (action === 'delete') {
+        this.handleDeleteGroup(data)
+      }
     },
     handleNodeDoubleClick(data) {
       if (!data || data.isRoot || data.isVirtual || data.id === 'all' || data.id === 'ungrouped') {
@@ -619,5 +702,34 @@ export default {
 
 ::v-deep .el-table .row-ungrouped > td {
   background: #fff1f0;
+}
+
+.group-context-menu {
+  position: fixed;
+  z-index: 3000;
+  margin: 0;
+  padding: 6px 0;
+  list-style: none;
+  min-width: 140px;
+  background: #fff;
+  border: 1px solid #e4e7ed;
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
+
+  li {
+    padding: 7px 14px;
+    font-size: 13px;
+    color: #303133;
+    cursor: pointer;
+    user-select: none;
+
+    &:hover {
+      background: #f5f7fa;
+    }
+
+    &.danger {
+      color: #f56c6c;
+    }
+  }
 }
 </style>
