@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
+	"strings"
 
 	"boer-lan-server/internal/api"
 	"boer-lan-server/internal/model"
@@ -51,6 +53,7 @@ func main() {
 
 	// Initialize database
 	initDB()
+	applyServerConfigOverrides()
 
 	// Initialize Gin
 	if config.Server.Mode == "release" {
@@ -80,6 +83,28 @@ func main() {
 	if err := r.Run(addr); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
+}
+
+func applyServerConfigOverrides() {
+	if config.Server.Port <= 0 {
+		config.Server.Port = 8088
+	}
+
+	var record model.ServerConfig
+	if err := db.Where("key = ?", "server_port").First(&record).Error; err != nil {
+		return
+	}
+
+	port, err := strconv.Atoi(strings.TrimSpace(record.Value))
+	if err != nil || port < 1 || port > 65535 {
+		log.Printf("Ignore invalid server_port from server_config: %q", record.Value)
+		return
+	}
+
+	if config.Server.Port != port {
+		log.Printf("Server port overridden by server_config: %d -> %d", config.Server.Port, port)
+	}
+	config.Server.Port = port
 }
 
 func loadConfig() {
