@@ -168,6 +168,11 @@ func (h *OperatorHandler) CreateOperator(c *gin.Context) {
 // UpdateOperator 更新操作员
 func (h *OperatorHandler) UpdateOperator(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
+	var operator model.Operator
+	if err := h.db.Select("id", "username").First(&operator, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "操作员不存在"})
+		return
+	}
 
 	var req struct {
 		Username *string         `json:"username"`
@@ -186,18 +191,10 @@ func (h *OperatorHandler) UpdateOperator(c *gin.Context) {
 
 	if req.Username != nil {
 		username := strings.TrimSpace(*req.Username)
-		if !isValidOperatorUsername(username) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "账号仅支持字母数字下划线，且不超过11位"})
+		if username != operator.Username {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "账号不允许修改"})
 			return
 		}
-		// 检查用户名是否已被其他操作员使用
-		var count int64
-		h.db.Model(&model.Operator{}).Where("username = ? AND id != ?", username, id).Count(&count)
-		if count > 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "账号已存在"})
-			return
-		}
-		updates["username"] = username
 	}
 
 	if req.Password != nil && *req.Password != "" {
