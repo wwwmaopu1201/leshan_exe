@@ -37,6 +37,7 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, se
 		permStatusStats := RequirePermission(db, "statistics", "statusStatistics")
 		permStatsExport := RequirePermission(db, "statistics", "salaryStatistics", "statusStatistics")
 		permEmployee := RequirePermission(db, "employeeManagement")
+		permAdmin := RequireAdmin()
 
 		// Auth
 		protected.POST("/auth/logout", authHandler.Logout)
@@ -114,56 +115,56 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, se
 		protected.GET("/employee/export", permEmployee, employeeHandler.ExportEmployees)
 
 		// Group Management
-		protected.GET("/group/tree", groupHandler.GetGroupTree)
-		protected.GET("/group/list", groupHandler.GetGroupList)
-		protected.POST("/group", groupHandler.CreateGroup)
-		protected.PUT("/group/:id", groupHandler.UpdateGroup)
-		protected.DELETE("/group/:id", groupHandler.DeleteGroup)
-		protected.POST("/group/sort", groupHandler.SortGroups)
+		protected.GET("/group/tree", permAdmin, groupHandler.GetGroupTree)
+		protected.GET("/group/list", permAdmin, groupHandler.GetGroupList)
+		protected.POST("/group", permAdmin, groupHandler.CreateGroup)
+		protected.PUT("/group/:id", permAdmin, groupHandler.UpdateGroup)
+		protected.DELETE("/group/:id", permAdmin, groupHandler.DeleteGroup)
+		protected.POST("/group/sort", permAdmin, groupHandler.SortGroups)
 
 		// User Management
-		protected.GET("/role/list", roleHandler.GetRoleList)
-		protected.POST("/role", roleHandler.CreateRole)
-		protected.PUT("/role/:id", roleHandler.UpdateRole)
-		protected.DELETE("/role/:id", roleHandler.DeleteRole)
+		protected.GET("/role/list", permAdmin, roleHandler.GetRoleList)
+		protected.POST("/role", permAdmin, roleHandler.CreateRole)
+		protected.PUT("/role/:id", permAdmin, roleHandler.UpdateRole)
+		protected.DELETE("/role/:id", permAdmin, roleHandler.DeleteRole)
 
 		// User Management
-		protected.GET("/user/list", userHandler.GetUserList)
-		protected.GET("/user/all", userHandler.GetAllUsers)
-		protected.POST("/user", userHandler.CreateUser)
-		protected.PUT("/user/:id", userHandler.UpdateUser)
-		protected.DELETE("/user", userHandler.DeleteUser)
-		protected.POST("/user/move", userHandler.MoveUsersToGroup)
+		protected.GET("/user/list", permAdmin, userHandler.GetUserList)
+		protected.GET("/user/all", permAdmin, userHandler.GetAllUsers)
+		protected.POST("/user", permAdmin, userHandler.CreateUser)
+		protected.PUT("/user/:id", permAdmin, userHandler.UpdateUser)
+		protected.DELETE("/user", permAdmin, userHandler.DeleteUser)
+		protected.POST("/user/move", permAdmin, userHandler.MoveUsersToGroup)
 
 		// Operator Management
-		protected.GET("/operator/list", operatorHandler.GetOperatorList)
-		protected.GET("/operator/all", operatorHandler.GetAllOperators)
-		protected.POST("/operator", operatorHandler.CreateOperator)
-		protected.PUT("/operator/:id", operatorHandler.UpdateOperator)
-		protected.DELETE("/operator", operatorHandler.DeleteOperator)
-		protected.POST("/operator/move", operatorHandler.MoveOperatorsToGroup)
-		protected.POST("/operator/import", operatorHandler.ImportOperators)
-		protected.GET("/operator/export", operatorHandler.ExportOperators)
+		protected.GET("/operator/list", permAdmin, operatorHandler.GetOperatorList)
+		protected.GET("/operator/all", permAdmin, operatorHandler.GetAllOperators)
+		protected.POST("/operator", permAdmin, operatorHandler.CreateOperator)
+		protected.PUT("/operator/:id", permAdmin, operatorHandler.UpdateOperator)
+		protected.DELETE("/operator", permAdmin, operatorHandler.DeleteOperator)
+		protected.POST("/operator/move", permAdmin, operatorHandler.MoveOperatorsToGroup)
+		protected.POST("/operator/import", permAdmin, operatorHandler.ImportOperators)
+		protected.GET("/operator/export", permAdmin, operatorHandler.ExportOperators)
 
 		// System Management
-		protected.GET("/system/info", systemHandler.GetServerInfo)
-		protected.GET("/system/stats", systemHandler.GetSystemStats)
-		protected.GET("/system/network", systemHandler.GetNetworkInfo)
-		protected.POST("/system/ping", systemHandler.PingDevice)
-		protected.POST("/system/command", systemHandler.ExecuteCommand)
+		protected.GET("/system/info", permAdmin, systemHandler.GetServerInfo)
+		protected.GET("/system/stats", permAdmin, systemHandler.GetSystemStats)
+		protected.GET("/system/network", permAdmin, systemHandler.GetNetworkInfo)
+		protected.POST("/system/ping", permAdmin, systemHandler.PingDevice)
+		protected.POST("/system/command", permAdmin, systemHandler.ExecuteCommand)
 
 		// Debug Logs
-		protected.GET("/system/logs", systemHandler.GetDebugLogs)
-		protected.POST("/system/logs", systemHandler.AddDebugLog)
-		protected.DELETE("/system/logs", systemHandler.ClearDebugLogs)
+		protected.GET("/system/logs", permAdmin, systemHandler.GetDebugLogs)
+		protected.POST("/system/logs", permAdmin, systemHandler.AddDebugLog)
+		protected.DELETE("/system/logs", permAdmin, systemHandler.ClearDebugLogs)
 
 		// Server Config
-		protected.GET("/system/config", systemHandler.GetServerConfig)
-		protected.POST("/system/config", systemHandler.SetServerConfig)
-		protected.GET("/system/database/config", systemHandler.GetExternalDBConfig)
-		protected.GET("/system/database/sync-status", systemHandler.GetExternalDBSyncStatus)
-		protected.POST("/system/database/sync-now", systemHandler.SyncExternalDBNow)
-		protected.POST("/system/database/config", systemHandler.SetExternalDBConfig)
-		protected.POST("/system/database/test", systemHandler.TestExternalDBConnection)
+		protected.GET("/system/config", permAdmin, systemHandler.GetServerConfig)
+		protected.POST("/system/config", permAdmin, systemHandler.SetServerConfig)
+		protected.GET("/system/database/config", permAdmin, systemHandler.GetExternalDBConfig)
+		protected.GET("/system/database/sync-status", permAdmin, systemHandler.GetExternalDBSyncStatus)
+		protected.POST("/system/database/sync-now", permAdmin, systemHandler.SyncExternalDBNow)
+		protected.POST("/system/database/config", permAdmin, systemHandler.SetExternalDBConfig)
+		protected.POST("/system/database/test", permAdmin, systemHandler.TestExternalDBConnection)
 	}
 }

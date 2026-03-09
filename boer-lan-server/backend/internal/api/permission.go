@@ -153,3 +153,18 @@ func RequirePermission(db *gorm.DB, required ...string) gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+func RequireAdmin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if isAdminRole(c.GetString("role")) {
+			c.Next()
+			return
+		}
+
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    403,
+			"message": "仅管理员可执行该操作",
+		})
+		c.Abort()
+	}
+}
