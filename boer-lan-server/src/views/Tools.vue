@@ -38,7 +38,7 @@
             </el-button>
           </div>
           <div class="hint-text">
-            端口修改后需重启服务器程序生效；端口占用信息来自系统 `netstat` 输出。
+            端口修改后需重启服务器程序生效；端口占用基于 `netstat`，Windows 下会自动联查 `tasklist` 进程信息。
           </div>
         </el-card>
 
