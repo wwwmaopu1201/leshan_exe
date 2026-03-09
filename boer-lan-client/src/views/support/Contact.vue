@@ -41,7 +41,7 @@
               </div>
               <div class="contact-info">
                 <div class="contact-label">{{ $t('support.address') }}</div>
-                <div class="contact-value">浙江省杭州市滨江区科技园区XXX号</div>
+                <div class="contact-value">浙江省杭州市滨江区科技园区</div>
                 <el-link type="primary" :underline="false" @click="openMap" style="padding: 0;">查看地图</el-link>
               </div>
             </div>
@@ -153,7 +153,7 @@ export default {
   },
   methods: {
     openMap() {
-      const address = encodeURIComponent('浙江省杭州市滨江区科技园区XXX号')
+      const address = encodeURIComponent('浙江省杭州市滨江区科技园区')
       window.open(`https://uri.amap.com/search?keyword=${address}`, '_blank')
     },
     async handleSubmit() {
