@@ -134,6 +134,22 @@ func (h *DeviceHandler) ProxyVNCWebSocket(c *gin.Context) {
 		return
 	}
 
+	allowed, permErr := hasPermissionForUser(h.db, claims.UserID, claims.Role, "remoteMonitoring", "deviceManagement")
+	if permErr != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": "账号认证失效，请重新登录",
+		})
+		return
+	}
+	if !allowed {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    403,
+			"message": "当前账号无权访问远程监控",
+		})
+		return
+	}
+
 	var device model.Device
 	if err := h.db.First(&device, c.Param("id")).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
