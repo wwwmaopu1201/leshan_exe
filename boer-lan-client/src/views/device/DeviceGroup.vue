@@ -18,9 +18,13 @@
             v-loading="loadingGroups"
             default-expand-all
             highlight-current
+            draggable
             :expand-on-click-node="false"
+            :allow-drag="allowDragGroupNode"
+            :allow-drop="allowDropGroupNode"
             @node-click="handleNodeClick"
             @node-contextmenu="handleNodeContextMenu"
+            @node-drop="handleGroupNodeDrop"
           >
             <div class="tree-node flex-between" style="width: 100%" slot-scope="{ node, data }">
               <span class="tree-node-label" @dblclick.stop="handleNodeDoubleClick(data)" title="双击可重命名分组">
@@ -68,14 +72,38 @@
             </el-descriptions>
 
             <div class="mt-20">
-              <h4>分组设备列表</h4>
+              <div class="flex-between">
+                <h4>分组设备列表</h4>
+                <div>
+                  <el-button
+                    size="mini"
+                    icon="el-icon-folder-add"
+                    :disabled="selectedDeviceIds.length === 0"
+                    @click="openMoveDevicesDialog"
+                  >
+                    批量移动分组
+                  </el-button>
+                  <el-button
+                    size="mini"
+                    type="warning"
+                    icon="el-icon-remove-outline"
+                    :disabled="selectedDeviceIds.length === 0 || selectedGroup?.id === 'ungrouped'"
+                    @click="removeSelectedDevicesFromGroup"
+                  >
+                    批量移出分组
+                  </el-button>
+                </div>
+              </div>
               <el-table
+                ref="groupDeviceTableRef"
                 :data="groupDevices"
                 border
                 class="mt-10"
                 v-loading="loadingDevices"
                 :row-class-name="getDeviceRowClass"
+                @selection-change="handleDeviceSelectionChange"
               >
+                <el-table-column type="selection" width="48" />
                 <el-table-column prop="code" label="设备编码" width="120" />
                 <el-table-column label="设备名称">
                   <template slot-scope="scope">
@@ -96,7 +124,7 @@
                     </el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column label="操作" width="100" align="center" v-if="selectedGroup.id !== 'all'">
+                <el-table-column label="操作" width="100" align="center" v-if="selectedGroup.id !== 'all' && selectedGroup.id !== 'ungrouped'">
                   <template slot-scope="scope">
                     <el-button type="text" size="small" @click="handleRemoveDevice(scope.row)">
                       移除
@@ -148,6 +176,31 @@
       </span>
     </el-dialog>
 
+    <el-dialog
+      title="批量移动设备分组"
+      :visible.sync="showMoveDevicesDialog"
+      width="420px"
+    >
+      <el-form label-width="90px">
+        <el-form-item label="目标分组">
+          <el-select v-model="moveTargetGroupId" style="width: 100%;">
+            <el-option label="未分组（移出分组）" :value="0" />
+            <el-option
+              v-for="item in flatGroups"
+              :key="item.id"
+              :label="item.name"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+        <div style="color: #606266;">已选择 {{ selectedDeviceIds.length }} 台设备</div>
+      </el-form>
+      <span slot="footer" class="dialog-footer">
+        <el-button @click="showMoveDevicesDialog = false">取消</el-button>
+        <el-button type="primary" :loading="movingDevices" @click="confirmMoveDevicesToGroup">确定</el-button>
+      </span>
+    </el-dialog>
+
     <ul
       v-if="contextMenu.visible"
       class="group-context-menu"
@@ -185,12 +238,17 @@ export default {
       loadingGroups: false,
       loadingDevices: false,
       savingGroup: false,
+      movingDevices: false,
+      draggingGroup: false,
       flatGroups: [],
       groupTree: [],
       allDevices: [],
       selectedGroup: null,
       groupDevices: [],
+      selectedDeviceIds: [],
       showGroupDialog: false,
+      showMoveDevicesDialog: false,
+      moveTargetGroupId: 0,
       groupDialogMode: 'addRoot',
       groupForm: {
         id: null,
@@ -407,26 +465,210 @@ export default {
       }
       return `${name}（${employeeName}）`
     },
+    allowDragGroupNode(draggingNode) {
+      const data = draggingNode?.data
+      if (!data) return false
+      if (data.isRoot || data.isVirtual || data.id === 'all' || data.id === 'ungrouped') {
+        return false
+      }
+      return true
+    },
+    isDescendantGroup(descendantId, ancestorId) {
+      const parentMap = new Map()
+      this.flatGroups.forEach(group => {
+        parentMap.set(Number(group.id), Number(group.parentId || 0))
+      })
+      let current = Number(descendantId || 0)
+      const target = Number(ancestorId || 0)
+      while (current > 0) {
+        const parentId = Number(parentMap.get(current) || 0)
+        if (parentId === target) {
+          return true
+        }
+        current = parentId
+      }
+      return false
+    },
+    allowDropGroupNode(draggingNode, dropNode, type) {
+      const dragging = draggingNode?.data
+      const target = dropNode?.data
+      if (!dragging || !target) {
+        return false
+      }
+      if (!this.allowDragGroupNode(draggingNode)) {
+        return false
+      }
+      if (target.isVirtual) {
+        return type !== 'inner'
+      }
+      if (target.id === 'all') {
+        return type === 'inner'
+      }
+      if (target.id === dragging.id) {
+        return false
+      }
+      if (this.isDescendantGroup(Number(target.id), Number(dragging.id))) {
+        return false
+      }
+      return true
+    },
+    async handleGroupNodeDrop() {
+      const root = this.groupTree.find(node => node.id === 'all')
+      if (!root) {
+        return
+      }
+
+      const snapshotMap = new Map(
+        this.flatGroups.map(group => [Number(group.id), group])
+      )
+      const updates = []
+      const walk = (nodes, parentId) => {
+        const validNodes = (nodes || []).filter(node => !node.isVirtual && node.id !== 'all')
+        validNodes.forEach((node, index) => {
+          const original = snapshotMap.get(Number(node.id))
+          if (!original) {
+            return
+          }
+          const nextParentId = parentId || null
+          const nextSortOrder = (index + 1) * 10
+          const prevParent = Number(original.parentId || 0)
+          const currParent = Number(nextParentId || 0)
+          const prevSort = Number(original.sortOrder || 0)
+          if (prevParent !== currParent || prevSort !== nextSortOrder) {
+            updates.push({
+              id: original.id,
+              name: original.name,
+              parentId: nextParentId,
+              sortOrder: nextSortOrder
+            })
+          }
+          walk(node.children || [], node.id)
+        })
+      }
+      walk(root.children || [], null)
+
+      if (!updates.length) {
+        return
+      }
+
+      this.draggingGroup = true
+      try {
+        const results = await Promise.all(
+          updates.map(item => updateDeviceGroup(item.id, {
+            name: item.name,
+            parentId: item.parentId,
+            sortOrder: item.sortOrder
+          }))
+        )
+        if (results.every(item => item.code === 0)) {
+          this.$message.success('拖动分组已生效')
+          await this.fetchAll()
+          return
+        }
+        this.$message.error('部分分组保存失败，已刷新数据')
+        await this.fetchAll()
+      } catch (error) {
+        console.error('Drag group failed:', error)
+        this.$message.error('拖动分组失败，已回滚')
+        await this.fetchAll()
+      } finally {
+        this.draggingGroup = false
+      }
+    },
     syncGroupDevices() {
+      const resetSelection = () => {
+        this.selectedDeviceIds = []
+        this.$nextTick(() => {
+          this.$refs.groupDeviceTableRef?.clearSelection()
+        })
+      }
+
       if (!this.selectedGroup) {
         this.groupDevices = []
+        resetSelection()
         return
       }
 
       if (this.selectedGroup.id === 'all') {
         this.groupDevices = this.sortDevicesForDisplay(this.allDevices)
+        resetSelection()
         return
       }
       if (this.selectedGroup.id === 'ungrouped') {
         this.groupDevices = this.sortDevicesForDisplay(
           this.allDevices.filter(device => !(device.groupId && Number(device.groupId) > 0))
         )
+        resetSelection()
         return
       }
 
       const groupIdSet = this.getCurrentGroupIdSet()
       const devices = this.allDevices.filter(device => groupIdSet.has(Number(device.groupId || 0)))
       this.groupDevices = this.sortDevicesForDisplay(devices)
+      resetSelection()
+    },
+    handleDeviceSelectionChange(rows) {
+      this.selectedDeviceIds = rows.map(item => item.id).filter(Boolean)
+    },
+    openMoveDevicesDialog() {
+      if (!this.selectedDeviceIds.length) {
+        this.$message.warning('请先选择设备')
+        return
+      }
+      this.moveTargetGroupId = 0
+      this.showMoveDevicesDialog = true
+    },
+    async confirmMoveDevicesToGroup() {
+      if (!this.selectedDeviceIds.length) {
+        this.$message.warning('请先选择设备')
+        return
+      }
+      this.movingDevices = true
+      try {
+        const targetGroupId = Number(this.moveTargetGroupId || 0)
+        const res = await moveToGroup(this.selectedDeviceIds, targetGroupId > 0 ? targetGroupId : null)
+        if (res.code === 0) {
+          this.$message.success(targetGroupId > 0 ? '设备分组移动成功' : '已移出分组')
+          this.showMoveDevicesDialog = false
+          await this.fetchDevices()
+          this.buildGroupTree()
+          this.syncGroupDevices()
+          return
+        }
+        this.$message.error(res.message || '移动设备失败')
+      } catch (error) {
+        console.error('Move selected devices failed:', error)
+        this.$message.error('移动设备失败')
+      } finally {
+        this.movingDevices = false
+      }
+    },
+    async removeSelectedDevicesFromGroup() {
+      if (!this.selectedDeviceIds.length) {
+        this.$message.warning('请先选择设备')
+        return
+      }
+      try {
+        await this.$confirm(`确定将选中的 ${this.selectedDeviceIds.length} 台设备移出分组吗？`, '提示', {
+          confirmButtonText: '确定',
+          cancelButtonText: '取消',
+          type: 'warning'
+        })
+        const res = await moveToGroup(this.selectedDeviceIds, null)
+        if (res.code === 0) {
+          this.$message.success('批量移出成功')
+          await this.fetchDevices()
+          this.buildGroupTree()
+          this.syncGroupDevices()
+          return
+        }
+        this.$message.error(res.message || '批量移出失败')
+      } catch (error) {
+        if (error !== 'cancel') {
+          console.error('Batch remove devices failed:', error)
+          this.$message.error('批量移出失败')
+        }
+      }
     },
     handleNodeClick(data) {
       this.selectedGroup = data
