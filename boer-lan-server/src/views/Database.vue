@@ -16,7 +16,7 @@
           <div slot="header"><span>连接说明</span></div>
           <p>1. 连接外部数据库为可选功能，不连接时系统仍可使用本地数据。</p>
           <p>2. 当前支持 MySQL、MSSQL 完整连接测试。</p>
-          <p>3. 可配置同步间隔（分钟）用于后续数据同步策略。</p>
+          <p>3. 可配置同步间隔（分钟），用于定时同步设备上传数据（默认30分钟）。</p>
           <p>4. 最后更新时间：{{ formatTimestamp(form.updatedAt) }}</p>
           <p>5. 最近同步时间：{{ formatTimestamp(syncStatus.lastSyncAt) }}</p>
           <p>6. 下次同步时间：{{ formatTimestamp(syncStatus.nextSyncAt) }}</p>

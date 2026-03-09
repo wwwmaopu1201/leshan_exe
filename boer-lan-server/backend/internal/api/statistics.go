@@ -1386,7 +1386,7 @@ func (h *StatisticsHandler) exportSalaryCSV(c *gin.Context) {
 
 		writeCSVResponse(c,
 			fileNamePrefix+"_merged_"+time.Now().Format("20060102_150405")+".csv",
-			[]string{"员工编号", "员工姓名", "设备名称", "加工件数", "单价(元)", "工资(元)", "奖金(元)", "合计(元)"},
+			[]string{"员工工号", "员工姓名", "设备名称", "加工件数", "单价(元)", "工资(元)", "奖金(元)", "合计(元)"},
 			rows,
 		)
 		return
@@ -1433,7 +1433,7 @@ func (h *StatisticsHandler) exportSalaryCSV(c *gin.Context) {
 
 	writeCSVResponse(c,
 		fileNamePrefix+"_"+time.Now().Format("20060102_150405")+".csv",
-		[]string{"员工编号", "员工姓名", "设备名称", "加工件数", "单价(元)", "工资(元)", "奖金(元)", "合计(元)", "日期"},
+		[]string{"员工工号", "员工姓名", "设备名称", "加工件数", "单价(元)", "工资(元)", "奖金(元)", "合计(元)", "日期"},
 		rows,
 	)
 }

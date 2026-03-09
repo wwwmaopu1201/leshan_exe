@@ -24,8 +24,8 @@
       </el-col>
       <el-col :span="4">
         <el-card class="stat-card">
-          <div class="stat-card-title">操作员数量</div>
-          <div class="stat-card-value">{{ stats.operatorCount }}</div>
+          <div class="stat-card-title">员工数量</div>
+          <div class="stat-card-value">{{ typeof stats.employeeCount === 'number' ? stats.employeeCount : stats.operatorCount }}</div>
         </el-card>
       </el-col>
       <el-col :span="4">
@@ -60,6 +60,7 @@ export default {
         deviceCount: 0,
         onlineDeviceCount: 0,
         userCount: 0,
+        employeeCount: 0,
         operatorCount: 0,
         groupCount: 0
       },

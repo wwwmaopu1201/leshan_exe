@@ -109,7 +109,7 @@
       </div>
       <el-table :data="tableData" border v-loading="loading" show-summary>
         <el-table-column prop="employeeName" label="员工姓名" width="120" />
-        <el-table-column prop="employeeCode" label="员工编号" width="100" />
+        <el-table-column prop="employeeCode" label="员工工号" width="100" />
         <el-table-column v-if="!hideDeviceColumn" prop="deviceName" label="使用设备" width="120" />
         <el-table-column prop="totalPieces" label="加工件数" width="100" align="right" />
         <el-table-column prop="unitPrice" label="单价(元)" width="100" align="right" />

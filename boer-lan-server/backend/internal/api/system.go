@@ -373,14 +373,15 @@ func (h *SystemHandler) PingDevice(c *gin.Context) {
 
 // GetSystemStats 获取系统统计信息
 func (h *SystemHandler) GetSystemStats(c *gin.Context) {
-	var deviceCount, userCount, operatorCount, groupCount int64
+	var deviceCount, userCount, operatorCount, employeeCount, groupCount int64
 	h.db.Model(&model.Device{}).Count(&deviceCount)
 	h.db.Model(&model.User{}).Count(&userCount)
 	h.db.Model(&model.Operator{}).Count(&operatorCount)
+	h.db.Model(&model.Employee{}).Count(&employeeCount)
 	h.db.Model(&model.Group{}).Count(&groupCount)
 
 	var onlineDeviceCount int64
-	h.db.Model(&model.Device{}).Where("status = ?", "online").Count(&onlineDeviceCount)
+	h.db.Model(&model.Device{}).Where("status IN ?", []string{"online", "working", "idle"}).Count(&onlineDeviceCount)
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
@@ -388,6 +389,7 @@ func (h *SystemHandler) GetSystemStats(c *gin.Context) {
 			"deviceCount":       deviceCount,
 			"onlineDeviceCount": onlineDeviceCount,
 			"userCount":         userCount,
+			"employeeCount":     employeeCount,
 			"operatorCount":     operatorCount,
 			"groupCount":        groupCount,
 		},
