@@ -45,7 +45,7 @@
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" width="48" />
-        <el-table-column prop="username" label="用户名" min-width="140" />
+        <el-table-column prop="username" label="账号" min-width="140" />
         <el-table-column prop="nickname" label="操作员姓名" min-width="130" />
         <el-table-column prop="createTime" label="创建时间" width="170" />
         <el-table-column label="所属分组" min-width="180">
@@ -76,8 +76,8 @@
       @close="resetForm"
     >
       <el-form ref="operatorFormRef" :model="form" :rules="rules" label-width="110px">
-        <el-form-item label="用户名" prop="username">
-          <el-input v-model="form.username" :disabled="!!form.id" placeholder="请输入用户名" />
+        <el-form-item label="账号" prop="username">
+          <el-input v-model="form.username" :disabled="!!form.id" placeholder="请输入账号" />
         </el-form-item>
 
         <el-form-item :label="form.id ? '新密码(可选)' : '密码'" :prop="form.id ? '' : 'password'">
@@ -125,7 +125,7 @@
       width="640px"
     >
       <div style="margin-bottom: 8px; color: #606266;">
-        每行一个操作员，格式：`用户名,密码,操作员姓名,分组ID(可选)`
+        每行一个操作员，格式：`账号,密码,操作员姓名,分组ID(可选)`
       </div>
       <el-input
         v-model="importText"
@@ -196,7 +196,7 @@ export default {
       },
       rules: {
         username: [
-          { required: true, message: '请输入用户名', trigger: 'blur' },
+          { required: true, message: '请输入账号', trigger: 'blur' },
           { pattern: /^[a-zA-Z0-9_]+$/, message: '账号仅支持字母数字下划线', trigger: 'blur' },
           { max: 11, message: '账号不能超过11位', trigger: 'blur' }
         ],
@@ -432,7 +432,7 @@ export default {
         })
         if (res.code !== 0) return
 
-        const headers = ['用户名', '操作员姓名', '状态', '分组ID', '分组名称', '创建时间']
+        const headers = ['账号', '操作员姓名', '状态', '分组ID', '分组名称', '创建时间']
         const rows = (Array.isArray(res.data) ? res.data : []).map(item => ([
           item.username || '',
           item.nickname || '',

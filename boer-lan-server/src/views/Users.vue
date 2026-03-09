@@ -47,7 +47,7 @@
 
       <el-table ref="userTableRef" :data="users" v-loading="loading" style="width: 100%;" @selection-change="handleSelectionChange">
         <el-table-column type="selection" width="48" />
-        <el-table-column prop="username" label="用户名" min-width="130" />
+        <el-table-column prop="username" label="账号" min-width="130" />
         <el-table-column prop="nickname" label="账号姓名" min-width="120" />
         <el-table-column prop="role" label="角色" width="100" />
         <el-table-column prop="createTime" label="创建时间" width="170" />
@@ -91,8 +91,8 @@
       @close="resetForm"
     >
       <el-form ref="userFormRef" :model="form" :rules="rules" label-width="110px">
-        <el-form-item label="用户名" prop="username">
-          <el-input v-model="form.username" :disabled="!!form.id" placeholder="请输入用户名">
+        <el-form-item label="账号" prop="username">
+          <el-input v-model="form.username" :disabled="!!form.id" placeholder="请输入账号">
             <template v-if="!form.id" slot="append">
               <el-button @click="generateUsername">随机生成</el-button>
             </template>
@@ -242,7 +242,7 @@ export default {
       },
       rules: {
         username: [
-          { required: true, message: '请输入用户名', trigger: 'blur' },
+          { required: true, message: '请输入账号', trigger: 'blur' },
           { pattern: /^[a-zA-Z0-9]+$/, message: '账号仅支持字母数字', trigger: 'blur' },
           { max: 11, message: '账号不能超过11位', trigger: 'blur' }
         ],
