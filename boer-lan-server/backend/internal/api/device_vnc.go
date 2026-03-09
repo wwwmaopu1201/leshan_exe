@@ -73,6 +73,15 @@ func (h *DeviceHandler) ConfirmRemoteControl(c *gin.Context) {
 		})
 		return
 	}
+
+	scope := h.getCurrentUserScope(c)
+	if !h.canAccessDevice(scope, device) {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    403,
+			"message": "无权操作该设备",
+		})
+		return
+	}
 	if strings.EqualFold(strings.TrimSpace(device.Status), "offline") {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
@@ -116,7 +125,8 @@ func (h *DeviceHandler) ProxyVNCWebSocket(c *gin.Context) {
 		return
 	}
 
-	if _, err := utils.ParseToken(token); err != nil {
+	claims, err := utils.ParseToken(token)
+	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"code":    401,
 			"message": "认证无效或已过期",
@@ -131,6 +141,24 @@ func (h *DeviceHandler) ProxyVNCWebSocket(c *gin.Context) {
 			"message": "设备不存在",
 		})
 		return
+	}
+
+	scope, scopeErr := loadUserGroupScope(h.db, claims.UserID, claims.Role)
+	if scopeErr != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": "账号认证失效，请重新登录",
+		})
+		return
+	}
+	if !scope.All {
+		if device.GroupID == nil || !containsGroupID(scope.GroupIDs, *device.GroupID) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"message": "无权访问该设备",
+			})
+			return
+		}
 	}
 
 	host := strings.TrimSpace(device.IP)
