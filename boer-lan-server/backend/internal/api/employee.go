@@ -195,6 +195,15 @@ func (h *EmployeeHandler) UpdateEmployee(c *gin.Context) {
 	}
 
 	updates := map[string]interface{}{}
+
+	if req.Department != nil || req.Position != nil || req.Remark != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "仅支持修改员工姓名和手机号",
+		})
+		return
+	}
+
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
@@ -205,12 +214,6 @@ func (h *EmployeeHandler) UpdateEmployee(c *gin.Context) {
 			return
 		}
 		updates["name"] = name
-	}
-	if req.Department != nil {
-		updates["department"] = strings.TrimSpace(*req.Department)
-	}
-	if req.Position != nil {
-		updates["position"] = strings.TrimSpace(*req.Position)
 	}
 	if req.Phone != nil {
 		phone := strings.TrimSpace(*req.Phone)
@@ -223,10 +226,6 @@ func (h *EmployeeHandler) UpdateEmployee(c *gin.Context) {
 		}
 		updates["phone"] = phone
 	}
-	if req.Remark != nil {
-		updates["remark"] = strings.TrimSpace(*req.Remark)
-	}
-
 	if len(updates) == 0 {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    0,
