@@ -175,6 +175,15 @@ import { getSalaryStats, getSalaryDetail, exportStatistics } from '@/api/statist
 import { getEmployeeList } from '@/api/employee'
 import DeviceTreeFilter from '@/components/DeviceTreeFilter.vue'
 
+const getTodayRange = () => {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  const today = `${year}-${month}-${day}`
+  return [today, today]
+}
+
 export default {
   name: 'SalaryStats',
   components: {
@@ -184,7 +193,7 @@ export default {
     return {
       loading: false,
       searchForm: {
-        dateRange: [],
+        dateRange: getTodayRange(),
         employeeId: '',
         employeeKeyword: '',
         deviceFilter: {
@@ -279,7 +288,7 @@ export default {
     handleReset() {
       this.hideDeviceColumn = false
       this.searchForm = {
-        dateRange: [],
+        dateRange: getTodayRange(),
         employeeId: '',
         employeeKeyword: '',
         deviceFilter: {

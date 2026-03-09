@@ -131,6 +131,15 @@ import * as echarts from 'echarts'
 import { getDurationStats, exportStatistics } from '@/api/statistics'
 import DeviceTreePanel from '@/components/DeviceTreePanel.vue'
 
+const getTodayRange = () => {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  const today = `${year}-${month}-${day}`
+  return [today, today]
+}
+
 export default {
   name: 'DurationStats',
   components: {
@@ -140,7 +149,7 @@ export default {
     return {
       loading: false,
       searchForm: {
-        dateRange: [],
+        dateRange: getTodayRange(),
         deviceFilter: {
           label: '',
           nodeType: '',
@@ -211,7 +220,7 @@ export default {
     },
     handleReset() {
       this.searchForm = {
-        dateRange: [],
+        dateRange: getTodayRange(),
         deviceFilter: {
           label: '',
           nodeType: '',
