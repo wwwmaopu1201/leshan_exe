@@ -250,6 +250,11 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 			req.Permissions = defaultRolePermissionsJSON()
 		}
 	}
+	normalizedPermissions, err := normalizePermissionsJSON(req.Permissions)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	user := model.User{
 		Username:    req.Username,
@@ -260,7 +265,7 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		Role:        req.Role,
 		GroupID:     primaryGroupID,
 		GroupIDs:    encodeGroupIDs(groupIDs),
-		Permissions: req.Permissions,
+		Permissions: normalizedPermissions,
 	}
 
 	if err := h.db.Create(&user).Error; err != nil {
@@ -433,7 +438,12 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	}
 
 	if req.Permissions != nil {
-		updates["permissions"] = *req.Permissions
+		normalizedPermissions, err := normalizePermissionsJSON(*req.Permissions)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		updates["permissions"] = normalizedPermissions
 	}
 
 	if err := h.db.Model(&model.User{}).Where("id = ?", id).Updates(updates).Error; err != nil {
