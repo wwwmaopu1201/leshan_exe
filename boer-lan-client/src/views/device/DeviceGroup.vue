@@ -27,12 +27,13 @@
             @node-drop="handleGroupNodeDrop"
           >
             <div class="tree-node flex-between" style="width: 100%" slot-scope="{ node, data }">
-              <span class="tree-node-label" @dblclick.stop="handleNodeDoubleClick(data)" title="双击可重命名分组">
-                <i :class="(data.children && data.children.length) ? 'el-icon-folder-opened' : 'el-icon-folder'"></i>
+              <span class="tree-node-label" @dblclick.stop="handleNodeDoubleClick(data)" :title="data.isDevice ? '双击可重命名设备' : '双击可重命名分组'">
+                <i :class="getTreeNodeIcon(data)"></i>
                 {{ node.label }}
-                <span class="device-count">({{ data.deviceCount || 0 }})</span>
+                <span v-if="!data.isDevice" class="device-count">({{ data.deviceCount || 0 }})</span>
+                <span v-if="data.isDevice" :class="['node-status-dot', `status-${data.status || 'offline'}`]"></span>
               </span>
-              <span class="node-actions" v-if="!data.isRoot">
+              <span class="node-actions" v-if="!data.isRoot && !data.isVirtual && !data.isDevice">
                 <el-button type="text" size="mini" @click.stop="handleAddSibling(data)" title="新增平级组">
                   <i class="el-icon-plus"></i>
                 </el-button>
@@ -64,7 +65,13 @@
           </div>
 
           <template v-if="selectedGroup">
-            <el-descriptions :column="2" border>
+            <el-descriptions v-if="selectedGroup.isDevice" :column="2" border>
+              <el-descriptions-item label="设备名称">{{ selectedGroup.label }}</el-descriptions-item>
+              <el-descriptions-item label="设备编码">{{ selectedGroup.code || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="所属分组">{{ selectedGroup.parentLabel || '未分组' }}</el-descriptions-item>
+              <el-descriptions-item label="设备状态">{{ selectedGroup.status || '-' }}</el-descriptions-item>
+            </el-descriptions>
+            <el-descriptions v-else :column="2" border>
               <el-descriptions-item label="分组名称">{{ selectedGroup.label }}</el-descriptions-item>
               <el-descriptions-item label="设备数量">{{ groupDevices.length }}</el-descriptions-item>
               <el-descriptions-item label="分组ID">{{ selectedGroup.id }}</el-descriptions-item>
@@ -87,7 +94,7 @@
                     size="mini"
                     type="warning"
                     icon="el-icon-remove-outline"
-                    :disabled="selectedDeviceIds.length === 0 || selectedGroup?.id === 'ungrouped'"
+                    :disabled="selectedDeviceIds.length === 0 || selectedGroup?.id === 'ungrouped' || selectedGroup?.parentLabel === '未分组'"
                     @click="removeSelectedDevicesFromGroup"
                   >
                     批量移出分组
@@ -126,9 +133,15 @@
                 </el-table-column>
                 <el-table-column label="操作" width="100" align="center" v-if="selectedGroup.id !== 'all' && selectedGroup.id !== 'ungrouped'">
                   <template slot-scope="scope">
-                    <el-button type="text" size="small" @click="handleRemoveDevice(scope.row)">
+                    <el-button
+                      v-if="scope.row.groupId && Number(scope.row.groupId) > 0"
+                      type="text"
+                      size="small"
+                      @click="handleRemoveDevice(scope.row)"
+                    >
                       移除
                     </el-button>
+                    <span v-else class="text-muted">-</span>
                   </template>
                 </el-table-column>
               </el-table>
@@ -209,7 +222,7 @@
       @contextmenu.prevent
     >
       <li @click="handleContextMenuAction('addRoot')">新增分组</li>
-      <template v-if="contextMenu.node && !contextMenu.node.isRoot && !contextMenu.node.isVirtual">
+      <template v-if="contextMenu.node && !contextMenu.node.isRoot && !contextMenu.node.isVirtual && !contextMenu.node.isDevice">
         <li @click="handleContextMenuAction('addSibling')">新增平级组</li>
         <li @click="handleContextMenuAction('addChild')">新增子组</li>
         <li @click="handleContextMenuAction('moveUp')">上移</li>
@@ -226,6 +239,7 @@ import {
   getDeviceGroups,
   createDeviceGroup,
   updateDeviceGroup,
+  updateDevice,
   deleteDeviceGroup,
   getDeviceList,
   moveToGroup
@@ -338,6 +352,34 @@ export default {
         this.loadingDevices = false
       }
     },
+    toDeviceNode(device, parentLabel = '') {
+      return {
+        id: `device-${device.id}`,
+        deviceId: Number(device.id),
+        label: this.formatDeviceName(device),
+        code: device.code || '',
+        status: device.status || '',
+        parentLabel: parentLabel || device.group || '',
+        isDevice: true,
+        isRoot: false,
+        isVirtual: false,
+        children: []
+      }
+    },
+    findTreeNode(predicate, nodes = this.groupTree) {
+      const stack = [...(nodes || [])]
+      while (stack.length > 0) {
+        const current = stack.pop()
+        if (!current) continue
+        if (predicate(current)) {
+          return current
+        }
+        if (Array.isArray(current.children) && current.children.length > 0) {
+          stack.push(...current.children)
+        }
+      }
+      return null
+    },
     buildGroupTree() {
       const nodeMap = new Map()
       this.flatGroups.forEach(group => {
@@ -382,13 +424,34 @@ export default {
       roots.forEach(calcCount)
       roots.sort((a, b) => (a.sortOrder - b.sortOrder) || (a.id - b.id))
 
+      // Append direct device nodes after child groups.
+      const groupedDevices = new Map()
+      this.allDevices.forEach(device => {
+        const groupId = Number(device.groupId || 0)
+        if (!groupId || !nodeMap.has(groupId)) return
+        if (!groupedDevices.has(groupId)) {
+          groupedDevices.set(groupId, [])
+        }
+        groupedDevices.get(groupId).push(device)
+      })
+      nodeMap.forEach(node => {
+        const devices = groupedDevices.get(Number(node.id)) || []
+        if (!devices.length) return
+        devices.sort((a, b) => String(a.code || '').localeCompare(String(b.code || '')))
+        const deviceNodes = devices.map(device => this.toDeviceNode(device, node.label))
+        node.children = [...node.children, ...deviceNodes]
+      })
+
       const ungroupedCount = this.allDevices.filter(device => !(device.groupId && Number(device.groupId) > 0)).length
+      const ungroupedDevices = this.allDevices
+        .filter(device => !(device.groupId && Number(device.groupId) > 0))
+        .sort((a, b) => String(a.code || '').localeCompare(String(b.code || '')))
       const ungroupedNode = {
         id: 'ungrouped',
         label: '未分组设备',
         parentId: null,
         parentLabel: '',
-        children: [],
+        children: ungroupedDevices.map(device => this.toDeviceNode(device, '未分组')),
         deviceCount: ungroupedCount,
         isRoot: true,
         isVirtual: true
@@ -428,6 +491,7 @@ export default {
     },
     getCurrentGroupIdSet() {
       if (!this.selectedGroup) return new Set()
+      if (this.selectedGroup.isDevice) return new Set()
       if (this.selectedGroup.id === 'all') {
         return new Set(this.flatGroups.map(group => group.id))
       }
@@ -468,7 +532,7 @@ export default {
     allowDragGroupNode(draggingNode) {
       const data = draggingNode?.data
       if (!data) return false
-      if (data.isRoot || data.isVirtual || data.id === 'all' || data.id === 'ungrouped') {
+      if (data.isRoot || data.isVirtual || data.isDevice || data.id === 'all' || data.id === 'ungrouped') {
         return false
       }
       return true
@@ -493,6 +557,9 @@ export default {
       const dragging = draggingNode?.data
       const target = dropNode?.data
       if (!dragging || !target) {
+        return false
+      }
+      if (target.isDevice) {
         return false
       }
       if (!this.allowDragGroupNode(draggingNode)) {
@@ -523,7 +590,7 @@ export default {
       )
       const updates = []
       const walk = (nodes, parentId) => {
-        const validNodes = (nodes || []).filter(node => !node.isVirtual && node.id !== 'all')
+        const validNodes = (nodes || []).filter(node => !node.isVirtual && !node.isDevice && node.id !== 'all')
         validNodes.forEach((node, index) => {
           const original = snapshotMap.get(Number(node.id))
           if (!original) {
@@ -597,6 +664,13 @@ export default {
       if (this.selectedGroup.id === 'ungrouped') {
         this.groupDevices = this.sortDevicesForDisplay(
           this.allDevices.filter(device => !(device.groupId && Number(device.groupId) > 0))
+        )
+        resetSelection()
+        return
+      }
+      if (this.selectedGroup.isDevice) {
+        this.groupDevices = this.sortDevicesForDisplay(
+          this.allDevices.filter(device => Number(device.id) === Number(this.selectedGroup.deviceId))
         )
         resetSelection()
         return
@@ -677,6 +751,10 @@ export default {
     },
     handleNodeContextMenu(event, data) {
       event.preventDefault()
+      if (data?.isDevice) {
+        this.hideContextMenu()
+        return
+      }
       this.selectedGroup = data
       this.syncGroupDevices()
       this.contextMenu = {
@@ -699,7 +777,7 @@ export default {
         this.handleAddGroup()
         return
       }
-      if (!data || data.isRoot || data.isVirtual) {
+      if (!data || data.isRoot || data.isVirtual || data.isDevice) {
         return
       }
       if (action === 'addSibling') {
@@ -730,7 +808,59 @@ export default {
       if (!data || data.isRoot || data.isVirtual || data.id === 'all' || data.id === 'ungrouped') {
         return
       }
+      if (data.isDevice) {
+        this.renameDevice(data)
+        return
+      }
       this.handleEditGroup(data)
+    },
+    getTreeNodeIcon(data) {
+      if (data?.isDevice) {
+        return 'el-icon-monitor'
+      }
+      return (data.children && data.children.length) ? 'el-icon-folder-opened' : 'el-icon-folder'
+    },
+    async renameDevice(data) {
+      const deviceId = Number(data?.deviceId || 0)
+      if (!deviceId) {
+        return
+      }
+      const currentDevice = this.allDevices.find(item => Number(item.id) === deviceId)
+      if (!currentDevice) {
+        this.$message.warning('未找到设备信息，请先刷新')
+        return
+      }
+      try {
+        const { value } = await this.$prompt('请输入新的设备名称', '重命名设备', {
+          inputValue: currentDevice.name || '',
+          confirmButtonText: '确定',
+          cancelButtonText: '取消',
+          inputPlaceholder: '请输入设备名称'
+        })
+        const name = String(value || '').trim()
+        if (!name) {
+          this.$message.warning('设备名称不能为空')
+          return
+        }
+        if (name === String(currentDevice.name || '').trim()) {
+          return
+        }
+        const res = await updateDevice(deviceId, { name })
+        if (res.code === 0) {
+          this.$message.success('设备名称已更新')
+          await this.fetchDevices()
+          this.buildGroupTree()
+          this.selectedGroup = this.findTreeNode(node => node.isDevice && Number(node.deviceId) === deviceId) || (this.groupTree[0] || null)
+          this.syncGroupDevices()
+          return
+        }
+        this.$message.error(res.message || '重命名失败')
+      } catch (error) {
+        if (error !== 'cancel') {
+          console.error('Rename device failed:', error)
+          this.$message.error('重命名失败')
+        }
+      }
     },
     getStatusType(status) {
       const map = {
@@ -898,6 +1028,29 @@ export default {
 .tree-node {
   .tree-node-label {
     cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .node-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+
+    &.status-online,
+    &.status-idle {
+      background: #67C23A;
+    }
+
+    &.status-working,
+    &.status-alarm {
+      background: #F56C6C;
+    }
+
+    &.status-offline {
+      background: #909399;
+    }
   }
 
   .device-count {
@@ -918,6 +1071,10 @@ export default {
 
 .danger-text {
   color: #F56C6C !important;
+}
+
+.text-muted {
+  color: #909399;
 }
 
 .empty-state {
