@@ -183,8 +183,8 @@ export default {
 
   &.online { background: #67C23A; }
   &.working { background: #F56C6C; }
-  &.idle { background: #409EFF; }
-  &.alarm { background: #E6A23C; }
+  &.idle { background: #67C23A; }
+  &.alarm { background: #F56C6C; }
   &.offline { background: #909399; }
 }
 </style>

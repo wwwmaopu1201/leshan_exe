@@ -349,8 +349,8 @@ export default {
     getStatusType(status) {
       const map = {
         online: 'success',
-        working: 'primary',
-        idle: 'warning',
+        working: 'danger',
+        idle: 'success',
         offline: 'info',
         alarm: 'danger'
       }
@@ -560,7 +560,7 @@ export default {
   }
 
   &.status-online {
-    background: #409EFF;
+    background: #67C23A;
   }
 
   &.status-offline {
@@ -568,7 +568,7 @@ export default {
   }
 
   &.status-alarm {
-    background: #E6A23C;
+    background: #F56C6C;
   }
 }
 

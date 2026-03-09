@@ -807,15 +807,13 @@ export default {
   margin-left: 6px;
 
   &.online,
-  &.working {
+  &.idle {
     background: #67C23A;
   }
   &.offline {
     background: #909399;
   }
-  &.idle {
-    background: #E6A23C;
-  }
+  &.working,
   &.alarm {
     background: #F56C6C;
   }
@@ -849,15 +847,13 @@ export default {
     }
 
     &.online,
-    &.working {
+    &.idle {
       color: #67C23A;
     }
     &.offline {
       color: #909399;
     }
-    &.idle {
-      color: #E6A23C;
-    }
+    &.working,
     &.alarm {
       color: #F56C6C;
     }

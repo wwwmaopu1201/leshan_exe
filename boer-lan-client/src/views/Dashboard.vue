@@ -409,10 +409,9 @@ export default {
     border-radius: 50%;
     margin-left: 8px;
 
-    &.online, &.working { background: #67C23A; }
+    &.online, &.idle { background: #67C23A; }
     &.offline { background: #909399; }
-    &.idle { background: #E6A23C; }
-    &.alarm { background: #F56C6C; }
+    &.working, &.alarm { background: #F56C6C; }
   }
 }
 
@@ -447,7 +446,7 @@ export default {
       border-radius: 4px;
       font-size: 12px;
 
-      &.online, &.working {
+      &.online, &.idle {
         background: rgba(103, 194, 58, 0.1);
         color: #67C23A;
       }
@@ -455,11 +454,7 @@ export default {
         background: rgba(144, 147, 153, 0.1);
         color: #909399;
       }
-      &.idle {
-        background: rgba(230, 162, 60, 0.1);
-        color: #E6A23C;
-      }
-      &.alarm {
+      &.working, &.alarm {
         background: rgba(245, 108, 108, 0.1);
         color: #F56C6C;
       }
