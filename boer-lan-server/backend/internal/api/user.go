@@ -33,7 +33,7 @@ func isValidUsername(username string) bool {
 	if username == "" || len(username) > 11 {
 		return false
 	}
-	matched, _ := regexp.MatchString(`^[a-zA-Z0-9_]+$`, username)
+	matched, _ := regexp.MatchString(`^[a-zA-Z0-9]+$`, username)
 	return matched
 }
 
@@ -135,7 +135,7 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 	req.Email = strings.TrimSpace(req.Email)
 
 	if !isValidUsername(req.Username) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "账号仅支持字母数字下划线，且不超过11位"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "账号仅支持字母数字，且不超过11位"})
 		return
 	}
 	if len(req.Password) < 6 || len(req.Password) > 32 {

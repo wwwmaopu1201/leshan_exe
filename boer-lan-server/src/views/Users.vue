@@ -243,7 +243,7 @@ export default {
       rules: {
         username: [
           { required: true, message: '请输入用户名', trigger: 'blur' },
-          { pattern: /^[a-zA-Z0-9_]+$/, message: '账号仅支持字母数字下划线', trigger: 'blur' },
+          { pattern: /^[a-zA-Z0-9]+$/, message: '账号仅支持字母数字', trigger: 'blur' },
           { max: 11, message: '账号不能超过11位', trigger: 'blur' }
         ],
         password: [
