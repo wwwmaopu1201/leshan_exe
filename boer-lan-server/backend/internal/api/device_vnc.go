@@ -133,6 +133,21 @@ func (h *DeviceHandler) ProxyVNCWebSocket(c *gin.Context) {
 		})
 		return
 	}
+	active, activeErr := checkUserActiveStatus(h.db, claims.UserID)
+	if activeErr != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    401,
+			"message": "账号认证失效，请重新登录",
+		})
+		return
+	}
+	if !active {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    403,
+			"message": "账号已被禁用",
+		})
+		return
+	}
 
 	allowed, permErr := hasPermissionForUser(h.db, claims.UserID, claims.Role, "remoteMonitoring", "deviceManagement")
 	if permErr != nil {

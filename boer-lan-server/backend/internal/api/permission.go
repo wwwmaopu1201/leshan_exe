@@ -115,6 +115,14 @@ func hasPermissionForUser(db *gorm.DB, userID uint, roleName string, required ..
 	return hasAnyPermission(permissionMap, required...), nil
 }
 
+func checkUserActiveStatus(db *gorm.DB, userID uint) (bool, error) {
+	var user model.User
+	if err := db.Select("id", "disabled").First(&user, userID).Error; err != nil {
+		return false, err
+	}
+	return !user.Disabled, nil
+}
+
 func EnsureActiveAccount(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetUint("userId")
@@ -127,8 +135,8 @@ func EnsureActiveAccount(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-		var user model.User
-		if err := db.Select("id", "disabled").First(&user, userID).Error; err != nil {
+		active, err := checkUserActiveStatus(db, userID)
+		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"code":    401,
 				"message": "账号认证失效，请重新登录",
@@ -136,7 +144,7 @@ func EnsureActiveAccount(db *gorm.DB) gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		if user.Disabled {
+		if !active {
 			c.JSON(http.StatusForbidden, gin.H{
 				"code":    403,
 				"message": "账号已被禁用",
