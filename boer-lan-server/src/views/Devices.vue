@@ -62,6 +62,11 @@
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" width="48" />
+        <el-table-column label="序号" width="70" align="center">
+          <template slot-scope="{ $index }">
+            {{ (page - 1) * pageSize + $index + 1 }}
+          </template>
+        </el-table-column>
         <el-table-column prop="name" label="设备名称" min-width="130" />
         <el-table-column prop="initialName" label="初始名称" min-width="130" />
         <el-table-column prop="employeeCode" label="员工工号" width="100" />

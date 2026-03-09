@@ -114,6 +114,11 @@
                 @selection-change="handleDeviceSelectionChange"
               >
                 <el-table-column type="selection" width="48" />
+                <el-table-column label="序号" width="70" align="center">
+                  <template slot-scope="scope">
+                    {{ scope.$index + 1 }}
+                  </template>
+                </el-table-column>
                 <el-table-column prop="code" label="设备编码" width="120" />
                 <el-table-column label="设备名称">
                   <template slot-scope="scope">

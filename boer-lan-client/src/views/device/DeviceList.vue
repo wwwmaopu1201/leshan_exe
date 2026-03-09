@@ -91,6 +91,11 @@
         @row-dblclick="handleRowDoubleClick"
       >
         <el-table-column type="selection" width="50" align="center" />
+        <el-table-column label="序号" width="70" align="center">
+          <template slot-scope="scope">
+            {{ (pagination.page - 1) * pagination.pageSize + scope.$index + 1 }}
+          </template>
+        </el-table-column>
         <el-table-column prop="code" :label="$t('device.deviceCode')" width="120" />
         <el-table-column :label="$t('device.deviceName')" min-width="180">
           <template slot-scope="scope">
