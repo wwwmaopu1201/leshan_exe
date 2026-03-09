@@ -335,6 +335,11 @@ func (h *StatisticsHandler) GetDashboardData(c *gin.Context) {
 	}
 	usedThreadLength := threadLength
 	deviceCount := h.countDashboardScopeDevices(deviceId, deviceIDs)
+	isGroupScope := strings.TrimSpace(deviceId) == "" && len(deviceIDs) > 0 && deviceCount > 0
+	if isGroupScope {
+		todayRunningTime = todayRunningTime / float64(deviceCount)
+		todayIdleTime = todayIdleTime / float64(deviceCount)
+	}
 	if deviceCount > 0 {
 		avgUsedThreadLength = usedThreadLength / float64(deviceCount)
 	}
@@ -348,7 +353,11 @@ func (h *StatisticsHandler) GetDashboardData(c *gin.Context) {
 	// 近10天产量趋势
 	hourlyProduction := h.getHourlyProduction(deviceId, deviceIDs)
 	// 近7天运行/加工时长趋势 + 近7天使用率趋势
-	runningProcessingTrend, utilizationTrend := h.getRuntimeAndUtilizationTrends(deviceId, deviceIDs)
+	trendAvgDeviceCount := int64(0)
+	if isGroupScope {
+		trendAvgDeviceCount = deviceCount
+	}
+	runningProcessingTrend, utilizationTrend := h.getRuntimeAndUtilizationTrends(deviceId, deviceIDs, trendAvgDeviceCount)
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
@@ -493,7 +502,7 @@ func (h *StatisticsHandler) getHourlyProduction(deviceId string, deviceIDs []uin
 	return result
 }
 
-func (h *StatisticsHandler) getRuntimeAndUtilizationTrends(deviceId string, deviceIDs []uint) ([]gin.H, []gin.H) {
+func (h *StatisticsHandler) getRuntimeAndUtilizationTrends(deviceId string, deviceIDs []uint, avgDeviceCount int64) ([]gin.H, []gin.H) {
 	startDate := time.Now().AddDate(0, 0, -6).Format("2006-01-02")
 	query := applyDashboardDeviceFilter(h.db.Model(&model.ProductionRecord{}), deviceId, deviceIDs).
 		Select("DATE(record_date) as date, COALESCE(SUM(running_time), 0) as running_time, COALESCE(SUM(idle_time), 0) as idle_time").
@@ -530,11 +539,18 @@ func (h *StatisticsHandler) getRuntimeAndUtilizationTrends(deviceId string, devi
 		key := day.Format("2006-01-02")
 		item := rowMap[key]
 
-		running := roundFloat(item.Running, 2)
-		processing := roundFloat(item.Running*0.8, 2)
+		runningBase := item.Running
+		idleBase := item.Idle
+		if avgDeviceCount > 0 {
+			runningBase = runningBase / float64(avgDeviceCount)
+			idleBase = idleBase / float64(avgDeviceCount)
+		}
+
+		running := roundFloat(runningBase, 2)
+		processing := roundFloat(runningBase*0.8, 2)
 		utilization := 0.0
-		if item.Running+item.Idle > 0 {
-			utilization = roundFloat((item.Running/(item.Running+item.Idle))*100, 2)
+		if runningBase+idleBase > 0 {
+			utilization = roundFloat((runningBase/(runningBase+idleBase))*100, 2)
 		}
 
 		runningProcessingTrend = append(runningProcessingTrend, gin.H{

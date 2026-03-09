@@ -94,7 +94,7 @@
               </div>
               <div class="stat-info">
                 <div class="stat-value">{{ dashboardData.runningTime }}<small>h</small></div>
-                <div class="stat-extra">加工 {{ dashboardData.processingTime }}h</div>
+                <div class="stat-extra">{{ runtimeExtraText }}</div>
                 <div class="stat-label">{{ $t('dashboard.runningTime') }}</div>
               </div>
             </div>
@@ -193,6 +193,17 @@ export default {
         utilizationTrend: []
       },
       charts: {}
+    }
+  },
+  computed: {
+    runtimeExtraText() {
+      if (this.selectedScope.nodeType === 'group') {
+        return `组均加工 ${this.dashboardData.processingTime}h`
+      }
+      if (this.selectedScope.nodeType === 'all') {
+        return `厂均加工 ${this.dashboardData.processingTime}h`
+      }
+      return `加工 ${this.dashboardData.processingTime}h`
     }
   },
   watch: {
