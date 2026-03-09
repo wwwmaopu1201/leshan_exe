@@ -42,6 +42,7 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, se
 		protected.DELETE("/device/:id", deviceHandler.DeleteDevice)
 		protected.DELETE("/device/batch", deviceHandler.BatchDeleteDevices)
 		protected.POST("/device/move", deviceHandler.MoveToGroup)
+		protected.POST("/device/:id/control/confirm", deviceHandler.ConfirmRemoteControl)
 
 		// Device Group
 		protected.GET("/device/groups", deviceHandler.GetDeviceGroups)

@@ -258,7 +258,7 @@
 <script>
 import * as echarts from 'echarts'
 import RFB from '@novnc/novnc/lib/rfb'
-import { getDeviceList, getDeviceTree } from '@/api/device'
+import { getDeviceList, getDeviceTree, confirmRemoteControl } from '@/api/device'
 import { getDashboardData, getAlarmStats } from '@/api/statistics'
 
 export default {
@@ -298,6 +298,10 @@ export default {
         visible: false,
         acknowledged: false,
         code: ''
+      },
+      controlSession: {
+        token: '',
+        expiresAt: 0
       }
     }
   },
@@ -537,12 +541,21 @@ export default {
       const params = new URLSearchParams()
       if (token) params.set('token', token)
       params.set('port', String(this.vnc.port))
+      params.set('mode', this.vnc.mode)
+      if (this.vnc.mode === 'control' && this.controlSession.token) {
+        params.set('controlToken', this.controlSession.token)
+      }
 
       return `${wsBase}/api/device/vnc/ws/${this.selectedDevice.id}?${params.toString()}`
     },
     async connectVNC() {
       if (!this.selectedDevice) {
         this.$message.warning('请先选择设备')
+        return
+      }
+      if (this.vnc.mode === 'control' && !this.controlSession.token) {
+        this.$message.warning('控制授权已失效，请重新确认后再连接')
+        this.cancelControlMode()
         return
       }
       if (this.selectedDevice.status === 'offline') {
@@ -560,9 +573,13 @@ export default {
         return
       }
 
-      this.disconnectVNC(false)
+      this.disconnectVNC(false, true)
       this.vnc.connecting = true
       this.vnc.status = '连接中...'
+      if (this.vnc.mode === 'control') {
+        // 控制令牌为一次性授权，发起连接后立即清空，避免重复复用。
+        this.resetControlSession()
+      }
 
       try {
         const options = {}
@@ -578,7 +595,7 @@ export default {
         const onConnect = () => {
           this.vnc.connected = true
           this.vnc.connecting = false
-          this.vnc.status = '已连接'
+          this.vnc.status = this.vnc.mode === 'control' ? '已连接（控制模式）' : '已连接'
           this.$message.success('VNC连接成功')
         }
 
@@ -646,9 +663,10 @@ export default {
         if (this.rfb) this.rfb.viewOnly = true
         return
       }
+      this.resetControlSession()
       if (this.rfb) this.rfb.viewOnly = true
     },
-    confirmControlMode() {
+    async confirmControlMode() {
       if (!this.controlConfirm.code) {
         this.$message.warning('请输入设备端确认口令')
         return
@@ -657,21 +675,44 @@ export default {
         this.$message.warning('请先确认已在设备端授权')
         return
       }
-      this.controlConfirm.visible = false
-      this.vnc.mode = 'control'
-      if (this.rfb) {
-        this.rfb.viewOnly = false
+
+      try {
+        const res = await confirmRemoteControl(this.selectedDevice.id, {
+          code: this.controlConfirm.code,
+          acknowledged: this.controlConfirm.acknowledged
+        })
+        if (res.code !== 0) {
+          this.$message.error(res.message || '设备端授权校验失败')
+          return
+        }
+
+        this.controlSession.token = res.data?.controlToken || ''
+        this.controlSession.expiresAt = Number(res.data?.expiresAt || 0)
+        this.controlConfirm.visible = false
+        this.vnc.mode = 'control'
+
+        if (this.vnc.connected || this.vnc.connecting) {
+          await this.connectVNC()
+        } else if (this.rfb) {
+          this.rfb.viewOnly = false
+        }
+        if (this.vnc.connected) {
+          this.vnc.status = '已连接（控制模式）'
+        }
+        this.$message.success('已切换到远程控制模式')
+      } catch (error) {
+        console.error('Confirm control mode failed:', error)
+        this.$message.error('远程控制授权失败')
       }
-      if (this.vnc.connected) {
-        this.vnc.status = '已连接（控制模式）'
-      }
-      this.$message.success('已切换到远程控制模式')
     },
-    cancelControlMode() {
+    cancelControlMode(clearControlSession = true) {
       this.controlConfirm.visible = false
       this.vnc.mode = 'monitor'
       if (this.rfb) {
         this.rfb.viewOnly = true
+      }
+      if (clearControlSession) {
+        this.resetControlSession()
       }
     },
     resetControlConfirmState() {
@@ -679,8 +720,16 @@ export default {
       this.controlConfirm.code = ''
       this.controlConfirm.acknowledged = false
     },
-    disconnectVNC(showMessage = true) {
-      this.cancelControlMode()
+    resetControlSession() {
+      this.controlSession.token = ''
+      this.controlSession.expiresAt = 0
+    },
+    disconnectVNC(showMessage = true, preserveMode = false) {
+      if (!preserveMode) {
+        this.cancelControlMode()
+      } else {
+        this.controlConfirm.visible = false
+      }
       if (this.rfb) {
         this.cleanupRfb(true)
       }

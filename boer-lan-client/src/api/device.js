@@ -111,3 +111,12 @@ export function deleteDeviceGroup(id) {
     method: 'delete'
   })
 }
+
+// 远程控制确认（获取一次性控制令牌）
+export function confirmRemoteControl(deviceId, data) {
+  return request({
+    url: `/device/${deviceId}/control/confirm`,
+    method: 'post',
+    data
+  })
+}
