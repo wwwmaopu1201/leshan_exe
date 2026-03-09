@@ -19,6 +19,27 @@
           </el-option>
         </el-select>
 
+        <el-input
+          v-model="deviceKeyword"
+          clearable
+          placeholder="按设备名称搜索"
+          @keyup.enter.native="handleDeviceFilter"
+          @clear="handleDeviceFilter"
+        />
+
+        <el-date-picker
+          v-model="deviceDateRange"
+          type="daterange"
+          value-format="yyyy-MM-dd"
+          range-separator="至"
+          start-placeholder="开始日期"
+          end-placeholder="结束日期"
+          clearable
+          @change="handleDeviceFilter"
+        />
+
+        <el-button plain icon="el-icon-search" @click="handleDeviceFilter">筛选设备</el-button>
+
         <el-input-number
           v-model="vnc.port"
           :min="1"
@@ -190,6 +211,8 @@ export default {
   data() {
     return {
       selectedDeviceId: null,
+      deviceKeyword: '',
+      deviceDateRange: [],
       deviceList: [],
       selectedDevice: null,
       realtimeData: {
@@ -226,24 +249,39 @@ export default {
   methods: {
     async fetchDevices() {
       try {
-        const res = await getDeviceList({ page: 1, pageSize: 500 })
+        const res = await getDeviceList({
+          page: 1,
+          pageSize: 500,
+          keyword: this.deviceKeyword,
+          startDate: this.deviceDateRange?.[0] || '',
+          endDate: this.deviceDateRange?.[1] || ''
+        })
         if (res.code === 0) {
           this.deviceList = res.data.list || []
         }
 
         const routeDeviceId = Number(this.$route.query.id)
-        if (routeDeviceId && this.deviceList.some(item => item.id === routeDeviceId)) {
+        const hasSelected = this.selectedDeviceId && this.deviceList.some(item => item.id === this.selectedDeviceId)
+        if (!hasSelected && routeDeviceId && this.deviceList.some(item => item.id === routeDeviceId)) {
           this.selectedDeviceId = routeDeviceId
-        } else if (!this.selectedDeviceId && this.deviceList.length > 0) {
+        } else if (!hasSelected && this.deviceList.length > 0) {
           this.selectedDeviceId = this.deviceList[0].id
+        } else if (!hasSelected) {
+          this.selectedDeviceId = null
         }
         if (this.selectedDeviceId) {
           this.handleDeviceChange(this.selectedDeviceId)
+        } else {
+          this.selectedDevice = null
+          this.disconnectVNC(false)
         }
       } catch (error) {
         console.error('Failed to fetch device list:', error)
         this.$message.error('获取设备列表失败')
       }
+    },
+    handleDeviceFilter() {
+      this.fetchDevices()
     },
     handleDeviceChange(deviceId) {
       if (this.selectedDevice && this.selectedDevice.id !== deviceId) {
@@ -293,8 +331,8 @@ export default {
         console.error('Failed to load device monitor data:', error)
       }
     },
-    refreshData() {
-      this.fetchDevices()
+    async refreshData() {
+      await this.fetchDevices()
       if (this.selectedDevice) {
         this.loadDeviceData()
       }
@@ -566,6 +604,10 @@ export default {
   .el-input {
     width: 220px;
   }
+
+  .el-date-editor {
+    width: 260px;
+  }
 }
 
 .status-dot {
@@ -770,4 +812,3 @@ export default {
   }
 }
 </style>
-
