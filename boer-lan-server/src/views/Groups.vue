@@ -178,14 +178,14 @@ export default {
     async deleteGroup(group) {
       try {
         await this.$confirm(
-          '确定要删除该分组吗？删除前请确保该分组下无子分组、用户、设备、操作员。',
+          '确定要删除该分组吗？删除后该分组下用户、设备、操作员将转为未分组，子分组将提升到当前层级。',
           '警告',
           {
           type: 'warning'
           }
         )
-        await this.$axios.delete(`/group/${group.id}`)
-        this.$message.success('删除成功')
+        const res = await this.$axios.delete(`/group/${group.id}`)
+        this.$message.success(res.msg || '删除成功')
         await this.loadGroupTree()
       } catch (error) {
         if (error !== 'cancel') {

@@ -254,35 +254,53 @@ func (h *GroupHandler) DeleteGroup(c *gin.Context) {
 		return
 	}
 
-	// 检查是否有子分组
-	var childCount int64
-	h.db.Model(&model.Group{}).Where("parent_id = ?", id).Count(&childCount)
-	if childCount > 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "该分组下存在子分组，无法删除"})
+	var group model.Group
+	if err := h.db.First(&group, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "分组不存在"})
 		return
 	}
 
-	// 检查是否有用户、设备、操作员
-	var userCount, deviceCount, operatorCount int64
-	h.db.Model(&model.User{}).Where("group_id = ?", id).Count(&userCount)
-	h.db.Model(&model.Device{}).Where("group_id = ?", id).Count(&deviceCount)
-	h.db.Model(&model.Operator{}).Where("group_id = ?", id).Count(&operatorCount)
-
-	if userCount > 0 || deviceCount > 0 || operatorCount > 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "该分组下存在用户、设备或操作员，无法删除",
-		})
+	tx := h.db.Begin()
+	if tx.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除失败"})
 		return
 	}
 
-	if err := h.db.Delete(&model.Group{}, id).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	// 删除分组时，将其用户、设备、操作员迁移为未分组，同时将子分组提升到当前层级
+	if err := tx.Model(&model.User{}).Where("group_id = ?", id).Update("group_id", nil).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "清理分组用户失败"})
+		return
+	}
+	if err := tx.Model(&model.Device{}).Where("group_id = ?", id).
+		Updates(map[string]interface{}{"group_id": nil, "sort_order": 0}).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "清理分组设备失败"})
+		return
+	}
+	if err := tx.Model(&model.Operator{}).Where("group_id = ?", id).Update("group_id", nil).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "清理分组操作员失败"})
+		return
+	}
+	if err := tx.Model(&model.Group{}).Where("parent_id = ?", id).Update("parent_id", group.ParentID).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "迁移子分组失败"})
+		return
+	}
+	if err := tx.Delete(&model.Group{}, id).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除分组失败"})
+		return
+	}
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除分组失败"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
-		"msg":  "删除成功",
+		"msg":  "删除成功，原分组成员已转为未分组",
 	})
 }
 
