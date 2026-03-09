@@ -168,6 +168,7 @@
       <el-form :model="uploadForm" label-width="90px">
         <el-form-item label="花型名称">
           <el-input v-model.trim="uploadForm.name" placeholder="默认使用文件名" />
+          <div class="name-rule-tip">命名建议：款式+部位+尺码（例如：JK01+前片+M）</div>
         </el-form-item>
         <el-form-item label="花型类型">
           <el-select
@@ -244,6 +245,7 @@
       <el-form :model="editForm" label-width="90px">
         <el-form-item label="花型名称" required>
           <el-input v-model.trim="editForm.name" />
+          <div class="name-rule-tip">命名规则：款式+部位+尺码（例如：JK01+前片+M）</div>
         </el-form-item>
         <el-form-item label="花型类型">
           <el-select
@@ -733,6 +735,12 @@ export default {
     this.fetchDeviceOptions()
   },
   methods: {
+    isValidPatternName(name) {
+      const value = String(name || '').trim()
+      if (!value) return false
+      const parts = value.split(/[+＋]/).map(part => part.trim()).filter(Boolean)
+      return parts.length === 3
+    },
     formatPrice(value) {
       const num = Number(value || 0)
       return num.toFixed(3)
@@ -836,9 +844,6 @@ export default {
     },
     handleFileChange(file, fileList) {
       this.uploadFileList = fileList
-      if (!this.uploadForm.name && file?.name) {
-        this.uploadForm.name = file.name
-      }
     },
     handleFileRemove(file, fileList) {
       this.uploadFileList = fileList
@@ -852,12 +857,18 @@ export default {
         return
       }
 
+      const uploadName = String(this.uploadForm.name || '').trim()
+      if (uploadName && !this.isValidPatternName(uploadName)) {
+        this.$message.warning('花型名称需为“款式+部位+尺码”格式')
+        return
+      }
+
       this.uploading = true
       try {
         const formData = new FormData()
         formData.append('file', this.uploadFileList[0].raw)
-        if (this.uploadForm.name) {
-          formData.append('name', this.uploadForm.name)
+        if (uploadName) {
+          formData.append('name', uploadName)
         }
         if (this.uploadForm.patternType) {
           formData.append('patternType', this.uploadForm.patternType)
@@ -1118,15 +1129,20 @@ export default {
       this.showEditDialog = true
     },
     async submitEdit() {
-      if (!this.editForm.name) {
+      const editName = String(this.editForm.name || '').trim()
+      if (!editName) {
         this.$message.warning('花型名称不能为空')
+        return
+      }
+      if (!this.isValidPatternName(editName)) {
+        this.$message.warning('花型名称需为“款式+部位+尺码”格式')
         return
       }
 
       this.savingEdit = true
       try {
         const res = await updatePattern(this.editForm.id, {
-          name: this.editForm.name,
+          name: editName,
           patternType: this.editForm.patternType,
           stitches: Number(this.editForm.stitches || 0),
           unitPrice: Number(this.editForm.unitPrice || 0),
@@ -1295,6 +1311,12 @@ export default {
 
 .danger-text {
   color: #F56C6C !important;
+}
+
+.name-rule-tip {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #909399;
 }
 
 .upload-area {

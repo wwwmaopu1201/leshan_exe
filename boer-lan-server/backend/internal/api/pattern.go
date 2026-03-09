@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"math"
 	"net/http"
 	"os"
@@ -18,6 +19,11 @@ import (
 type PatternHandler struct {
 	db *gorm.DB
 }
+
+var (
+	errPatternNameFormat = errors.New("pattern name format invalid")
+	errPatternFieldValue = errors.New("pattern field invalid")
+)
 
 type PatternUpdateRequest struct {
 	Name        *string  `json:"name"`
@@ -88,13 +94,32 @@ func formatFileSize(size int64) string {
 	return strconv.FormatInt(size, 10) + "B"
 }
 
+func isValidPatternName(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+	parts := strings.FieldsFunc(name, func(r rune) bool {
+		return r == '+' || r == '＋'
+	})
+	if len(parts) != 3 {
+		return false
+	}
+	for _, part := range parts {
+		if strings.TrimSpace(part) == "" {
+			return false
+		}
+	}
+	return true
+}
+
 func (h *PatternHandler) validateAndBuildPatternUpdates(req PatternUpdateRequest) (map[string]interface{}, error) {
 	updates := make(map[string]interface{})
 
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
-		if name == "" {
-			return nil, gorm.ErrInvalidData
+		if !isValidPatternName(name) {
+			return nil, errPatternNameFormat
 		}
 		updates["name"] = name
 	}
@@ -105,14 +130,14 @@ func (h *PatternHandler) validateAndBuildPatternUpdates(req PatternUpdateRequest
 
 	if req.Stitches != nil {
 		if *req.Stitches < 0 {
-			return nil, gorm.ErrInvalidData
+			return nil, errPatternFieldValue
 		}
 		updates["stitches"] = *req.Stitches
 	}
 
 	if req.UnitPrice != nil {
 		if *req.UnitPrice < 0 {
-			return nil, gorm.ErrInvalidData
+			return nil, errPatternFieldValue
 		}
 		updates["unit_price"] = roundTo3(*req.UnitPrice)
 	}
@@ -272,6 +297,12 @@ func (h *PatternHandler) UploadPattern(c *gin.Context) {
 	name := strings.TrimSpace(c.PostForm("name"))
 	if name == "" {
 		name = file.Filename
+	} else if !isValidPatternName(name) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "花型名称需为“款式+部位+尺码”格式",
+		})
+		return
 	}
 	patternType := strings.TrimSpace(c.PostForm("patternType"))
 	orderNo := strings.TrimSpace(c.PostForm("orderNo"))
@@ -365,9 +396,13 @@ func (h *PatternHandler) UpdatePattern(c *gin.Context) {
 
 	updates, err := h.validateAndBuildPatternUpdates(req)
 	if err != nil {
+		message := "提交字段不合法（名称不能为空，针数/工价不能为负数）"
+		if errors.Is(err, errPatternNameFormat) {
+			message = "花型名称需为“款式+部位+尺码”格式"
+		}
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "提交字段不合法（名称不能为空，针数/工价不能为负数）",
+			"message": message,
 		})
 		return
 	}
@@ -434,9 +469,13 @@ func (h *PatternHandler) BatchUpdatePatterns(c *gin.Context) {
 
 	updates, err := h.validateAndBuildPatternUpdates(req.PatternUpdateRequest)
 	if err != nil {
+		message := "提交字段不合法（名称不能为空，针数/工价不能为负数）"
+		if errors.Is(err, errPatternNameFormat) {
+			message = "花型名称需为“款式+部位+尺码”格式"
+		}
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "提交字段不合法（名称不能为空，针数/工价不能为负数）",
+			"message": message,
 		})
 		return
 	}
