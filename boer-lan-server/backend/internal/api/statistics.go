@@ -52,15 +52,15 @@ func (h *StatisticsHandler) GetHomeStats(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
-			"totalDevices":     totalDevices,
-			"onlineDevices":    onlineDevices,
-			"workingDevices":   workingDevices,
-			"offlineDevices":   offlineDevices,
-			"alarmDevices":     alarmDevices,
-			"weeklyEfficiency": weeklyEfficiency,
-			"patternUsage":     patternUsage,
-			"modelRatio":       modelRatio,
-			"topProduction":    topProduction,
+			"totalDevices":        totalDevices,
+			"onlineDevices":       onlineDevices,
+			"workingDevices":      workingDevices,
+			"offlineDevices":      offlineDevices,
+			"alarmDevices":        alarmDevices,
+			"weeklyEfficiency":    weeklyEfficiency,
+			"patternUsage":        patternUsage,
+			"modelRatio":          modelRatio,
+			"topProduction":       topProduction,
 			"runningStatusByHour": runningStatusByHour,
 			"productionByDay":     productionByDay,
 			// 兼容旧前端字段名
@@ -297,27 +297,27 @@ func (h *StatisticsHandler) GetDashboardData(c *gin.Context) {
 	deviceIDs := parseDeviceIDs(c.Query("deviceIds"))
 
 	var totalPieces int
+	var todayPieces int
 	var threadLength float64
-	var runningTime, idleTime float64
 
-	query := h.db.Model(&model.ProductionRecord{}).
-		Where("record_date >= ?", time.Now().AddDate(0, 0, -10))
+	var todayRunningTime, todayIdleTime float64
+	summaryQuery := applyDashboardDeviceFilter(h.db.Model(&model.ProductionRecord{}), deviceId, deviceIDs)
+	summaryQuery.Select("COALESCE(SUM(pieces), 0)").Scan(&totalPieces)
+	summaryQuery.Select("COALESCE(SUM(thread_length), 0)").Scan(&threadLength)
 
-	if deviceId != "" {
-		query = query.Where("device_id = ?", deviceId)
-	} else if len(deviceIDs) > 0 {
-		query = query.Where("device_id IN ?", deviceIDs)
-	}
+	todayQuery := applyDashboardDeviceFilter(
+		h.db.Model(&model.ProductionRecord{}).Where("DATE(record_date) = DATE(?)", time.Now()),
+		deviceId,
+		deviceIDs,
+	)
+	todayQuery.Select("COALESCE(SUM(pieces), 0)").Scan(&todayPieces)
+	todayQuery.Select("COALESCE(SUM(running_time), 0)").Scan(&todayRunningTime)
+	todayQuery.Select("COALESCE(SUM(idle_time), 0)").Scan(&todayIdleTime)
 
-	query.Select("COALESCE(SUM(pieces), 0)").Scan(&totalPieces)
-	query.Select("COALESCE(SUM(thread_length), 0)").Scan(&threadLength)
-	query.Select("COALESCE(SUM(running_time), 0)").Scan(&runningTime)
-	query.Select("COALESCE(SUM(idle_time), 0)").Scan(&idleTime)
-
+	processingTime := todayRunningTime * 0.8
 	utilizationRate := 0.0
-	totalTime := runningTime + idleTime
-	if totalTime > 0 {
-		utilizationRate = (runningTime / totalTime) * 100
+	if todayRunningTime+todayIdleTime > 0 {
+		utilizationRate = (todayRunningTime / (todayRunningTime + todayIdleTime)) * 100
 	}
 	usedThreadLength := threadLength
 	totalThreadLength := usedThreadLength * 1.25
@@ -327,35 +327,61 @@ func (h *StatisticsHandler) GetDashboardData(c *gin.Context) {
 
 	// 近10天产量趋势
 	hourlyProduction := h.getHourlyProduction(deviceId, deviceIDs)
+	// 近7天运行/加工时长趋势 + 近7天使用率趋势
+	runningProcessingTrend, utilizationTrend := h.getRuntimeAndUtilizationTrends(deviceId, deviceIDs)
+
+	// 今日无数据时，回退到最近一天趋势值
+	if todayRunningTime <= 0 && len(runningProcessingTrend) > 0 {
+		last := runningProcessingTrend[len(runningProcessingTrend)-1]
+		if value, ok := last["runningTime"].(float64); ok {
+			todayRunningTime = value
+		}
+		if value, ok := last["processingTime"].(float64); ok {
+			processingTime = value
+		}
+	}
+	if utilizationRate <= 0 && len(utilizationTrend) > 0 {
+		last := utilizationTrend[len(utilizationTrend)-1]
+		if value, ok := last["value"].(float64); ok {
+			utilizationRate = value
+		}
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
-			"totalPieces":       totalPieces,
-			"threadLength":      roundFloat(usedThreadLength, 2), // 兼容旧字段，表示已用底线
-			"totalThreadLength": roundFloat(totalThreadLength, 2),
-			"usedThreadLength":  roundFloat(usedThreadLength, 2),
-			"spindleSpeed":      3500, // 实时数据需从设备获取
-			"runningTime":       roundFloat(runningTime, 2),
-			"processingTime":    roundFloat(runningTime*0.8, 2),
-			"utilizationRate":   roundFloat(utilizationRate, 2),
-			"hourlyProduction":  hourlyProduction,
+			"totalPieces":            totalPieces,
+			"todayPieces":            todayPieces,
+			"threadLength":           roundFloat(usedThreadLength, 2), // 兼容旧字段，表示已用底线
+			"totalThreadLength":      roundFloat(totalThreadLength, 2),
+			"usedThreadLength":       roundFloat(usedThreadLength, 2),
+			"spindleSpeed":           3500, // 实时数据需从设备获取
+			"runningTime":            roundFloat(todayRunningTime, 2),
+			"processingTime":         roundFloat(processingTime, 2),
+			"utilizationRate":        roundFloat(utilizationRate, 2),
+			"hourlyProduction":       hourlyProduction,
+			"runningProcessingTrend": runningProcessingTrend,
+			"utilizationTrend":       utilizationTrend,
 		},
 		"message": "success",
 	})
 }
 
+func applyDashboardDeviceFilter(query *gorm.DB, deviceId string, deviceIDs []uint) *gorm.DB {
+	if deviceId != "" {
+		return query.Where("device_id = ?", deviceId)
+	}
+	if len(deviceIDs) > 0 {
+		return query.Where("device_id IN ?", deviceIDs)
+	}
+	return query
+}
+
 func (h *StatisticsHandler) getHourlyProduction(deviceId string, deviceIDs []uint) []gin.H {
 	startDate := time.Now().AddDate(0, 0, -9).Format("2006-01-02")
-	query := h.db.Model(&model.ProductionRecord{}).
+	query := applyDashboardDeviceFilter(h.db.Model(&model.ProductionRecord{}), deviceId, deviceIDs).
 		Select("DATE(record_date) as date, COALESCE(SUM(pieces), 0) as value").
 		Where("DATE(record_date) >= ?", startDate)
-
-	if deviceId != "" {
-		query = query.Where("device_id = ?", deviceId)
-	} else if len(deviceIDs) > 0 {
-		query = query.Where("device_id IN ?", deviceIDs)
-	}
 
 	var rows []struct {
 		Date  string
@@ -395,6 +421,80 @@ func (h *StatisticsHandler) getHourlyProduction(deviceId string, deviceIDs []uin
 		result[i]["value"] = fallback[i]
 	}
 	return result
+}
+
+func (h *StatisticsHandler) getRuntimeAndUtilizationTrends(deviceId string, deviceIDs []uint) ([]gin.H, []gin.H) {
+	startDate := time.Now().AddDate(0, 0, -6).Format("2006-01-02")
+	query := applyDashboardDeviceFilter(h.db.Model(&model.ProductionRecord{}), deviceId, deviceIDs).
+		Select("DATE(record_date) as date, COALESCE(SUM(running_time), 0) as running_time, COALESCE(SUM(idle_time), 0) as idle_time").
+		Where("DATE(record_date) >= ?", startDate)
+
+	var rows []struct {
+		Date        string
+		RunningTime float64
+		IdleTime    float64
+	}
+	query.Group("DATE(record_date)").
+		Order("DATE(record_date) ASC").
+		Scan(&rows)
+
+	rowMap := make(map[string]struct {
+		Running float64
+		Idle    float64
+	}, len(rows))
+	for _, row := range rows {
+		rowMap[row.Date] = struct {
+			Running float64
+			Idle    float64
+		}{
+			Running: row.RunningTime,
+			Idle:    row.IdleTime,
+		}
+	}
+
+	runningProcessingTrend := make([]gin.H, 0, 7)
+	utilizationTrend := make([]gin.H, 0, 7)
+	hasRealData := false
+	now := time.Now()
+	for i := 6; i >= 0; i-- {
+		day := now.AddDate(0, 0, -i)
+		key := day.Format("2006-01-02")
+		item := rowMap[key]
+
+		running := roundFloat(item.Running, 2)
+		processing := roundFloat(item.Running*0.8, 2)
+		utilization := 0.0
+		if item.Running+item.Idle > 0 {
+			utilization = roundFloat((item.Running/(item.Running+item.Idle))*100, 2)
+		}
+		if item.Running > 0 || item.Idle > 0 {
+			hasRealData = true
+		}
+
+		runningProcessingTrend = append(runningProcessingTrend, gin.H{
+			"date":           day.Format("01-02"),
+			"runningTime":    running,
+			"processingTime": processing,
+		})
+		utilizationTrend = append(utilizationTrend, gin.H{
+			"date":  day.Format("01-02"),
+			"value": utilization,
+		})
+	}
+
+	if hasRealData {
+		return runningProcessingTrend, utilizationTrend
+	}
+
+	runningFallback := []float64{6.2, 6.8, 7.1, 6.6, 7.4, 7.0, 7.3}
+	utilizationFallback := []float64{62, 66, 69, 64, 71, 68, 72}
+	for i := range runningProcessingTrend {
+		running := roundFloat(runningFallback[i], 2)
+		runningProcessingTrend[i]["runningTime"] = running
+		runningProcessingTrend[i]["processingTime"] = roundFloat(running*0.8, 2)
+		utilizationTrend[i]["value"] = roundFloat(utilizationFallback[i], 2)
+	}
+	return runningProcessingTrend, utilizationTrend
 }
 
 func (h *StatisticsHandler) GetSalaryStats(c *gin.Context) {

@@ -65,6 +65,7 @@
               </div>
               <div class="stat-info">
                 <div class="stat-value">{{ dashboardData.totalPieces }}</div>
+                <div class="stat-extra">今日 {{ dashboardData.todayPieces }} 件</div>
                 <div class="stat-label">{{ $t('dashboard.totalPieces') }}</div>
               </div>
             </div>
@@ -121,6 +122,21 @@
             </div>
           </el-col>
         </el-row>
+
+        <el-row :gutter="20" class="chart-row">
+          <el-col :span="12">
+            <div class="chart-card">
+              <div class="chart-title">运行/加工时长（近7天）</div>
+              <div ref="runtimeChart" class="chart-container"></div>
+            </div>
+          </el-col>
+          <el-col :span="12">
+            <div class="chart-card">
+              <div class="chart-title">设备使用率（近7天）</div>
+              <div ref="utilizationChart" class="chart-container"></div>
+            </div>
+          </el-col>
+        </el-row>
       </div>
     </div>
   </div>
@@ -151,6 +167,7 @@ export default {
       },
       dashboardData: {
         totalPieces: 0,
+        todayPieces: 0,
         threadLength: 0,
         totalThreadLength: 0,
         usedThreadLength: 0,
@@ -158,7 +175,9 @@ export default {
         runningTime: 0,
         processingTime: 0,
         utilizationRate: 0,
-        hourlyProduction: []
+        hourlyProduction: [],
+        runningProcessingTrend: [],
+        utilizationTrend: []
       },
       charts: {}
     }
@@ -250,6 +269,7 @@ export default {
         if (res.code === 0) {
           this.dashboardData = {
             totalPieces: res.data.totalPieces || 0,
+            todayPieces: res.data.todayPieces || 0,
             threadLength: res.data.threadLength || 0,
             totalThreadLength: res.data.totalThreadLength || res.data.threadLength || 0,
             usedThreadLength: res.data.usedThreadLength || res.data.threadLength || 0,
@@ -257,13 +277,16 @@ export default {
             runningTime: res.data.runningTime || 0,
             processingTime: res.data.processingTime || 0,
             utilizationRate: res.data.utilizationRate || 0,
-            hourlyProduction: res.data.hourlyProduction || []
+            hourlyProduction: res.data.hourlyProduction || [],
+            runningProcessingTrend: res.data.runningProcessingTrend || [],
+            utilizationTrend: res.data.utilizationTrend || []
           }
         }
       } catch (error) {
         console.error('Failed to load dashboard data:', error)
         this.dashboardData = {
           totalPieces: 0,
+          todayPieces: 0,
           threadLength: 0,
           totalThreadLength: 0,
           usedThreadLength: 0,
@@ -271,7 +294,9 @@ export default {
           runningTime: 0,
           processingTime: 0,
           utilizationRate: 0,
-          hourlyProduction: []
+          hourlyProduction: [],
+          runningProcessingTrend: [],
+          utilizationTrend: []
         }
       }
 
@@ -326,6 +351,8 @@ export default {
     initCharts() {
       this.initGaugeChart()
       this.initProductionChart()
+      this.initRuntimeChart()
+      this.initUtilizationChart()
     },
     initGaugeChart() {
       if (!this.$refs.gaugeChart) return
@@ -423,17 +450,124 @@ export default {
           splitLine: { lineStyle: { color: '#eee' } }
         },
         series: [{
-          type: 'bar',
+          type: 'line',
+          smooth: true,
+          symbol: 'circle',
+          symbolSize: 7,
           data: this.dashboardData.hourlyProduction.map(d => d.value),
-          barWidth: 30,
-          itemStyle: {
+          lineStyle: {
+            color: '#409EFF',
+            width: 3
+          },
+          itemStyle: { color: '#409EFF' },
+          areaStyle: {
             color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: '#409EFF' },
-              { offset: 1, color: '#67C23A' }
-            ]),
-            borderRadius: [4, 4, 0, 0]
+              { offset: 0, color: 'rgba(64, 158, 255, 0.28)' },
+              { offset: 1, color: 'rgba(64, 158, 255, 0.05)' }
+            ])
           }
         }]
+      })
+    },
+    initRuntimeChart() {
+      if (!this.$refs.runtimeChart) return
+      if (this.charts.runtime) {
+        this.charts.runtime.dispose()
+      }
+      const chart = echarts.init(this.$refs.runtimeChart)
+      this.charts.runtime = chart
+      chart.setOption({
+        tooltip: {
+          trigger: 'axis'
+        },
+        legend: {
+          data: ['运行时长', '加工时长']
+        },
+        grid: {
+          left: '3%',
+          right: '4%',
+          bottom: '3%',
+          containLabel: true
+        },
+        xAxis: {
+          type: 'category',
+          data: this.dashboardData.runningProcessingTrend.map(d => d.date),
+          axisLine: { lineStyle: { color: '#ddd' } },
+          axisLabel: { color: '#666' }
+        },
+        yAxis: {
+          type: 'value',
+          axisLabel: { color: '#666', formatter: '{value}h' },
+          splitLine: { lineStyle: { color: '#eee' } }
+        },
+        series: [
+          {
+            name: '运行时长',
+            type: 'line',
+            smooth: true,
+            symbol: 'circle',
+            symbolSize: 6,
+            data: this.dashboardData.runningProcessingTrend.map(d => d.runningTime),
+            lineStyle: { color: '#67C23A', width: 2 },
+            itemStyle: { color: '#67C23A' }
+          },
+          {
+            name: '加工时长',
+            type: 'line',
+            smooth: true,
+            symbol: 'circle',
+            symbolSize: 6,
+            data: this.dashboardData.runningProcessingTrend.map(d => d.processingTime),
+            lineStyle: { color: '#409EFF', width: 2 },
+            itemStyle: { color: '#409EFF' }
+          }
+        ]
+      })
+    },
+    initUtilizationChart() {
+      if (!this.$refs.utilizationChart) return
+      if (this.charts.utilization) {
+        this.charts.utilization.dispose()
+      }
+      const chart = echarts.init(this.$refs.utilizationChart)
+      this.charts.utilization = chart
+      chart.setOption({
+        tooltip: {
+          trigger: 'axis',
+          formatter: '{b}: {c}%'
+        },
+        grid: {
+          left: '3%',
+          right: '4%',
+          bottom: '3%',
+          containLabel: true
+        },
+        xAxis: {
+          type: 'category',
+          data: this.dashboardData.utilizationTrend.map(d => d.date),
+          axisLine: { lineStyle: { color: '#ddd' } },
+          axisLabel: { color: '#666' }
+        },
+        yAxis: {
+          type: 'value',
+          max: 100,
+          axisLabel: { color: '#666', formatter: '{value}%' },
+          splitLine: { lineStyle: { color: '#eee' } }
+        },
+        series: [
+          {
+            type: 'bar',
+            data: this.dashboardData.utilizationTrend.map(d => d.value),
+            barWidth: 24,
+            itemStyle: {
+              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                { offset: 0, color: '#67C23A' },
+                { offset: 1, color: '#4fa727' }
+              ]),
+              borderRadius: [4, 4, 0, 0]
+            }
+          }
+        ]
       })
     },
     handleResize() {
@@ -591,29 +725,29 @@ export default {
     &.purple { background: linear-gradient(135deg, #9b59b6, #8e44ad); }
   }
 
-    .stat-info {
-      .stat-value {
-        font-size: 24px;
-        font-weight: bold;
-        color: #303133;
+  .stat-info {
+    .stat-value {
+      font-size: 24px;
+      font-weight: bold;
+      color: #303133;
 
       small {
         font-size: 14px;
         font-weight: normal;
         color: #909399;
         margin-left: 2px;
-        }
       }
+    }
 
-      .stat-extra {
-        margin-top: 2px;
-        font-size: 12px;
-        color: #606266;
-      }
+    .stat-extra {
+      margin-top: 2px;
+      font-size: 12px;
+      color: #606266;
+    }
 
-      .stat-label {
-        font-size: 14px;
-        color: #909399;
+    .stat-label {
+      font-size: 14px;
+      color: #909399;
       margin-top: 5px;
     }
   }
