@@ -514,6 +514,14 @@ func (h *PatternHandler) BatchUpdatePatterns(c *gin.Context) {
 		})
 		return
 	}
+	req.IDs = normalizeGroupIDs(req.IDs)
+	if len(req.IDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "请选择至少一条花型记录",
+		})
+		return
+	}
 
 	updates, err := h.validateAndBuildPatternUpdates(req.PatternUpdateRequest)
 	if err != nil {
@@ -532,6 +540,24 @@ func (h *PatternHandler) BatchUpdatePatterns(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": "请至少填写一个需要批量修改的字段",
+		})
+		return
+	}
+
+	existingPatternIDs := make([]uint, 0)
+	if err := h.db.Model(&model.Pattern{}).
+		Where("id IN ?", req.IDs).
+		Pluck("id", &existingPatternIDs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "花型校验失败",
+		})
+		return
+	}
+	if len(normalizeGroupIDs(existingPatternIDs)) != len(req.IDs) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "包含不存在的花型",
 		})
 		return
 	}

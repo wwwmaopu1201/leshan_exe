@@ -255,6 +255,14 @@ func (h *PatternHandler) UploadDeviceFilesToServer(c *gin.Context) {
 		})
 		return
 	}
+	req.FileIDs = normalizeGroupIDs(req.FileIDs)
+	if len(req.FileIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "请至少选择一个设备文件",
+		})
+		return
+	}
 
 	var device model.Device
 	if err := h.db.First(&device, req.DeviceID).Error; err != nil {
@@ -293,6 +301,13 @@ func (h *PatternHandler) UploadDeviceFilesToServer(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": "未找到可回传的设备文件",
+		})
+		return
+	}
+	if len(files) != len(req.FileIDs) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "包含不存在的设备文件",
 		})
 		return
 	}
