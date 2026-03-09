@@ -1819,6 +1819,10 @@ func parseDeviceIDs(raw string) []uint {
 }
 
 func applyDateRangeFilter(query *gorm.DB, column, startDate, endDate string) *gorm.DB {
+	if strings.TrimSpace(startDate) == "" && strings.TrimSpace(endDate) == "" {
+		today := time.Now().Format("2006-01-02")
+		return query.Where(fmt.Sprintf("DATE(%s) = ?", column), today)
+	}
 	if startDate != "" {
 		query = query.Where(fmt.Sprintf("DATE(%s) >= ?", column), startDate)
 	}
