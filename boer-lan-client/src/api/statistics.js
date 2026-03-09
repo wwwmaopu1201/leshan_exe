@@ -22,14 +22,17 @@ export function getHomeStats() {
 }
 
 // 获取仪表盘数据
-export function getDashboardData(deviceId) {
+export function getDashboardData(params = {}) {
+  const query = typeof params === 'object' && params !== null
+    ? params
+    : { deviceId: params }
   if (USE_MOCK) {
-    return mockGetDashboardData(deviceId)
+    return mockGetDashboardData(query.deviceId)
   }
   return request({
     url: '/statistics/dashboard',
     method: 'get',
-    params: { deviceId }
+    params: query
   })
 }
 

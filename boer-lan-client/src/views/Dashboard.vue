@@ -35,92 +35,90 @@
 
       <!-- 右侧数据看板 -->
       <div class="dashboard-content">
-        <template v-if="selectedDevice">
-          <!-- 设备信息头部 -->
-          <div class="device-header">
-            <div class="device-info">
-              <h2>{{ selectedDevice.label }}</h2>
-              <span :class="['status-tag', selectedDevice.status]">
-                {{ getStatusText(selectedDevice.status) }}
-              </span>
-            </div>
-            <div class="device-meta">
-              <span>型号: {{ selectedDevice.model }}</span>
-              <span>IP: 192.168.1.101</span>
-            </div>
+        <!-- 设备信息头部 -->
+        <div class="device-header">
+          <div class="device-info">
+            <h2>{{ selectedScope.label }}</h2>
+            <span
+              v-if="selectedScope.nodeType === 'device'"
+              :class="['status-tag', selectedScope.status]"
+            >
+              {{ getStatusText(selectedScope.status) }}
+            </span>
+            <span v-else class="status-tag group">
+              {{ selectedScope.nodeType === 'group' ? '设备组汇总' : '全厂汇总' }}
+            </span>
           </div>
-
-          <!-- 统计卡片 -->
-          <el-row :gutter="20" class="stat-row">
-            <el-col :span="6">
-              <div class="stat-card">
-                <div class="stat-icon blue">
-                  <i class="el-icon-s-goods"></i>
-                </div>
-                <div class="stat-info">
-                  <div class="stat-value">{{ dashboardData.totalPieces }}</div>
-                  <div class="stat-label">{{ $t('dashboard.totalPieces') }}</div>
-                </div>
-              </div>
-            </el-col>
-            <el-col :span="6">
-              <div class="stat-card">
-                <div class="stat-icon green">
-                  <i class="el-icon-sort"></i>
-                </div>
-                <div class="stat-info">
-                  <div class="stat-value">{{ dashboardData.threadLength }}<small>m</small></div>
-                  <div class="stat-label">{{ $t('dashboard.threadLength') }}</div>
-                </div>
-              </div>
-            </el-col>
-            <el-col :span="6">
-              <div class="stat-card">
-                <div class="stat-icon orange">
-                  <i class="el-icon-time"></i>
-                </div>
-                <div class="stat-info">
-                  <div class="stat-value">{{ dashboardData.runningTime }}<small>h</small></div>
-                  <div class="stat-label">{{ $t('dashboard.runningTime') }}</div>
-                </div>
-              </div>
-            </el-col>
-            <el-col :span="6">
-              <div class="stat-card">
-                <div class="stat-icon purple">
-                  <i class="el-icon-data-line"></i>
-                </div>
-                <div class="stat-info">
-                  <div class="stat-value">{{ dashboardData.utilizationRate }}<small>%</small></div>
-                  <div class="stat-label">{{ $t('dashboard.utilizationRate') }}</div>
-                </div>
-              </div>
-            </el-col>
-          </el-row>
-
-          <!-- 图表区域 -->
-          <el-row :gutter="20" class="chart-row">
-            <el-col :span="8">
-              <div class="chart-card">
-                <div class="chart-title">{{ $t('dashboard.spindleSpeed') }}</div>
-                <div ref="gaugeChart" class="chart-container gauge"></div>
-              </div>
-            </el-col>
-            <el-col :span="16">
-              <div class="chart-card">
-                <div class="chart-title">{{ $t('dashboard.productionStats') }}</div>
-                <div ref="productionChart" class="chart-container"></div>
-              </div>
-            </el-col>
-          </el-row>
-        </template>
-
-        <template v-else>
-          <div class="empty-state">
-            <i class="el-icon-monitor"></i>
-            <p>{{ $t('dashboard.selectDevice') }}</p>
+          <div class="device-meta">
+            <span v-if="selectedScope.nodeType === 'device'">型号: {{ selectedScope.model || '-' }}</span>
+            <span v-if="selectedScope.nodeType === 'device'">IP: {{ selectedScope.ip || '-' }}</span>
+            <span v-else>设备数: {{ selectedScope.deviceCount }} 台</span>
           </div>
-        </template>
+        </div>
+
+        <!-- 统计卡片 -->
+        <el-row :gutter="20" class="stat-row">
+          <el-col :span="6">
+            <div class="stat-card">
+              <div class="stat-icon blue">
+                <i class="el-icon-s-goods"></i>
+              </div>
+              <div class="stat-info">
+                <div class="stat-value">{{ dashboardData.totalPieces }}</div>
+                <div class="stat-label">{{ $t('dashboard.totalPieces') }}</div>
+              </div>
+            </div>
+          </el-col>
+          <el-col :span="6">
+            <div class="stat-card">
+              <div class="stat-icon green">
+                <i class="el-icon-sort"></i>
+              </div>
+              <div class="stat-info">
+                <div class="stat-value">{{ dashboardData.threadLength }}<small>m</small></div>
+                <div class="stat-label">{{ $t('dashboard.threadLength') }}</div>
+              </div>
+            </div>
+          </el-col>
+          <el-col :span="6">
+            <div class="stat-card">
+              <div class="stat-icon orange">
+                <i class="el-icon-time"></i>
+              </div>
+              <div class="stat-info">
+                <div class="stat-value">{{ dashboardData.runningTime }}<small>h</small></div>
+                <div class="stat-label">{{ $t('dashboard.runningTime') }}</div>
+              </div>
+            </div>
+          </el-col>
+          <el-col :span="6">
+            <div class="stat-card">
+              <div class="stat-icon purple">
+                <i class="el-icon-data-line"></i>
+              </div>
+              <div class="stat-info">
+                <div class="stat-value">{{ dashboardData.utilizationRate }}<small>%</small></div>
+                <div class="stat-label">{{ $t('dashboard.utilizationRate') }}</div>
+              </div>
+            </div>
+          </el-col>
+        </el-row>
+
+        <!-- 图表区域 -->
+        <el-row :gutter="20" class="chart-row">
+          <el-col :span="8">
+            <div class="chart-card">
+              <div class="chart-title">{{ $t('dashboard.spindleSpeed') }}</div>
+              <div ref="gaugeChart" class="chart-container gauge"></div>
+            </div>
+          </el-col>
+          <el-col :span="16">
+            <div class="chart-card">
+              <div class="chart-title">{{ $t('dashboard.productionStats') }}</div>
+              <div ref="productionChart" class="chart-container"></div>
+            </div>
+          </el-col>
+        </el-row>
       </div>
     </div>
   </div>
@@ -141,7 +139,14 @@ export default {
         label: 'label'
       },
       treeFilter: '',
-      selectedDevice: null,
+      selectedScope: {
+        label: '全厂设备',
+        nodeType: 'all',
+        status: '',
+        model: '',
+        ip: '',
+        deviceCount: 0
+      },
       dashboardData: {
         totalPieces: 0,
         threadLength: 0,
@@ -173,14 +178,60 @@ export default {
         const res = await getDeviceTree()
         if (res.code === 0) {
           this.deviceTree = res.data || []
+          this.setDefaultScopeAndLoad()
         }
       } catch (error) {
         console.error('Failed to fetch device tree:', error)
       }
     },
-    async loadDashboardData(deviceId) {
+    setDefaultScopeAndLoad() {
+      const deviceCount = this.countDeviceNodes(this.deviceTree)
+      this.selectedScope = {
+        label: '全厂设备',
+        nodeType: 'all',
+        status: '',
+        model: '',
+        ip: '',
+        deviceCount
+      }
+      this.loadDashboardData({})
+    },
+    countDeviceNodes(nodes = []) {
+      let count = 0
+      const stack = [...nodes]
+      while (stack.length > 0) {
+        const current = stack.pop()
+        if (!current) continue
+        if (current.type === 'device') {
+          count += 1
+          continue
+        }
+        if (Array.isArray(current.children) && current.children.length > 0) {
+          stack.push(...current.children)
+        }
+      }
+      return count
+    },
+    collectDeviceIds(node) {
+      if (!node) return []
+      if (node.type === 'device') return [Number(node.id)]
+
+      const ids = []
+      const stack = [...(node.children || [])]
+      while (stack.length > 0) {
+        const current = stack.pop()
+        if (!current) continue
+        if (current.type === 'device') {
+          ids.push(Number(current.id))
+        } else if (Array.isArray(current.children) && current.children.length > 0) {
+          stack.push(...current.children)
+        }
+      }
+      return ids
+    },
+    async loadDashboardData(params = {}) {
       try {
-        const res = await getDashboardData(deviceId)
+        const res = await getDashboardData(params)
         if (res.code === 0) {
           this.dashboardData = {
             totalPieces: res.data.totalPieces || 0,
@@ -215,9 +266,27 @@ export default {
     },
     handleNodeClick(data) {
       if (data.type === 'device') {
-        this.selectedDevice = data
-        this.loadDashboardData(data.id)
+        this.selectedScope = {
+          label: data.label,
+          nodeType: 'device',
+          status: data.status || '',
+          model: data.model || '',
+          ip: data.ip || '',
+          deviceCount: 1
+        }
+        this.loadDashboardData({ deviceId: data.id })
+        return
       }
+      const deviceIds = this.collectDeviceIds(data)
+      this.selectedScope = {
+        label: data.label || '设备组',
+        nodeType: 'group',
+        status: '',
+        model: '',
+        ip: '',
+        deviceCount: deviceIds.length
+      }
+      this.loadDashboardData({ deviceIds: deviceIds.join(',') })
     },
     getNodeIcon(data) {
       if (data.type === 'device') {
@@ -325,7 +394,7 @@ export default {
         },
         xAxis: {
           type: 'category',
-          data: this.dashboardData.hourlyProduction.map(d => d.hour),
+          data: this.dashboardData.hourlyProduction.map(d => d.date || d.hour),
           axisLine: { lineStyle: { color: '#ddd' } },
           axisLabel: { color: '#666' }
         },
@@ -457,6 +526,10 @@ export default {
       &.working, &.alarm {
         background: rgba(245, 108, 108, 0.1);
         color: #F56C6C;
+      }
+      &.group {
+        background: rgba(64, 158, 255, 0.1);
+        color: #409EFF;
       }
     }
   }

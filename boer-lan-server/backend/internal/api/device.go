@@ -97,6 +97,7 @@ func (h *DeviceHandler) buildDeviceNodes(devices []model.Device) []gin.H {
 			"type":         "device",
 			"status":       d.Status,
 			"model":        d.ModelName,
+			"ip":           d.IP,
 			"employeeCode": d.EmployeeCode,
 			"employeeName": d.EmployeeName,
 		})
