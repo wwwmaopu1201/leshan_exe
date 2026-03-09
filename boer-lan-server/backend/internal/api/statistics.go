@@ -329,17 +329,18 @@ func (h *StatisticsHandler) GetDashboardData(c *gin.Context) {
 	todayQuery.Select("COALESCE(SUM(idle_time), 0)").Scan(&todayIdleTime)
 
 	processingTime := todayRunningTime * 0.8
-	utilizationRate := 0.0
-	if todayRunningTime+todayIdleTime > 0 {
-		utilizationRate = (todayRunningTime / (todayRunningTime + todayIdleTime)) * 100
-	}
 	usedThreadLength := threadLength
 	deviceCount := h.countDashboardScopeDevices(deviceId, deviceIDs)
-	isGroupScope := strings.TrimSpace(deviceId) == "" && len(deviceIDs) > 0 && deviceCount > 0
-	if isGroupScope {
+	isAggregateScope := strings.TrimSpace(deviceId) == "" && deviceCount > 0
+	if isAggregateScope {
 		todayRunningTime = todayRunningTime / float64(deviceCount)
 		todayIdleTime = todayIdleTime / float64(deviceCount)
 	}
+	utilizationRate := h.getTodayUtilizationRate(deviceId, deviceIDs, deviceCount)
+	if !isAggregateScope && todayRunningTime+todayIdleTime > 0 {
+		utilizationRate = (todayRunningTime / (todayRunningTime + todayIdleTime)) * 100
+	}
+	processingTime = todayRunningTime * 0.8
 	if deviceCount > 0 {
 		avgUsedThreadLength = usedThreadLength / float64(deviceCount)
 	}
@@ -354,7 +355,7 @@ func (h *StatisticsHandler) GetDashboardData(c *gin.Context) {
 	hourlyProduction := h.getHourlyProduction(deviceId, deviceIDs)
 	// 近7天运行/加工时长趋势 + 近7天使用率趋势
 	trendAvgDeviceCount := int64(0)
-	if isGroupScope {
+	if isAggregateScope {
 		trendAvgDeviceCount = deviceCount
 	}
 	runningProcessingTrend, utilizationTrend := h.getRuntimeAndUtilizationTrends(deviceId, deviceIDs, trendAvgDeviceCount)
@@ -502,14 +503,64 @@ func (h *StatisticsHandler) getHourlyProduction(deviceId string, deviceIDs []uin
 	return result
 }
 
+func (h *StatisticsHandler) getTodayUtilizationRate(deviceId string, deviceIDs []uint, deviceCount int64) float64 {
+	if strings.TrimSpace(deviceId) != "" {
+		var totals struct {
+			Running float64
+			Idle    float64
+		}
+		applyDashboardDeviceFilter(
+			h.db.Model(&model.ProductionRecord{}).Where("DATE(record_date) = DATE(?)", time.Now()),
+			deviceId,
+			deviceIDs,
+		).
+			Select("COALESCE(SUM(running_time), 0) as running, COALESCE(SUM(idle_time), 0) as idle").
+			Scan(&totals)
+		if totals.Running+totals.Idle <= 0 {
+			return 0
+		}
+		return roundFloat((totals.Running/(totals.Running+totals.Idle))*100, 2)
+	}
+
+	var rows []struct {
+		Running float64
+		Idle    float64
+	}
+	applyDashboardDeviceFilter(
+		h.db.Model(&model.ProductionRecord{}).Where("DATE(record_date) = DATE(?)", time.Now()),
+		deviceId,
+		deviceIDs,
+	).
+		Select("COALESCE(SUM(running_time), 0) as running, COALESCE(SUM(idle_time), 0) as idle").
+		Group("device_id").
+		Scan(&rows)
+
+	totalUtilization := 0.0
+	for _, row := range rows {
+		if row.Running+row.Idle <= 0 {
+			continue
+		}
+		totalUtilization += (row.Running / (row.Running + row.Idle)) * 100
+	}
+
+	if deviceCount > 0 {
+		return roundFloat(totalUtilization/float64(deviceCount), 2)
+	}
+	if len(rows) > 0 {
+		return roundFloat(totalUtilization/float64(len(rows)), 2)
+	}
+	return 0
+}
+
 func (h *StatisticsHandler) getRuntimeAndUtilizationTrends(deviceId string, deviceIDs []uint, avgDeviceCount int64) ([]gin.H, []gin.H) {
 	startDate := time.Now().AddDate(0, 0, -6).Format("2006-01-02")
 	query := applyDashboardDeviceFilter(h.db.Model(&model.ProductionRecord{}), deviceId, deviceIDs).
-		Select("DATE(record_date) as date, COALESCE(SUM(running_time), 0) as running_time, COALESCE(SUM(idle_time), 0) as idle_time").
+		Select("DATE(record_date) as date, device_id, COALESCE(SUM(running_time), 0) as running_time, COALESCE(SUM(idle_time), 0) as idle_time").
 		Where("DATE(record_date) >= ?", startDate)
 
 	var rows []struct {
 		Date        string
+		DeviceID    uint
 		RunningTime float64
 		IdleTime    float64
 	}
@@ -517,18 +568,22 @@ func (h *StatisticsHandler) getRuntimeAndUtilizationTrends(deviceId string, devi
 		Order("DATE(record_date) ASC").
 		Scan(&rows)
 
-	rowMap := make(map[string]struct {
-		Running float64
-		Idle    float64
-	}, len(rows))
+	type dayAgg struct {
+		RunningTotal float64
+		IdleTotal    float64
+		UtilSum      float64
+		UtilCount    int64
+	}
+	rowMap := make(map[string]dayAgg, len(rows))
 	for _, row := range rows {
-		rowMap[row.Date] = struct {
-			Running float64
-			Idle    float64
-		}{
-			Running: row.RunningTime,
-			Idle:    row.IdleTime,
+		agg := rowMap[row.Date]
+		agg.RunningTotal += row.RunningTime
+		agg.IdleTotal += row.IdleTime
+		if row.RunningTime+row.IdleTime > 0 {
+			agg.UtilSum += (row.RunningTime / (row.RunningTime + row.IdleTime)) * 100
+			agg.UtilCount++
 		}
+		rowMap[row.Date] = agg
 	}
 
 	runningProcessingTrend := make([]gin.H, 0, 7)
@@ -539,8 +594,8 @@ func (h *StatisticsHandler) getRuntimeAndUtilizationTrends(deviceId string, devi
 		key := day.Format("2006-01-02")
 		item := rowMap[key]
 
-		runningBase := item.Running
-		idleBase := item.Idle
+		runningBase := item.RunningTotal
+		idleBase := item.IdleTotal
 		if avgDeviceCount > 0 {
 			runningBase = runningBase / float64(avgDeviceCount)
 			idleBase = idleBase / float64(avgDeviceCount)
@@ -549,8 +604,10 @@ func (h *StatisticsHandler) getRuntimeAndUtilizationTrends(deviceId string, devi
 		running := roundFloat(runningBase, 2)
 		processing := roundFloat(runningBase*0.8, 2)
 		utilization := 0.0
-		if runningBase+idleBase > 0 {
-			utilization = roundFloat((runningBase/(runningBase+idleBase))*100, 2)
+		if avgDeviceCount > 0 {
+			utilization = roundFloat(item.UtilSum/float64(avgDeviceCount), 2)
+		} else if item.UtilCount > 0 {
+			utilization = roundFloat(item.UtilSum/float64(item.UtilCount), 2)
 		}
 
 		runningProcessingTrend = append(runningProcessingTrend, gin.H{
