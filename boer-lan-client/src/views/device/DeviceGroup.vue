@@ -126,6 +126,11 @@
                     <span>{{ formatDeviceName(scope.row) }}</span>
                   </template>
                 </el-table-column>
+                <el-table-column prop="initialName" label="初始名称" width="130" />
+                <el-table-column prop="employeeCode" label="员工工号" width="120" />
+                <el-table-column prop="employeeName" label="员工姓名" width="120" />
+                <el-table-column prop="type" label="设备类型" width="100" />
+                <el-table-column prop="mainboardSn" label="主板编号" width="140" />
                 <el-table-column prop="group" label="所属分组" width="120">
                   <template slot-scope="scope">
                     <span v-if="scope.row.group">{{ scope.row.group }}</span>
@@ -133,6 +138,7 @@
                   </template>
                 </el-table-column>
                 <el-table-column prop="ip" label="IP地址" width="140" />
+                <el-table-column prop="createTime" label="添加时间" width="160" />
                 <el-table-column prop="status" label="状态" width="100">
                   <template slot-scope="scope">
                     <el-tag :type="getStatusType(scope.row.status)" size="small">
