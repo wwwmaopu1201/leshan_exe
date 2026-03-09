@@ -258,8 +258,23 @@ func (h *OperatorHandler) DeleteOperator(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	operatorIDs := normalizeGroupIDs(req.IDs)
+	if len(operatorIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "操作员参数错误"})
+		return
+	}
 
-	if err := h.db.Delete(&model.Operator{}, req.IDs).Error; err != nil {
+	var totalCount int64
+	if err := h.db.Model(&model.Operator{}).Where("id IN ?", operatorIDs).Count(&totalCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if int(totalCount) != len(operatorIDs) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "操作员不存在"})
+		return
+	}
+
+	if err := h.db.Delete(&model.Operator{}, operatorIDs).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

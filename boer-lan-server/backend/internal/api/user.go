@@ -467,16 +467,31 @@ func (h *UserHandler) DeleteUser(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	userIDs := normalizeGroupIDs(req.IDs)
+	if len(userIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "账号参数错误"})
+		return
+	}
+
+	var totalCount int64
+	if err := h.db.Model(&model.User{}).Where("id IN ?", userIDs).Count(&totalCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if int(totalCount) != len(userIDs) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "账号不存在"})
+		return
+	}
 
 	// 不允许删除admin账号
 	var adminCount int64
-	h.db.Model(&model.User{}).Where("id IN ? AND username = ?", req.IDs, "admin").Count(&adminCount)
+	h.db.Model(&model.User{}).Where("id IN ? AND username = ?", userIDs, "admin").Count(&adminCount)
 	if adminCount > 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "不能删除管理员账号"})
 		return
 	}
 
-	if err := h.db.Delete(&model.User{}, req.IDs).Error; err != nil {
+	if err := h.db.Delete(&model.User{}, userIDs).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
