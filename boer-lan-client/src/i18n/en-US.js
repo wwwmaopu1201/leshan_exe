@@ -170,9 +170,13 @@ export default {
   },
   profile: {
     avatar: 'Avatar',
+    account: 'Account',
+    accountName: 'Account Name',
     nickname: 'Nickname',
     email: 'Email',
     phone: 'Phone',
+    roleName: 'Role',
+    createTime: 'Created At',
     updateInfo: 'Update Info',
     oldPassword: 'Old Password',
     newPassword: 'New Password',

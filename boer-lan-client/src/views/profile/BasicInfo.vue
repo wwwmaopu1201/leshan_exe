@@ -8,8 +8,8 @@
         </div>
         <div class="info-section">
           <h2>{{ userInfo.nickname }}</h2>
-          <p class="role">{{ formatRoleLabel(userInfo.role) }}</p>
-          <p class="join-time">加入时间: {{ userInfo.createTime }}</p>
+          <p class="role">{{ $t('profile.roleName') }}: {{ formatRoleLabel(userInfo.role) }}</p>
+          <p class="join-time">{{ $t('profile.createTime') }}: {{ userInfo.createTime || '-' }}</p>
         </div>
       </div>
 
@@ -17,20 +17,20 @@
 
       <div class="profile-form">
         <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
-          <el-form-item label="用户名">
+          <el-form-item :label="$t('profile.account')">
             <el-input v-model="form.username" disabled />
           </el-form-item>
-          <el-form-item :label="$t('profile.nickname')" prop="nickname">
+          <el-form-item :label="$t('profile.accountName')" prop="nickname">
             <el-input v-model="form.nickname" />
-          </el-form-item>
-          <el-form-item :label="$t('profile.email')" prop="email">
-            <el-input v-model="form.email" />
           </el-form-item>
           <el-form-item :label="$t('profile.phone')" prop="phone">
             <el-input v-model="form.phone" />
           </el-form-item>
-          <el-form-item label="所属部门">
-            <el-input v-model="form.department" disabled />
+          <el-form-item :label="$t('profile.roleName')">
+            <el-input v-model="form.roleName" disabled />
+          </el-form-item>
+          <el-form-item :label="$t('profile.createTime')">
+            <el-input v-model="form.createTime" disabled />
           </el-form-item>
           <el-form-item>
             <el-button type="primary" @click="handleSave">
@@ -70,16 +70,12 @@ export default {
       form: {
         username: 'admin',
         nickname: '管理员',
-        email: 'admin@boer.com',
         phone: '13800138000',
-        department: '技术部'
+        roleName: '',
+        createTime: ''
       },
       rules: {
-        nickname: [{ required: true, message: '请输入昵称', trigger: 'blur' }],
-        email: [
-          { required: true, message: '请输入邮箱', trigger: 'blur' },
-          { type: 'email', message: '请输入正确的邮箱格式', trigger: 'blur' }
-        ],
+        nickname: [{ required: true, message: '请输入账号姓名', trigger: 'blur' }],
         phone: [
           { required: true, message: '请输入手机号', trigger: 'blur' },
           { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号', trigger: 'blur' }
@@ -101,9 +97,9 @@ export default {
     if (this.user) {
       this.form.username = this.user.username || 'admin'
       this.form.nickname = this.user.nickname || '管理员'
-      this.form.email = this.user.email || ''
       this.form.phone = this.user.phone || ''
-      this.form.department = this.user.department || ''
+      this.form.roleName = this.formatRoleLabel(this.user.role || '')
+      this.form.createTime = this.user.createTime || ''
       this.userInfo.nickname = this.user.nickname || '管理员'
       this.userInfo.role = this.user.role || ''
       this.userInfo.createTime = this.user.createTime || ''
@@ -133,7 +129,6 @@ export default {
         this.loading = true
         const res = await updateProfile({
           nickname: this.form.nickname,
-          email: this.form.email,
           phone: this.form.phone
         })
         if (res.code === 0) {
@@ -142,7 +137,6 @@ export default {
           this.$store.commit('SET_USER', {
             ...this.user,
             nickname: this.form.nickname,
-            email: this.form.email,
             phone: this.form.phone
           })
           this.userInfo.nickname = this.form.nickname
