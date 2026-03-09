@@ -19,9 +19,17 @@ func NewEmployeeHandler(db *gorm.DB) *EmployeeHandler {
 	return &EmployeeHandler{db: db}
 }
 
+func isValidEmployeeCode(code string) bool {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return false
+	}
+	return len([]rune(code)) <= 11
+}
+
 func isValidEmployeePhone(phone string) bool {
 	if phone == "" {
-		return true
+		return false
 	}
 	matched, _ := regexp.MatchString(`^1[3-9]\d{9}$`, phone)
 	return matched
@@ -111,17 +119,17 @@ func (h *EmployeeHandler) CreateEmployee(c *gin.Context) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Phone = strings.TrimSpace(req.Phone)
 	req.Remark = strings.TrimSpace(req.Remark)
-	if req.Code == "" || req.Name == "" {
+	if !isValidEmployeeCode(req.Code) || req.Name == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "员工工号和姓名不能为空",
+			"message": "员工工号不能为空且不能超过11位，姓名不能为空",
 		})
 		return
 	}
 	if !isValidEmployeePhone(req.Phone) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "手机号格式不正确",
+			"message": "手机号不能为空且格式需正确",
 		})
 		return
 	}
@@ -209,7 +217,7 @@ func (h *EmployeeHandler) UpdateEmployee(c *gin.Context) {
 		if !isValidEmployeePhone(phone) {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"code":    400,
-				"message": "手机号格式不正确",
+				"message": "手机号不能为空且格式需正确",
 			})
 			return
 		}
@@ -285,12 +293,12 @@ func (h *EmployeeHandler) ImportEmployees(c *gin.Context) {
 		code := strings.TrimSpace(item.Code)
 		name := strings.TrimSpace(item.Name)
 		phone := strings.TrimSpace(item.Phone)
-		if code == "" || name == "" {
-			errorsList = append(errorsList, "存在空工号或空姓名记录")
+		if !isValidEmployeeCode(code) || name == "" {
+			errorsList = append(errorsList, "存在工号为空/超11位或姓名为空记录")
 			continue
 		}
 		if !isValidEmployeePhone(phone) {
-			errorsList = append(errorsList, code+" 手机号格式不正确")
+			errorsList = append(errorsList, code+" 手机号不能为空且格式需正确")
 			continue
 		}
 

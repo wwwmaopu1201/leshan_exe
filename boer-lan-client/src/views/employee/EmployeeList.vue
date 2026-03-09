@@ -29,6 +29,9 @@
           <el-button type="primary" icon="el-icon-plus" @click="handleAdd">
             {{ $t('employee.addEmployee') }}
           </el-button>
+          <el-button icon="el-icon-document" @click="downloadImportTemplate">
+            下载导入模板
+          </el-button>
           <el-button icon="el-icon-upload2" @click="showImportDialog = true">
             批量导入
           </el-button>
@@ -119,13 +122,13 @@
       width="680px"
     >
       <div style="margin-bottom: 8px; color: #606266;">
-        每行格式：`员工工号,员工姓名,手机号,备注`（至少需要前两列）
+        每行格式：`员工工号,员工姓名,手机号,备注`（前三列必填）
       </div>
       <el-input
         v-model="importText"
         type="textarea"
         :rows="10"
-        placeholder="例如：&#10;E10001,张三,13800138000,一组员工&#10;E10002,李四,13900139000,"
+        placeholder="例如：&#10;E10001,张三,13800138000,一组员工&#10;E10002,李四,13900139000,二组员工"
       />
       <span slot="footer" class="dialog-footer">
         <el-button @click="showImportDialog = false">{{ $t('common.cancel') }}</el-button>
@@ -242,6 +245,26 @@ export default {
     resetEditForm() {
       this.$refs.editFormRef?.resetFields()
     },
+    downloadImportTemplate() {
+      const headers = ['员工工号', '员工姓名', '手机号', '备注']
+      const examples = [
+        ['E10001', '张三', '13800138000', '一组员工'],
+        ['E10002', '李四', '13900139000', '二组员工']
+      ]
+      const csv = [headers, ...examples]
+        .map(row => row.map(col => `\"${String(col).replace(/\"/g, '\"\"')}\"`).join(','))
+        .join('\n')
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = '员工导入模板.csv'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+      this.$message.success('模板下载成功')
+    },
     async handleSave() {
       try {
         await this.$refs.editFormRef.validate()
@@ -313,19 +336,36 @@ export default {
       }
 
       const employees = []
+      const lineErrors = []
       for (const line of lines) {
-        const [code, name, phone, remark] = line.split(',').map(part => part?.trim())
-        if (!code || !name) continue
+        const parts = line.split(',').map(part => part?.trim())
+        const [code, name, phone, remark] = parts
+        if (!code || !name || !phone) {
+          lineErrors.push(`格式错误: ${line}`)
+          continue
+        }
+        if (code.length > 11) {
+          lineErrors.push(`工号超过11位: ${line}`)
+          continue
+        }
+        if (!/^1[3-9]\d{9}$/.test(phone)) {
+          lineErrors.push(`手机号格式错误: ${line}`)
+          continue
+        }
         employees.push({
           code,
           name,
-          phone: phone || '',
+          phone,
           remark: remark || ''
         })
       }
 
       if (!employees.length) {
         this.$message.warning('未解析到有效员工数据')
+        return
+      }
+      if (lineErrors.length) {
+        this.$alert(lineErrors.join('\n'), '导入内容存在错误', { type: 'warning' })
         return
       }
 

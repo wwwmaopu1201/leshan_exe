@@ -92,7 +92,11 @@
     >
       <el-form ref="userFormRef" :model="form" :rules="rules" label-width="110px">
         <el-form-item label="用户名" prop="username">
-          <el-input v-model="form.username" :disabled="!!form.id" placeholder="请输入用户名" />
+          <el-input v-model="form.username" :disabled="!!form.id" placeholder="请输入用户名">
+            <template v-if="!form.id" slot="append">
+              <el-button @click="generateUsername">随机生成</el-button>
+            </template>
+          </el-input>
         </el-form-item>
 
         <el-form-item :label="form.id ? '新密码(可选)' : '密码'" :prop="form.id ? '' : 'password'">
@@ -434,6 +438,25 @@ export default {
       if (this.form.role) {
         this.applyRolePermissions(this.form.role)
       }
+    },
+    generateUsername() {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz0123456789'
+      const build = (length = 8) => {
+        let value = ''
+        for (let i = 0; i < length; i++) {
+          value += chars.charAt(Math.floor(Math.random() * chars.length))
+        }
+        return value
+      }
+
+      let candidate = build(8)
+      const exists = (name) => this.users.some(item => item.username === name)
+      let tries = 0
+      while (exists(candidate) && tries < 20) {
+        candidate = build(8)
+        tries++
+      }
+      this.form.username = candidate
     },
     openEditDialog(row) {
       this.dialogVisible = true
