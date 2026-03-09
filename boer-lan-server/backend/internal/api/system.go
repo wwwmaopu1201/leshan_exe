@@ -43,6 +43,7 @@ type ExternalDBConfig struct {
 
 const externalDBConfigKey = "external_db_config"
 const externalDBLastSyncAtKey = "external_db_last_sync_at"
+const debugOutputEnabledConfigKey = "debug_output_enabled"
 
 func NewSystemHandler(db *gorm.DB, serverPort int) *SystemHandler {
 	return &SystemHandler{
@@ -120,6 +121,13 @@ func (h *SystemHandler) AddDebugLog(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if !h.isDebugOutputEnabled() {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    0,
+			"message": "调试输出已关闭",
+		})
+		return
+	}
 
 	log := model.DebugLog{
 		Level:   req.Level,
@@ -136,6 +144,27 @@ func (h *SystemHandler) AddDebugLog(c *gin.Context) {
 		"code": 0,
 		"data": log,
 	})
+}
+
+func (h *SystemHandler) isDebugOutputEnabled() bool {
+	var config model.ServerConfig
+	if err := h.db.Where("key = ?", debugOutputEnabledConfigKey).First(&config).Error; err != nil {
+		// 默认开启调试输出
+		return true
+	}
+
+	value := strings.ToLower(strings.TrimSpace(config.Value))
+	if value == "" {
+		return true
+	}
+	switch value {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return true
+	}
 }
 
 // ClearDebugLogs 清空调试日志
