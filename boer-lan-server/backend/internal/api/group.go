@@ -266,12 +266,12 @@ func (h *GroupHandler) DeleteGroup(c *gin.Context) {
 		return
 	}
 
-	// 删除分组时，将其用户、设备、操作员迁移为未分组，同时将子分组提升到当前层级
+	// 删除分组时，将其账号、设备、操作员迁移为未分组，同时将子分组提升到当前层级
 	deletedGroupID := uint(id)
 	var users []model.User
 	if err := tx.Select("id", "role", "group_id", "group_ids").Find(&users).Error; err != nil {
 		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "清理分组用户失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "清理分组账号失败"})
 		return
 	}
 	for _, user := range users {
@@ -299,7 +299,7 @@ func (h *GroupHandler) DeleteGroup(c *gin.Context) {
 		}
 		if err := tx.Model(&model.User{}).Where("id = ?", user.ID).Updates(updates).Error; err != nil {
 			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "清理分组用户失败"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "清理分组账号失败"})
 			return
 		}
 	}

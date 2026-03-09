@@ -178,7 +178,7 @@ export default {
     async deleteGroup(group) {
       try {
         await this.$confirm(
-          '确定要删除该分组吗？删除后该分组下用户、设备、操作员将转为未分组，子分组将提升到当前层级。',
+          '确定要删除该分组吗？删除后该分组下账号、设备、操作员将转为未分组，子分组将提升到当前层级。',
           '警告',
           {
           type: 'warning'
