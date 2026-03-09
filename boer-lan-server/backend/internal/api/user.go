@@ -493,6 +493,10 @@ func (h *UserHandler) MoveUsersToGroup(c *gin.Context) {
 	if req.GroupID != nil && *req.GroupID > 0 {
 		groupIDs = []uint{*req.GroupID}
 	}
+	if err := ensureGroupIDsExist(h.db, groupIDs); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "分组参数错误"})
+		return
+	}
 	if err := h.db.Model(&model.User{}).Where("id IN ?", req.UserIDs).
 		Updates(map[string]interface{}{
 			"group_id":  req.GroupID,
