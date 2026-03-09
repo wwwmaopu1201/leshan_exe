@@ -95,6 +95,16 @@
                   </el-button>
                   <el-button
                     size="mini"
+                    type="primary"
+                    icon="el-icon-check"
+                    :loading="savingDeviceSort"
+                    :disabled="!hasDeviceSortChanges()"
+                    @click="saveDeviceSortOrders"
+                  >
+                    保存排序
+                  </el-button>
+                  <el-button
+                    size="mini"
                     type="warning"
                     icon="el-icon-remove-outline"
                     :disabled="selectedDeviceIds.length === 0 || selectedGroup?.id === 'ungrouped' || selectedGroup?.parentLabel === '未分组'"
@@ -135,6 +145,20 @@
                   <template slot-scope="scope">
                     <span v-if="scope.row.group">{{ scope.row.group }}</span>
                     <el-tag v-else size="mini" type="danger">未分组</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="排序号" width="120">
+                  <template slot-scope="scope">
+                    <el-input-number
+                      v-if="scope.row.groupId && Number(scope.row.groupId) > 0"
+                      :value="getDeviceSortValue(scope.row)"
+                      :min="1"
+                      :max="999999"
+                      controls-position="right"
+                      size="mini"
+                      @change="value => handleDeviceSortChange(scope.row, value)"
+                    />
+                    <span v-else class="text-muted">-</span>
                   </template>
                 </el-table-column>
                 <el-table-column prop="ip" label="IP地址" width="140" />
@@ -335,6 +359,8 @@ export default {
       showQuickAssignDialog: false,
       moveTargetGroupId: 0,
       quickAssignSaving: false,
+      savingDeviceSort: false,
+      deviceSortDraft: {},
       quickAssignForm: {
         id: null,
         code: '',
@@ -783,6 +809,7 @@ export default {
     },
     syncGroupDevices() {
       const resetSelection = () => {
+        this.initDeviceSortDraft()
         this.selectedDeviceIds = []
         this.$nextTick(() => {
           this.$refs.groupDeviceTableRef?.clearSelection()
@@ -873,6 +900,80 @@ export default {
       const devices = this.allDevices.filter(device => groupIdSet.has(Number(device.groupId || 0)))
       this.groupDevices = this.sortDevicesForDisplay(devices)
       resetSelection()
+    },
+    initDeviceSortDraft() {
+      const drafts = {}
+      this.groupDevices.forEach((row, index) => {
+        const current = Number(row.sortOrder || 0)
+        drafts[row.id] = current > 0 ? current : (index + 1) * 10
+      })
+      this.deviceSortDraft = drafts
+    },
+    getDeviceSortValue(row) {
+      const draft = Number(this.deviceSortDraft[row.id] || 0)
+      if (draft > 0) {
+        return draft
+      }
+      const current = Number(row.sortOrder || 0)
+      if (current > 0) {
+        return current
+      }
+      return 1
+    },
+    handleDeviceSortChange(row, value) {
+      const nextValue = Number(value || 0)
+      if (nextValue <= 0) {
+        return
+      }
+      this.$set(this.deviceSortDraft, row.id, nextValue)
+    },
+    hasDeviceSortChanges() {
+      return this.groupDevices.some(row => {
+        if (!(row.groupId && Number(row.groupId) > 0)) {
+          return false
+        }
+        const nextValue = Number(this.deviceSortDraft[row.id] || row.sortOrder || 0)
+        const currentValue = Number(row.sortOrder || 0)
+        return nextValue > 0 && nextValue !== currentValue
+      })
+    },
+    async saveDeviceSortOrders() {
+      const updates = this.groupDevices
+        .filter(row => row.groupId && Number(row.groupId) > 0)
+        .map(row => {
+          const nextValue = Number(this.deviceSortDraft[row.id] || row.sortOrder || 0)
+          return {
+            id: row.id,
+            nextSortOrder: nextValue,
+            currentSortOrder: Number(row.sortOrder || 0)
+          }
+        })
+        .filter(item => item.nextSortOrder > 0 && item.nextSortOrder !== item.currentSortOrder)
+
+      if (updates.length === 0) {
+        this.$message.info('没有需要保存的排序变更')
+        return
+      }
+
+      this.savingDeviceSort = true
+      try {
+        const results = await Promise.all(
+          updates.map(item => updateDevice(item.id, { sortOrder: item.nextSortOrder }))
+        )
+        if (results.every(item => item.code === 0)) {
+          this.$message.success('设备排序已保存')
+          await this.fetchDevices()
+          this.buildGroupTree()
+          this.syncGroupDevices()
+          return
+        }
+        this.$message.error('部分设备排序保存失败')
+      } catch (error) {
+        console.error('Save device sort orders failed:', error)
+        this.$message.error('保存设备排序失败')
+      } finally {
+        this.savingDeviceSort = false
+      }
     },
     handleDeviceSelectionChange(rows) {
       this.selectedDeviceIds = rows.map(item => item.id).filter(Boolean)
