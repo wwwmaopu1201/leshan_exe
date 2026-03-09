@@ -18,7 +18,7 @@
       </el-col>
       <el-col :span="4">
         <el-card class="stat-card">
-          <div class="stat-card-title">用户数量</div>
+          <div class="stat-card-title">客户端账号数</div>
           <div class="stat-card-value">{{ stats.userCount }}</div>
         </el-card>
       </el-col>
