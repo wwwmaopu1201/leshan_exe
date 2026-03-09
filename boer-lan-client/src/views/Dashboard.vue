@@ -19,7 +19,7 @@
             :data="deviceTree"
             :props="treeProps"
             :filter-node-method="filterNode"
-            node-key="id"
+            node-key="_nodeKey"
             highlight-current
             default-expand-all
             @node-click="handleNodeClick"
@@ -177,12 +177,23 @@ export default {
       try {
         const res = await getDeviceTree()
         if (res.code === 0) {
-          this.deviceTree = res.data || []
+          this.deviceTree = this.attachNodeKeys(res.data || [])
           this.setDefaultScopeAndLoad()
         }
       } catch (error) {
         console.error('Failed to fetch device tree:', error)
       }
+    },
+    attachNodeKeys(nodes = []) {
+      return nodes.map(node => {
+        const nodeType = node.type === 'device' ? 'device' : 'group'
+        const children = Array.isArray(node.children) ? this.attachNodeKeys(node.children) : []
+        return {
+          ...node,
+          _nodeKey: `${nodeType}-${node.id}`,
+          children
+        }
+      })
     },
     setDefaultScopeAndLoad() {
       const deviceCount = this.countDeviceNodes(this.deviceTree)
