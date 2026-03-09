@@ -46,7 +46,7 @@ func (h *StatisticsHandler) GetHomeStats(c *gin.Context) {
 	topProduction := h.getTopProduction()
 
 	// 24小时设备运行状态 + 近7日产量
-	runningStatusByHour := h.getRunningStatusByHour(onlineDevices, offlineDevices)
+	runningStatusByHour := h.getRunningStatusByHour()
 	productionByDay := h.getProductionByDay()
 
 	c.JSON(http.StatusOK, gin.H{
@@ -82,17 +82,29 @@ func (h *StatisticsHandler) getWeeklyEfficiency() []gin.H {
 			weekday = 7
 		}
 
-		var totalRunning, totalTime float64
+		var rows []struct {
+			DeviceID    uint
+			RunningTime float64
+			IdleTime    float64
+		}
 		h.db.Model(&model.ProductionRecord{}).
+			Select("device_id, COALESCE(SUM(running_time), 0) as running_time, COALESCE(SUM(idle_time), 0) as idle_time").
 			Where("DATE(record_date) = DATE(?)", date).
-			Select("COALESCE(SUM(running_time), 0)").Scan(&totalRunning)
-		h.db.Model(&model.ProductionRecord{}).
-			Where("DATE(record_date) = DATE(?)", date).
-			Select("COALESCE(SUM(running_time + idle_time), 0)").Scan(&totalTime)
+			Group("device_id").
+			Scan(&rows)
 
 		efficiency := 0.0
-		if totalTime > 0 {
-			efficiency = (totalRunning / totalTime) * 100
+		validDeviceCount := 0
+		for _, row := range rows {
+			totalTime := row.RunningTime + row.IdleTime
+			if totalTime <= 0 {
+				continue
+			}
+			efficiency += (row.RunningTime / totalTime) * 100
+			validDeviceCount++
+		}
+		if validDeviceCount > 0 {
+			efficiency = efficiency / float64(validDeviceCount)
 		}
 
 		result = append(result, gin.H{
@@ -199,53 +211,62 @@ func (h *StatisticsHandler) getTopProduction() []gin.H {
 	return topProduction
 }
 
-func (h *StatisticsHandler) getRunningStatusByHour(onlineDevices, offlineDevices int64) []gin.H {
-	total := int(onlineDevices + offlineDevices)
-	if total <= 0 {
-		var totalDevices int64
-		h.db.Model(&model.Device{}).Count(&totalDevices)
-		total = int(totalDevices)
-	}
-	if total <= 0 {
-		total = 12
+func (h *StatisticsHandler) getRunningStatusByHour() []gin.H {
+	var totalDevices int64
+	h.db.Model(&model.Device{}).Count(&totalDevices)
+	total := int(totalDevices)
+	if total < 0 {
+		total = 0
 	}
 
-	baseOnline := int(onlineDevices)
-	if baseOnline <= 0 {
-		baseOnline = int(math.Round(float64(total) * 0.65))
+	var currentOnlineDevices int64
+	h.db.Model(&model.Device{}).Where("status IN ?", []string{"online", "working", "idle"}).Count(&currentOnlineDevices)
+
+	now := time.Now()
+	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	dayEnd := dayStart.Add(24 * time.Hour)
+
+	var records []struct {
+		DeviceID   uint
+		RecordDate time.Time
 	}
-	if baseOnline > total {
-		baseOnline = total
+	h.db.Model(&model.ProductionRecord{}).
+		Select("device_id, record_date").
+		Where("record_date >= ? AND record_date < ?", dayStart, dayEnd).
+		Scan(&records)
+
+	hourDeviceMap := make(map[int]map[uint]struct{}, 24)
+	for _, record := range records {
+		hour := record.RecordDate.Hour()
+		if _, exists := hourDeviceMap[hour]; !exists {
+			hourDeviceMap[hour] = make(map[uint]struct{})
+		}
+		hourDeviceMap[hour][record.DeviceID] = struct{}{}
 	}
 
 	result := make([]gin.H, 0, 24)
+	currentHour := now.Hour()
 	for hour := 0; hour < 24; hour++ {
-		delta := 0
-		switch {
-		case hour >= 8 && hour <= 11:
-			delta = 1
-		case hour >= 12 && hour <= 13:
-			delta = -1
-		case hour >= 14 && hour <= 18:
-			delta = 2
-		case hour >= 19 && hour <= 21:
-			delta = 0
-		default:
-			delta = -2
+		online := len(hourDeviceMap[hour])
+		if hour == currentHour && online == 0 {
+			online = int(currentOnlineDevices)
 		}
-
-		online := baseOnline + delta
 		if online < 0 {
 			online = 0
 		}
-		if online > total {
+		if total > 0 && online > total {
 			online = total
+		}
+
+		offline := total - online
+		if offline < 0 {
+			offline = 0
 		}
 
 		result = append(result, gin.H{
 			"hour":    fmt.Sprintf("%02d:00", hour),
 			"online":  online,
-			"offline": total - online,
+			"offline": offline,
 		})
 	}
 	return result
@@ -272,28 +293,14 @@ func (h *StatisticsHandler) getProductionByDay() []gin.H {
 
 	result := make([]gin.H, 0, 7)
 	now := time.Now()
-	hasRealData := false
 	for i := 6; i >= 0; i-- {
 		day := now.AddDate(0, 0, -i)
 		key := day.Format("2006-01-02")
 		value := valueMap[key]
-		if value > 0 {
-			hasRealData = true
-		}
 		result = append(result, gin.H{
 			"date":  day.Format("01-02"),
 			"value": value,
 		})
-	}
-
-	if hasRealData {
-		return result
-	}
-
-	// 无生产数据时提供占位趋势，避免首页图表空白
-	fallback := []int{120, 180, 200, 190, 160, 210, 195}
-	for i := range result {
-		result[i]["value"] = fallback[i]
 	}
 	return result
 }
@@ -342,23 +349,6 @@ func (h *StatisticsHandler) GetDashboardData(c *gin.Context) {
 	hourlyProduction := h.getHourlyProduction(deviceId, deviceIDs)
 	// 近7天运行/加工时长趋势 + 近7天使用率趋势
 	runningProcessingTrend, utilizationTrend := h.getRuntimeAndUtilizationTrends(deviceId, deviceIDs)
-
-	// 今日无数据时，回退到最近一天趋势值
-	if todayRunningTime <= 0 && len(runningProcessingTrend) > 0 {
-		last := runningProcessingTrend[len(runningProcessingTrend)-1]
-		if value, ok := last["runningTime"].(float64); ok {
-			todayRunningTime = value
-		}
-		if value, ok := last["processingTime"].(float64); ok {
-			processingTime = value
-		}
-	}
-	if utilizationRate <= 0 && len(utilizationTrend) > 0 {
-		last := utilizationTrend[len(utilizationTrend)-1]
-		if value, ok := last["value"].(float64); ok {
-			utilizationRate = value
-		}
-	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
@@ -491,27 +481,14 @@ func (h *StatisticsHandler) getHourlyProduction(deviceId string, deviceIDs []uin
 
 	result := make([]gin.H, 0, 10)
 	now := time.Now()
-	hasRealData := false
 	for i := 9; i >= 0; i-- {
 		day := now.AddDate(0, 0, -i)
 		key := day.Format("2006-01-02")
 		value := valueMap[key]
-		if value > 0 {
-			hasRealData = true
-		}
 		result = append(result, gin.H{
 			"date":  day.Format("01-02"),
 			"value": value,
 		})
-	}
-
-	if hasRealData {
-		return result
-	}
-
-	fallback := []int{120, 165, 150, 180, 175, 190, 205, 198, 210, 185}
-	for i := range result {
-		result[i]["value"] = fallback[i]
 	}
 	return result
 }
@@ -547,7 +524,6 @@ func (h *StatisticsHandler) getRuntimeAndUtilizationTrends(deviceId string, devi
 
 	runningProcessingTrend := make([]gin.H, 0, 7)
 	utilizationTrend := make([]gin.H, 0, 7)
-	hasRealData := false
 	now := time.Now()
 	for i := 6; i >= 0; i-- {
 		day := now.AddDate(0, 0, -i)
@@ -560,9 +536,6 @@ func (h *StatisticsHandler) getRuntimeAndUtilizationTrends(deviceId string, devi
 		if item.Running+item.Idle > 0 {
 			utilization = roundFloat((item.Running/(item.Running+item.Idle))*100, 2)
 		}
-		if item.Running > 0 || item.Idle > 0 {
-			hasRealData = true
-		}
 
 		runningProcessingTrend = append(runningProcessingTrend, gin.H{
 			"date":           day.Format("01-02"),
@@ -573,19 +546,6 @@ func (h *StatisticsHandler) getRuntimeAndUtilizationTrends(deviceId string, devi
 			"date":  day.Format("01-02"),
 			"value": utilization,
 		})
-	}
-
-	if hasRealData {
-		return runningProcessingTrend, utilizationTrend
-	}
-
-	runningFallback := []float64{6.2, 6.8, 7.1, 6.6, 7.4, 7.0, 7.3}
-	utilizationFallback := []float64{62, 66, 69, 64, 71, 68, 72}
-	for i := range runningProcessingTrend {
-		running := roundFloat(runningFallback[i], 2)
-		runningProcessingTrend[i]["runningTime"] = running
-		runningProcessingTrend[i]["processingTime"] = roundFloat(running*0.8, 2)
-		utilizationTrend[i]["value"] = roundFloat(utilizationFallback[i], 2)
 	}
 	return runningProcessingTrend, utilizationTrend
 }
