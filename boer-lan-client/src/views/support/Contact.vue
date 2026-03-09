@@ -124,7 +124,7 @@
         </el-collapse-item>
         <el-collapse-item title="4. 数据统计如何导出？" name="4">
           <div class="faq-content">
-            在各统计页面右上角有"导出Excel"按钮，点击即可将当前统计数据导出为Excel文件。
+            在各统计页面右上角有"导出数据"按钮，点击即可将当前统计数据导出为CSV文件。
           </div>
         </el-collapse-item>
       </el-collapse>

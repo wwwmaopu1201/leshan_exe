@@ -155,7 +155,7 @@ export default {
     alarmTime: 'Alarm Time',
     alarmCount: 'Alarm Count',
     alarmType: 'Alarm Type',
-    exportExcel: 'Export Excel'
+    exportExcel: 'Export Data'
   },
   employee: {
     employeeName: 'Employee Name',

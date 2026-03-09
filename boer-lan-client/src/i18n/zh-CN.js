@@ -155,7 +155,7 @@ export default {
     alarmTime: '报警时长',
     alarmCount: '报警次数',
     alarmType: '报警类型',
-    exportExcel: '导出Excel'
+    exportExcel: '导出数据'
   },
   employee: {
     employeeName: '员工姓名',
