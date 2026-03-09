@@ -18,11 +18,14 @@
             v-loading="loadingGroups"
             default-expand-all
             highlight-current
+            show-checkbox
+            :check-strictly="true"
             draggable
             :expand-on-click-node="false"
             :allow-drag="allowDragGroupNode"
             :allow-drop="allowDropGroupNode"
             @node-click="handleNodeClick"
+            @check="handleTreeCheck"
             @node-contextmenu="handleNodeContextMenu"
             @node-drop="handleGroupNodeDrop"
           >
@@ -259,6 +262,7 @@ export default {
       allDevices: [],
       selectedGroup: null,
       groupDevices: [],
+      checkedTreeNodes: [],
       selectedDeviceIds: [],
       showGroupDialog: false,
       showMoveDevicesDialog: false,
@@ -316,6 +320,10 @@ export default {
     async fetchAll() {
       await Promise.all([this.fetchGroups(), this.fetchDevices()])
       this.buildGroupTree()
+      this.checkedTreeNodes = []
+      this.$nextTick(() => {
+        this.$refs.groupTree?.setCheckedKeys([])
+      })
       if (!this.selectedGroup && this.groupTree.length > 0) {
         this.selectedGroup = this.groupTree[0]
       }
@@ -650,6 +658,60 @@ export default {
         })
       }
 
+      if (this.checkedTreeNodes.length > 0) {
+        let includeAll = false
+        let includeUngrouped = false
+        const groupIdSet = new Set()
+        const deviceIdSet = new Set()
+
+        this.checkedTreeNodes.forEach(node => {
+          if (!node) return
+          if (node.id === 'all') {
+            includeAll = true
+            return
+          }
+          if (node.id === 'ungrouped') {
+            includeUngrouped = true
+            return
+          }
+          if (node.isDevice) {
+            deviceIdSet.add(Number(node.deviceId))
+            return
+          }
+          const currentGroupId = Number(node.id || 0)
+          if (currentGroupId <= 0) return
+          groupIdSet.add(currentGroupId)
+          this.getDescendantGroupIdsById(currentGroupId).forEach(id => groupIdSet.add(Number(id)))
+        })
+
+        if (includeAll) {
+          this.groupDevices = this.sortDevicesForDisplay(this.allDevices)
+          resetSelection()
+          return
+        }
+
+        if (groupIdSet.size > 0) {
+          this.allDevices.forEach(device => {
+            if (groupIdSet.has(Number(device.groupId || 0))) {
+              deviceIdSet.add(Number(device.id))
+            }
+          })
+        }
+        if (includeUngrouped) {
+          this.allDevices.forEach(device => {
+            if (!(device.groupId && Number(device.groupId) > 0)) {
+              deviceIdSet.add(Number(device.id))
+            }
+          })
+        }
+
+        this.groupDevices = this.sortDevicesForDisplay(
+          this.allDevices.filter(device => deviceIdSet.has(Number(device.id)))
+        )
+        resetSelection()
+        return
+      }
+
       if (!this.selectedGroup) {
         this.groupDevices = []
         resetSelection()
@@ -748,6 +810,11 @@ export default {
       this.selectedGroup = data
       this.syncGroupDevices()
       this.hideContextMenu()
+    },
+    handleTreeCheck(data, checkedInfo) {
+      const checkedNodes = checkedInfo?.checkedNodes || []
+      this.checkedTreeNodes = checkedNodes.filter(node => !node?.isVirtual)
+      this.syncGroupDevices()
     },
     handleNodeContextMenu(event, data) {
       event.preventDefault()
