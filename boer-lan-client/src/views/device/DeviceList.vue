@@ -81,7 +81,11 @@
       >
         <el-table-column type="selection" width="50" align="center" />
         <el-table-column prop="code" :label="$t('device.deviceCode')" width="120" />
-        <el-table-column prop="name" :label="$t('device.deviceName')" min-width="150" />
+        <el-table-column :label="$t('device.deviceName')" min-width="180">
+          <template slot-scope="scope">
+            <span>{{ formatDeviceName(scope.row) }}</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="initialName" :label="$t('device.initialName')" width="130" />
         <el-table-column prop="type" :label="$t('device.deviceType')" width="100" />
         <el-table-column prop="model" :label="$t('device.deviceModel')" width="100" />
@@ -348,6 +352,20 @@ export default {
         return 'row-ungrouped'
       }
       return ''
+    },
+    formatDeviceName(row) {
+      const name = String(row?.name || '').trim()
+      const employeeName = String(row?.employeeName || '').trim()
+      if (!employeeName) {
+        return name
+      }
+      if (!name) {
+        return employeeName
+      }
+      if (name.includes(`（${employeeName}）`) || name.includes(`(${employeeName})`)) {
+        return name
+      }
+      return `${name}（${employeeName}）`
     },
     handleAdd() {
       this.editForm = {

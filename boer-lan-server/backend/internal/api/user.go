@@ -23,7 +23,7 @@ func NewUserHandler(db *gorm.DB) *UserHandler {
 
 func isValidUserPhone(phone string) bool {
 	if phone == "" {
-		return true
+		return false
 	}
 	matched, _ := regexp.MatchString(`^1[3-9]\d{9}$`, phone)
 	return matched
@@ -142,8 +142,12 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "密码长度需在6-32位"})
 		return
 	}
+	if req.Nickname == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "账号姓名不能为空"})
+		return
+	}
 	if !isValidUserPhone(req.Phone) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "手机号格式不正确"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "手机号不能为空且格式需正确"})
 		return
 	}
 
@@ -162,9 +166,10 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		return
 	}
 
-	// 默认角色为user
+	req.Role = strings.TrimSpace(req.Role)
 	if req.Role == "" {
-		req.Role = "user"
+		c.JSON(http.StatusBadRequest, gin.H{"error": "角色不能为空"})
+		return
 	}
 	if err := ensureRoleExistsByName(h.db, req.Role); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "角色不存在，请先在权限角色中创建"})
@@ -253,7 +258,12 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	}
 
 	if req.Nickname != nil {
-		updates["nickname"] = strings.TrimSpace(*req.Nickname)
+		nickname := strings.TrimSpace(*req.Nickname)
+		if nickname == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "账号姓名不能为空"})
+			return
+		}
+		updates["nickname"] = nickname
 	}
 
 	if req.Email != nil {
@@ -263,7 +273,7 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	if req.Phone != nil {
 		phone := strings.TrimSpace(*req.Phone)
 		if !isValidUserPhone(phone) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "手机号格式不正确"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "手机号不能为空且格式需正确"})
 			return
 		}
 		updates["phone"] = phone

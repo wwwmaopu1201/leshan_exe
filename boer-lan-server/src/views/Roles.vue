@@ -89,17 +89,24 @@
         </el-form-item>
 
         <el-form-item label="菜单权限" required>
-          <div style="margin-bottom: 8px;">
+          <div style="margin-bottom: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <el-checkbox v-model="form.showDetailPermissions" @change="handlePermissionModeChange">
+              展开细分权限
+            </el-checkbox>
             <el-button size="mini" @click="checkAllPermissions">全选</el-button>
             <el-button size="mini" @click="clearAllPermissions">清空</el-button>
           </div>
+          <div v-if="!form.showDetailPermissions" style="margin-bottom: 8px; color: #909399;">
+            当前仅展示 6 个一级菜单模块
+          </div>
           <div class="permission-tree-wrap">
             <el-tree
+              :key="form.showDetailPermissions ? 'detail' : 'module'"
               ref="permissionTreeRef"
-              :data="permissionTree"
+              :data="currentPermissionTree"
               node-key="id"
               show-checkbox
-              default-expand-all
+              :default-expand-all="form.showDetailPermissions"
               :check-strictly="!form.parentChildLink"
               :props="{ label: 'label', children: 'children' }"
             />
@@ -116,11 +123,10 @@
 </template>
 
 <script>
-const DEFAULT_ROLE_PERMISSIONS = [
+const DEFAULT_ROLE_MODULE_PERMISSIONS = [
   'home',
   'dashboard',
   'deviceManagement',
-  'remoteMonitoring',
   'fileManagement',
   'statistics',
   'employeeManagement'
@@ -191,7 +197,8 @@ export default {
         name: '',
         remark: '',
         parentChildLink: true,
-        permissionKeys: [...DEFAULT_ROLE_PERMISSIONS]
+        showDetailPermissions: false,
+        permissionKeys: [...DEFAULT_ROLE_MODULE_PERMISSIONS]
       },
       rules: {
         name: [
@@ -214,6 +221,14 @@ export default {
   },
   mounted() {
     this.loadData()
+  },
+  computed: {
+    currentPermissionTree() {
+      if (this.form.showDetailPermissions) {
+        return this.permissionTree
+      }
+      return this.permissionTree.map(item => ({ id: item.id, label: item.label }))
+    }
   },
   methods: {
     parsePermissionMap(raw) {
@@ -252,8 +267,43 @@ export default {
       const halfChecked = tree.getHalfCheckedKeys ? tree.getHalfCheckedKeys() : []
       return Array.from(new Set([...checked, ...halfChecked]))
     },
+    toModulePermissionKeys(keys) {
+      const keySet = new Set(keys || [])
+      return this.permissionTree
+        .filter(node => keySet.has(node.id) || node.children?.some(child => keySet.has(child.id)))
+        .map(node => node.id)
+    },
+    expandModulePermissions(keys) {
+      const keySet = new Set(keys || [])
+      this.permissionTree.forEach(node => {
+        if (!node.children?.length || !keySet.has(node.id)) {
+          return
+        }
+        node.children.forEach(child => keySet.add(child.id))
+      })
+      return Array.from(keySet)
+    },
+    shouldUseDetailMode(permissionMap) {
+      return this.permissionTree.some(node => {
+        if (!node.children?.length) {
+          return false
+        }
+        const parentSelected = permissionMap[node.id] === true
+        const selectedCount = node.children.filter(child => permissionMap[child.id] === true).length
+        if (selectedCount > 0 && selectedCount < node.children.length) {
+          return true
+        }
+        if (selectedCount > 0 && !parentSelected) {
+          return true
+        }
+        return false
+      })
+    },
     buildPermissionJSON() {
-      const checkedKeys = this.getCheckedPermissionKeys()
+      let checkedKeys = this.getCheckedPermissionKeys()
+      if (!this.form.showDetailPermissions) {
+        checkedKeys = this.expandModulePermissions(checkedKeys)
+      }
       const permissionMap = {}
       checkedKeys.forEach(key => {
         permissionMap[key] = true
@@ -277,11 +327,19 @@ export default {
           }
         })
       }
-      walk(this.permissionTree)
+      walk(this.currentPermissionTree)
       this.applyTreeCheckedKeys(allKeys)
     },
     clearAllPermissions() {
       this.applyTreeCheckedKeys([])
+    },
+    handlePermissionModeChange(enabled) {
+      const checked = this.getCheckedPermissionKeys()
+      const nextKeys = enabled
+        ? this.expandModulePermissions(checked)
+        : this.toModulePermissionKeys(checked)
+      this.form.permissionKeys = nextKeys
+      this.applyTreeCheckedKeys(nextKeys)
     },
     handleLinkModeChange() {
       const checked = this.getCheckedPermissionKeys()
@@ -322,19 +380,25 @@ export default {
         name: '',
         remark: '',
         parentChildLink: true,
-        permissionKeys: [...DEFAULT_ROLE_PERMISSIONS]
+        showDetailPermissions: false,
+        permissionKeys: [...DEFAULT_ROLE_MODULE_PERMISSIONS]
       }
       this.applyTreeCheckedKeys(this.form.permissionKeys)
     },
     openEditDialog(row) {
       const permissions = this.parsePermissionMap(row.permissions)
+      const allPermissionKeys = Object.keys(permissions).filter(key => permissions[key])
+      const useDetailMode = this.shouldUseDetailMode(permissions)
       this.dialogVisible = true
       this.form = {
         id: row.id || row.ID,
         name: row.name,
         remark: row.remark || '',
         parentChildLink: row.parentChildLink !== false,
-        permissionKeys: Object.keys(permissions).filter(key => permissions[key])
+        showDetailPermissions: useDetailMode,
+        permissionKeys: useDetailMode
+          ? allPermissionKeys
+          : this.toModulePermissionKeys(allPermissionKeys)
       }
       this.applyTreeCheckedKeys(this.form.permissionKeys)
     },

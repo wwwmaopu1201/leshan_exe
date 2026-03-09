@@ -76,7 +76,11 @@
                 :row-class-name="getDeviceRowClass"
               >
                 <el-table-column prop="code" label="设备编码" width="120" />
-                <el-table-column prop="name" label="设备名称" />
+                <el-table-column label="设备名称">
+                  <template slot-scope="scope">
+                    <span>{{ formatDeviceName(scope.row) }}</span>
+                  </template>
+                </el-table-column>
                 <el-table-column prop="group" label="所属分组" width="120">
                   <template slot-scope="scope">
                     <span v-if="scope.row.group">{{ scope.row.group }}</span>
@@ -357,6 +361,20 @@ export default {
         return 'row-ungrouped'
       }
       return ''
+    },
+    formatDeviceName(row) {
+      const name = String(row?.name || '').trim()
+      const employeeName = String(row?.employeeName || '').trim()
+      if (!employeeName) {
+        return name
+      }
+      if (!name) {
+        return employeeName
+      }
+      if (name.includes(`（${employeeName}）`) || name.includes(`(${employeeName})`)) {
+        return name
+      }
+      return `${name}（${employeeName}）`
     },
     syncGroupDevices() {
       if (!this.selectedGroup) {

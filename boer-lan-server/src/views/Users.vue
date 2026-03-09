@@ -128,7 +128,7 @@
         </el-form-item>
 
         <el-form-item label="手机号" prop="phone">
-          <el-input v-model="form.phone" placeholder="可选" />
+          <el-input v-model="form.phone" placeholder="请输入手机号" />
         </el-form-item>
 
         <el-form-item label="所属分组">
@@ -253,8 +253,9 @@ export default {
         nickname: [{ required: true, message: '请输入昵称', trigger: 'blur' }],
         role: [{ required: true, message: '请选择角色', trigger: 'change' }],
         phone: [{ validator: (rule, value, callback) => {
-          if (!value) return callback()
-          if (!/^1[3-9]\d{9}$/.test(value)) return callback(new Error('手机号格式不正确'))
+          const normalized = String(value || '').trim()
+          if (!normalized) return callback(new Error('请输入手机号'))
+          if (!/^1[3-9]\d{9}$/.test(normalized)) return callback(new Error('手机号格式不正确'))
           return callback()
         }, trigger: 'blur' }]
       }
@@ -489,7 +490,7 @@ export default {
           nickname: this.form.nickname,
           role: this.form.role,
           email: this.form.email,
-          phone: this.form.phone,
+          phone: String(this.form.phone || '').trim(),
           groupId: this.form.groupId,
           disabled: this.form.disabled,
           permissions: this.getRoleByName(this.form.role)?.permissions || this.buildPermissionJSON(this.form.permissionKeys)
