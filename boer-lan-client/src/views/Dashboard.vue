@@ -115,9 +115,15 @@
               <div ref="gaugeChart" class="chart-container gauge"></div>
             </div>
           </el-col>
-          <el-col :span="16">
+          <el-col :span="8">
             <div class="chart-card">
-              <div class="chart-title">{{ $t('dashboard.productionStats') }}</div>
+              <div class="chart-title">加工总件数（近7天）</div>
+              <div ref="pieces7dChart" class="chart-container"></div>
+            </div>
+          </el-col>
+          <el-col :span="8">
+            <div class="chart-card">
+              <div class="chart-title">加工产量统计（近10天）</div>
               <div ref="productionChart" class="chart-container"></div>
             </div>
           </el-col>
@@ -176,6 +182,7 @@ export default {
         processingTime: 0,
         utilizationRate: 0,
         hourlyProduction: [],
+        pieces7d: [],
         runningProcessingTrend: [],
         utilizationTrend: []
       },
@@ -278,6 +285,7 @@ export default {
             processingTime: res.data.processingTime || 0,
             utilizationRate: res.data.utilizationRate || 0,
             hourlyProduction: res.data.hourlyProduction || [],
+            pieces7d: (res.data.hourlyProduction || []).slice(-7),
             runningProcessingTrend: res.data.runningProcessingTrend || [],
             utilizationTrend: res.data.utilizationTrend || []
           }
@@ -295,6 +303,7 @@ export default {
           processingTime: 0,
           utilizationRate: 0,
           hourlyProduction: [],
+          pieces7d: [],
           runningProcessingTrend: [],
           utilizationTrend: []
         }
@@ -350,6 +359,7 @@ export default {
     },
     initCharts() {
       this.initGaugeChart()
+      this.initPieces7dChart()
       this.initProductionChart()
       this.initRuntimeChart()
       this.initUtilizationChart()
@@ -430,7 +440,7 @@ export default {
       chart.setOption({
         tooltip: {
           trigger: 'axis',
-          axisPointer: { type: 'shadow' }
+          axisPointer: { type: 'line' }
         },
         grid: {
           left: '3%',
@@ -442,7 +452,7 @@ export default {
           type: 'category',
           data: this.dashboardData.hourlyProduction.map(d => d.date || d.hour),
           axisLine: { lineStyle: { color: '#ddd' } },
-          axisLabel: { color: '#666' }
+          axisLabel: { color: '#666', rotate: 40 }
         },
         yAxis: {
           type: 'value',
@@ -465,6 +475,49 @@ export default {
               { offset: 0, color: 'rgba(64, 158, 255, 0.28)' },
               { offset: 1, color: 'rgba(64, 158, 255, 0.05)' }
             ])
+          }
+        }]
+      })
+    },
+    initPieces7dChart() {
+      if (!this.$refs.pieces7dChart) return
+      if (this.charts.pieces7d) {
+        this.charts.pieces7d.dispose()
+      }
+      const chart = echarts.init(this.$refs.pieces7dChart)
+      this.charts.pieces7d = chart
+      chart.setOption({
+        tooltip: {
+          trigger: 'axis',
+          axisPointer: { type: 'shadow' }
+        },
+        grid: {
+          left: '3%',
+          right: '4%',
+          bottom: '3%',
+          containLabel: true
+        },
+        xAxis: {
+          type: 'category',
+          data: this.dashboardData.pieces7d.map(d => d.date || d.hour),
+          axisLine: { lineStyle: { color: '#ddd' } },
+          axisLabel: { color: '#666' }
+        },
+        yAxis: {
+          type: 'value',
+          axisLabel: { color: '#666' },
+          splitLine: { lineStyle: { color: '#eee' } }
+        },
+        series: [{
+          type: 'bar',
+          data: this.dashboardData.pieces7d.map(d => d.value),
+          barWidth: 22,
+          itemStyle: {
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: '#67C23A' },
+              { offset: 1, color: '#4fa727' }
+            ]),
+            borderRadius: [4, 4, 0, 0]
           }
         }]
       })
