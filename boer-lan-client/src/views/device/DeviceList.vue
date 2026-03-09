@@ -32,6 +32,16 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item :label="$t('common.createTime')">
+          <el-date-picker
+            v-model="searchForm.dateRange"
+            type="daterange"
+            value-format="yyyy-MM-dd"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+          />
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" icon="el-icon-search" @click="handleSearch">
             {{ $t('common.search') }}
@@ -240,7 +250,8 @@ export default {
       searchForm: {
         keyword: '',
         status: '',
-        groupId: ''
+        groupId: '',
+        dateRange: []
       },
       pagination: {
         page: 1,
@@ -295,6 +306,8 @@ export default {
           keyword: this.searchForm.keyword,
           status: this.searchForm.status,
           groupId: this.searchForm.groupId,
+          startDate: this.searchForm.dateRange?.[0] || '',
+          endDate: this.searchForm.dateRange?.[1] || '',
           page: this.pagination.page,
           pageSize: this.pagination.pageSize
         })
@@ -314,7 +327,7 @@ export default {
       this.fetchData()
     },
     handleReset() {
-      this.searchForm = { keyword: '', status: '', groupId: '' }
+      this.searchForm = { keyword: '', status: '', groupId: '', dateRange: [] }
       this.handleSearch()
     },
     handleSelectionChange(rows) {
