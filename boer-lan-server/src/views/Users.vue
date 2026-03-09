@@ -161,7 +161,7 @@
           </div>
         </el-form-item>
 
-        <el-form-item label="账户状态">
+        <el-form-item label="账号状态">
           <el-switch
             v-model="form.disabled"
             active-text="禁用"

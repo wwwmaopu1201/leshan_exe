@@ -472,7 +472,7 @@ func (h *UserHandler) DeleteUser(c *gin.Context) {
 	var adminCount int64
 	h.db.Model(&model.User{}).Where("id IN ? AND username = ?", req.IDs, "admin").Count(&adminCount)
 	if adminCount > 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "不能删除管理员账户"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不能删除管理员账号"})
 		return
 	}
 
