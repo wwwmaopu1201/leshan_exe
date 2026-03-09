@@ -114,6 +114,22 @@ func (h *PatternHandler) GetDevicePatternFiles(c *gin.Context) {
 		})
 		return
 	}
+	scope := h.getCurrentUserScope(c)
+	allowed, err := h.canAccessDeviceID(scope, device.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "校验设备权限失败",
+		})
+		return
+	}
+	if !allowed {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    403,
+			"message": "无权访问该设备文件",
+		})
+		return
+	}
 
 	if err := h.seedDevicePatternFiles(device); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -192,6 +208,23 @@ func (h *PatternHandler) DeleteDevicePatternFile(c *gin.Context) {
 		return
 	}
 
+	scope := h.getCurrentUserScope(c)
+	allowed, err := h.canAccessDeviceID(scope, record.DeviceID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "校验设备权限失败",
+		})
+		return
+	}
+	if !allowed {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    403,
+			"message": "无权删除该设备文件",
+		})
+		return
+	}
+
 	if err := h.db.Delete(&record).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -228,6 +261,22 @@ func (h *PatternHandler) UploadDeviceFilesToServer(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{
 			"code":    404,
 			"message": "设备不存在",
+		})
+		return
+	}
+	scope := h.getCurrentUserScope(c)
+	allowed, err := h.canAccessDeviceID(scope, device.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "校验设备权限失败",
+		})
+		return
+	}
+	if !allowed {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    403,
+			"message": "无权回传该设备文件",
 		})
 		return
 	}
@@ -323,6 +372,23 @@ func (h *PatternHandler) UploadDeviceFilesToServer(c *gin.Context) {
 
 func (h *PatternHandler) GetUploadQueue(c *gin.Context) {
 	query := h.db.Model(&model.UploadTask{})
+	scope := h.getCurrentUserScope(c)
+
+	if !scope.All {
+		allowedDeviceIDs, err := h.queryScopedDeviceIDs(scope)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "查询设备范围失败",
+			})
+			return
+		}
+		if len(allowedDeviceIDs) == 0 {
+			c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": []gin.H{}, "total": 0}, "message": "success"})
+			return
+		}
+		query = query.Where("device_id IN ?", allowedDeviceIDs)
+	}
 
 	if status := strings.TrimSpace(c.Query("status")); status != "" {
 		query = query.Where("status = ?", status)
@@ -452,13 +518,22 @@ func (h *PatternHandler) GetUploadQueue(c *gin.Context) {
 	})
 }
 
-func (h *PatternHandler) updateUploadTaskStatus(id string, allowedCurrent []string, nextStatus, message string) (int, string) {
+func (h *PatternHandler) updateUploadTaskStatus(c *gin.Context, id string, allowedCurrent []string, nextStatus, message string) (int, string) {
 	var task model.UploadTask
 	if err := h.db.First(&task, id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return http.StatusNotFound, "上传任务不存在"
 		}
 		return http.StatusInternalServerError, "查询上传任务失败"
+	}
+
+	scope := h.getCurrentUserScope(c)
+	allowed, err := h.canAccessDeviceID(scope, task.DeviceID)
+	if err != nil {
+		return http.StatusInternalServerError, "校验任务权限失败"
+	}
+	if !allowed {
+		return http.StatusForbidden, "无权操作该任务"
 	}
 
 	if !containsString(allowedCurrent, task.Status) {
@@ -480,7 +555,7 @@ func (h *PatternHandler) updateUploadTaskStatus(id string, allowedCurrent []stri
 }
 
 func (h *PatternHandler) PauseUploadTask(c *gin.Context) {
-	statusCode, message := h.updateUploadTaskStatus(c.Param("id"), []string{"waiting", "uploading"}, "paused", "任务已暂停")
+	statusCode, message := h.updateUploadTaskStatus(c, c.Param("id"), []string{"waiting", "uploading"}, "paused", "任务已暂停")
 	if statusCode != http.StatusOK {
 		c.JSON(statusCode, gin.H{"code": statusCode, "message": message})
 		return
@@ -489,7 +564,7 @@ func (h *PatternHandler) PauseUploadTask(c *gin.Context) {
 }
 
 func (h *PatternHandler) ResumeUploadTask(c *gin.Context) {
-	statusCode, message := h.updateUploadTaskStatus(c.Param("id"), []string{"paused"}, "waiting", "等待回传")
+	statusCode, message := h.updateUploadTaskStatus(c, c.Param("id"), []string{"paused"}, "waiting", "等待回传")
 	if statusCode != http.StatusOK {
 		c.JSON(statusCode, gin.H{"code": statusCode, "message": message})
 		return
@@ -498,7 +573,7 @@ func (h *PatternHandler) ResumeUploadTask(c *gin.Context) {
 }
 
 func (h *PatternHandler) CancelUploadTask(c *gin.Context) {
-	statusCode, message := h.updateUploadTaskStatus(c.Param("id"), []string{"waiting", "uploading", "paused"}, "canceled", "任务已取消")
+	statusCode, message := h.updateUploadTaskStatus(c, c.Param("id"), []string{"waiting", "uploading", "paused"}, "canceled", "任务已取消")
 	if statusCode != http.StatusOK {
 		c.JSON(statusCode, gin.H{"code": statusCode, "message": message})
 		return
@@ -507,7 +582,25 @@ func (h *PatternHandler) CancelUploadTask(c *gin.Context) {
 }
 
 func (h *PatternHandler) ClearCompletedUploads(c *gin.Context) {
-	result := h.db.Where("status IN ?", []string{"completed", "failed", "canceled"}).Delete(&model.UploadTask{})
+	scope := h.getCurrentUserScope(c)
+	query := h.db.Model(&model.UploadTask{}).Where("status IN ?", []string{"completed", "failed", "canceled"})
+	if !scope.All {
+		allowedDeviceIDs, err := h.queryScopedDeviceIDs(scope)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "查询设备范围失败",
+			})
+			return
+		}
+		if len(allowedDeviceIDs) == 0 {
+			c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"affected": 0}, "message": "success"})
+			return
+		}
+		query = query.Where("device_id IN ?", allowedDeviceIDs)
+	}
+
+	result := query.Delete(&model.UploadTask{})
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,

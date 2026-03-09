@@ -42,6 +42,54 @@ func NewPatternHandler(db *gorm.DB) *PatternHandler {
 	return &PatternHandler{db: db}
 }
 
+func (h *PatternHandler) getCurrentUserScope(c *gin.Context) userGroupScope {
+	userID := c.GetUint("userId")
+	if userID == 0 {
+		return userGroupScope{All: true}
+	}
+
+	scope, err := loadUserGroupScope(h.db, userID, c.GetString("role"))
+	if err != nil {
+		return userGroupScope{All: false, GroupIDs: nil}
+	}
+	return scope
+}
+
+func (h *PatternHandler) queryScopedDeviceIDs(scope userGroupScope) ([]uint, error) {
+	if scope.All {
+		return nil, nil
+	}
+	if len(scope.GroupIDs) == 0 {
+		return []uint{}, nil
+	}
+
+	ids := make([]uint, 0)
+	if err := h.db.Model(&model.Device{}).
+		Where("group_id IN ?", scope.GroupIDs).
+		Pluck("id", &ids).Error; err != nil {
+		return nil, err
+	}
+	return normalizeGroupIDs(ids), nil
+}
+
+func (h *PatternHandler) canAccessDeviceID(scope userGroupScope, deviceID uint) (bool, error) {
+	if scope.All {
+		return true, nil
+	}
+	if len(scope.GroupIDs) == 0 {
+		return false, nil
+	}
+
+	var count int64
+	if err := h.db.Model(&model.Device{}).
+		Where("id = ?", deviceID).
+		Where("group_id IN ?", scope.GroupIDs).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 func roundTo3(v float64) float64 {
 	return math.Round(v*1000) / 1000
 }
@@ -556,6 +604,66 @@ func (h *PatternHandler) DownloadToDevice(c *gin.Context) {
 		return
 	}
 
+	req.DeviceIDs = normalizeGroupIDs(req.DeviceIDs)
+
+	var patternCount int64
+	if err := h.db.Model(&model.Pattern{}).Where("id = ?", req.PatternID).Count(&patternCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "花型校验失败",
+		})
+		return
+	}
+	if patternCount == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "花型不存在",
+		})
+		return
+	}
+
+	existingDeviceIDs := make([]uint, 0)
+	if err := h.db.Model(&model.Device{}).
+		Where("id IN ?", req.DeviceIDs).
+		Pluck("id", &existingDeviceIDs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "设备校验失败",
+		})
+		return
+	}
+	if len(normalizeGroupIDs(existingDeviceIDs)) != len(req.DeviceIDs) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "包含不存在的目标设备",
+		})
+		return
+	}
+
+	scope := h.getCurrentUserScope(c)
+	if !scope.All {
+		accessibleDeviceIDs := make([]uint, 0)
+		if len(scope.GroupIDs) > 0 {
+			if err := h.db.Model(&model.Device{}).
+				Where("id IN ?", req.DeviceIDs).
+				Where("group_id IN ?", scope.GroupIDs).
+				Pluck("id", &accessibleDeviceIDs).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"code":    500,
+					"message": "设备校验失败",
+				})
+				return
+			}
+		}
+		if len(normalizeGroupIDs(accessibleDeviceIDs)) != len(req.DeviceIDs) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"message": "包含无权下发的目标设备",
+			})
+			return
+		}
+	}
+
 	userID := c.GetUint("userId")
 	for _, deviceID := range req.DeviceIDs {
 		task := model.DownloadTask{
@@ -599,6 +707,69 @@ func (h *PatternHandler) BatchDownload(c *gin.Context) {
 			"message": "请选择花型和目标设备",
 		})
 		return
+	}
+
+	req.PatternIDs = normalizeGroupIDs(req.PatternIDs)
+	req.DeviceIDs = normalizeGroupIDs(req.DeviceIDs)
+
+	existingPatternIDs := make([]uint, 0)
+	if err := h.db.Model(&model.Pattern{}).
+		Where("id IN ?", req.PatternIDs).
+		Pluck("id", &existingPatternIDs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "花型校验失败",
+		})
+		return
+	}
+	if len(normalizeGroupIDs(existingPatternIDs)) != len(req.PatternIDs) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "包含不存在的花型",
+		})
+		return
+	}
+
+	existingDeviceIDs := make([]uint, 0)
+	if err := h.db.Model(&model.Device{}).
+		Where("id IN ?", req.DeviceIDs).
+		Pluck("id", &existingDeviceIDs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "设备校验失败",
+		})
+		return
+	}
+	if len(normalizeGroupIDs(existingDeviceIDs)) != len(req.DeviceIDs) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "包含不存在的目标设备",
+		})
+		return
+	}
+
+	scope := h.getCurrentUserScope(c)
+	if !scope.All {
+		accessibleDeviceIDs := make([]uint, 0)
+		if len(scope.GroupIDs) > 0 {
+			if err := h.db.Model(&model.Device{}).
+				Where("id IN ?", req.DeviceIDs).
+				Where("group_id IN ?", scope.GroupIDs).
+				Pluck("id", &accessibleDeviceIDs).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"code":    500,
+					"message": "设备校验失败",
+				})
+				return
+			}
+		}
+		if len(normalizeGroupIDs(accessibleDeviceIDs)) != len(req.DeviceIDs) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"message": "包含无权下发的目标设备",
+			})
+			return
+		}
 	}
 
 	userID := c.GetUint("userId")
@@ -655,19 +826,25 @@ func (h *PatternHandler) queryPatternIDs(patternName, patternType, orderNo strin
 	return ids, nil
 }
 
-func (h *PatternHandler) queryDeviceIDs(deviceName string) ([]uint, error) {
+func (h *PatternHandler) queryDeviceIDs(scope userGroupScope, deviceName string) ([]uint, error) {
 	deviceName = strings.TrimSpace(deviceName)
 	if deviceName == "" {
 		return nil, nil
 	}
 
+	query := h.db.Model(&model.Device{}).Where("name LIKE ?", "%"+deviceName+"%")
+	if !scope.All {
+		if len(scope.GroupIDs) == 0 {
+			return []uint{}, nil
+		}
+		query = query.Where("group_id IN ?", scope.GroupIDs)
+	}
+
 	ids := make([]uint, 0)
-	if err := h.db.Model(&model.Device{}).
-		Where("name LIKE ?", "%"+deviceName+"%").
-		Pluck("id", &ids).Error; err != nil {
+	if err := query.Pluck("id", &ids).Error; err != nil {
 		return nil, err
 	}
-	return ids, nil
+	return normalizeGroupIDs(ids), nil
 }
 
 func uniqueUint(ids []uint) []uint {
@@ -751,6 +928,23 @@ func (h *PatternHandler) buildDownloadTaskList(tasks []model.DownloadTask) []gin
 
 func (h *PatternHandler) GetDownloadQueue(c *gin.Context) {
 	query := h.db.Model(&model.DownloadTask{})
+	scope := h.getCurrentUserScope(c)
+
+	if !scope.All {
+		allowedDeviceIDs, err := h.queryScopedDeviceIDs(scope)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "查询设备范围失败",
+			})
+			return
+		}
+		if len(allowedDeviceIDs) == 0 {
+			c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": []gin.H{}, "total": 0}, "message": "success"})
+			return
+		}
+		query = query.Where("device_id IN ?", allowedDeviceIDs)
+	}
 
 	status := strings.TrimSpace(c.Query("status"))
 	if status != "" {
@@ -779,7 +973,7 @@ func (h *PatternHandler) GetDownloadQueue(c *gin.Context) {
 		query = query.Where("pattern_id IN ?", patternIDs)
 	}
 
-	deviceIDs, err := h.queryDeviceIDs(c.Query("deviceName"))
+	deviceIDs, err := h.queryDeviceIDs(scope, c.Query("deviceName"))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -817,6 +1011,23 @@ func (h *PatternHandler) GetDownloadQueue(c *gin.Context) {
 
 func (h *PatternHandler) GetDownloadLog(c *gin.Context) {
 	query := h.db.Model(&model.DownloadTask{})
+	scope := h.getCurrentUserScope(c)
+
+	if !scope.All {
+		allowedDeviceIDs, err := h.queryScopedDeviceIDs(scope)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "查询设备范围失败",
+			})
+			return
+		}
+		if len(allowedDeviceIDs) == 0 {
+			c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": []gin.H{}, "total": 0}, "message": "success"})
+			return
+		}
+		query = query.Where("device_id IN ?", allowedDeviceIDs)
+	}
 
 	if status := strings.TrimSpace(c.Query("status")); status != "" {
 		query = query.Where("status = ?", status)
@@ -868,7 +1079,7 @@ func (h *PatternHandler) GetDownloadLog(c *gin.Context) {
 		query = query.Where("pattern_id IN ?", patternIDs)
 	}
 
-	deviceIDs, err := h.queryDeviceIDs(c.Query("deviceName"))
+	deviceIDs, err := h.queryDeviceIDs(scope, c.Query("deviceName"))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -925,13 +1136,22 @@ func containsString(list []string, target string) bool {
 	return false
 }
 
-func (h *PatternHandler) updateDownloadTaskStatus(id string, allowedCurrent []string, nextStatus, message string) (int, string) {
+func (h *PatternHandler) updateDownloadTaskStatus(c *gin.Context, id string, allowedCurrent []string, nextStatus, message string) (int, string) {
 	var task model.DownloadTask
 	if err := h.db.First(&task, id).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return http.StatusNotFound, "任务不存在"
 		}
 		return http.StatusInternalServerError, "查询任务失败"
+	}
+
+	scope := h.getCurrentUserScope(c)
+	allowed, err := h.canAccessDeviceID(scope, task.DeviceID)
+	if err != nil {
+		return http.StatusInternalServerError, "校验任务权限失败"
+	}
+	if !allowed {
+		return http.StatusForbidden, "无权操作该任务"
 	}
 
 	if !containsString(allowedCurrent, task.Status) {
@@ -953,7 +1173,7 @@ func (h *PatternHandler) updateDownloadTaskStatus(id string, allowedCurrent []st
 }
 
 func (h *PatternHandler) PauseDownload(c *gin.Context) {
-	statusCode, message := h.updateDownloadTaskStatus(c.Param("id"), []string{"waiting", "downloading"}, "paused", "任务已暂停")
+	statusCode, message := h.updateDownloadTaskStatus(c, c.Param("id"), []string{"waiting", "downloading"}, "paused", "任务已暂停")
 	if statusCode != http.StatusOK {
 		c.JSON(statusCode, gin.H{"code": statusCode, "message": message})
 		return
@@ -962,7 +1182,7 @@ func (h *PatternHandler) PauseDownload(c *gin.Context) {
 }
 
 func (h *PatternHandler) ResumeDownload(c *gin.Context) {
-	statusCode, message := h.updateDownloadTaskStatus(c.Param("id"), []string{"paused"}, "waiting", "等待下发")
+	statusCode, message := h.updateDownloadTaskStatus(c, c.Param("id"), []string{"paused"}, "waiting", "等待下发")
 	if statusCode != http.StatusOK {
 		c.JSON(statusCode, gin.H{"code": statusCode, "message": message})
 		return
@@ -971,12 +1191,28 @@ func (h *PatternHandler) ResumeDownload(c *gin.Context) {
 }
 
 func (h *PatternHandler) PauseAllDownloads(c *gin.Context) {
-	result := h.db.Model(&model.DownloadTask{}).
-		Where("status IN ?", []string{"waiting", "downloading"}).
-		Updates(map[string]interface{}{
-			"status":  "paused",
-			"message": "任务已暂停",
-		})
+	scope := h.getCurrentUserScope(c)
+	query := h.db.Model(&model.DownloadTask{}).Where("status IN ?", []string{"waiting", "downloading"})
+	if !scope.All {
+		allowedDeviceIDs, err := h.queryScopedDeviceIDs(scope)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "查询设备范围失败",
+			})
+			return
+		}
+		if len(allowedDeviceIDs) == 0 {
+			c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"affected": 0}, "message": "success"})
+			return
+		}
+		query = query.Where("device_id IN ?", allowedDeviceIDs)
+	}
+
+	result := query.Updates(map[string]interface{}{
+		"status":  "paused",
+		"message": "任务已暂停",
+	})
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -995,13 +1231,29 @@ func (h *PatternHandler) PauseAllDownloads(c *gin.Context) {
 }
 
 func (h *PatternHandler) ResumeAllDownloads(c *gin.Context) {
-	result := h.db.Model(&model.DownloadTask{}).
-		Where("status = ?", "paused").
-		Updates(map[string]interface{}{
-			"status":   "waiting",
-			"progress": 0,
-			"message":  "等待下发",
-		})
+	scope := h.getCurrentUserScope(c)
+	query := h.db.Model(&model.DownloadTask{}).Where("status = ?", "paused")
+	if !scope.All {
+		allowedDeviceIDs, err := h.queryScopedDeviceIDs(scope)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "查询设备范围失败",
+			})
+			return
+		}
+		if len(allowedDeviceIDs) == 0 {
+			c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"affected": 0}, "message": "success"})
+			return
+		}
+		query = query.Where("device_id IN ?", allowedDeviceIDs)
+	}
+
+	result := query.Updates(map[string]interface{}{
+		"status":   "waiting",
+		"progress": 0,
+		"message":  "等待下发",
+	})
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -1020,7 +1272,25 @@ func (h *PatternHandler) ResumeAllDownloads(c *gin.Context) {
 }
 
 func (h *PatternHandler) ClearCompletedDownloads(c *gin.Context) {
-	result := h.db.Where("status IN ?", []string{"completed", "failed"}).Delete(&model.DownloadTask{})
+	scope := h.getCurrentUserScope(c)
+	query := h.db.Model(&model.DownloadTask{}).Where("status IN ?", []string{"completed", "failed"})
+	if !scope.All {
+		allowedDeviceIDs, err := h.queryScopedDeviceIDs(scope)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "查询设备范围失败",
+			})
+			return
+		}
+		if len(allowedDeviceIDs) == 0 {
+			c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"affected": 0}, "message": "success"})
+			return
+		}
+		query = query.Where("device_id IN ?", allowedDeviceIDs)
+	}
+
+	result := query.Delete(&model.DownloadTask{})
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -1046,6 +1316,23 @@ func (h *PatternHandler) CancelDownload(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{
 			"code":    404,
 			"message": "任务不存在",
+		})
+		return
+	}
+
+	scope := h.getCurrentUserScope(c)
+	allowed, err := h.canAccessDeviceID(scope, task.DeviceID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "校验任务权限失败",
+		})
+		return
+	}
+	if !allowed {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    403,
+			"message": "无权操作该任务",
 		})
 		return
 	}
