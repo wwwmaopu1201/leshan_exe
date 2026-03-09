@@ -61,15 +61,47 @@ func (h *DeviceHandler) isDescendantGroup(groupID uint, potentialDescendantID ui
 
 func (h *DeviceHandler) GetDeviceTree(c *gin.Context) {
 	var groups []model.Group
-	h.db.Preload("Devices").Where("parent_id IS NULL").Find(&groups)
+	h.db.
+		Preload("Devices", func(db *gorm.DB) *gorm.DB { return db.Order("code ASC") }).
+		Where("parent_id IS NULL").
+		Order("sort_order ASC, id ASC").
+		Find(&groups)
 
 	tree := h.buildTree(groups)
+	var ungroupedDevices []model.Device
+	if err := h.db.Where("group_id IS NULL").Order("code ASC").Find(&ungroupedDevices).Error; err == nil && len(ungroupedDevices) > 0 {
+		tree = append(tree, gin.H{
+			"id":       "ungrouped",
+			"label":    "未分组设备",
+			"children": h.buildDeviceNodes(ungroupedDevices),
+		})
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"data":    tree,
 		"message": "success",
 	})
+}
+
+func (h *DeviceHandler) buildDeviceNodes(devices []model.Device) []gin.H {
+	nodes := make([]gin.H, 0, len(devices))
+	for _, d := range devices {
+		label := d.Name
+		if strings.TrimSpace(d.EmployeeName) != "" {
+			label = d.Name + "（" + strings.TrimSpace(d.EmployeeName) + "）"
+		}
+		nodes = append(nodes, gin.H{
+			"id":           d.ID,
+			"label":        label,
+			"type":         "device",
+			"status":       d.Status,
+			"model":        d.ModelName,
+			"employeeCode": d.EmployeeCode,
+			"employeeName": d.EmployeeName,
+		})
+	}
+	return nodes
 }
 
 func (h *DeviceHandler) buildTree(groups []model.Group) []gin.H {
@@ -82,31 +114,20 @@ func (h *DeviceHandler) buildTree(groups []model.Group) []gin.H {
 
 		// Get children
 		var children []model.Group
-		h.db.Preload("Devices").Where("parent_id = ?", g.ID).Find(&children)
-
+		h.db.
+			Preload("Devices", func(db *gorm.DB) *gorm.DB { return db.Order("code ASC") }).
+			Where("parent_id = ?", g.ID).
+			Order("sort_order ASC, id ASC").
+			Find(&children)
+		childNodes := make([]gin.H, 0, len(children)+len(g.Devices))
 		if len(children) > 0 {
-			node["children"] = h.buildTree(children)
-		} else {
-			// Add devices as children
-			deviceNodes := make([]gin.H, 0)
-			for _, d := range g.Devices {
-				label := d.Name
-				if strings.TrimSpace(d.EmployeeName) != "" {
-					label = d.Name + "（" + strings.TrimSpace(d.EmployeeName) + "）"
-				}
-				deviceNodes = append(deviceNodes, gin.H{
-					"id":           d.ID,
-					"label":        label,
-					"type":         "device",
-					"status":       d.Status,
-					"model":        d.ModelName,
-					"employeeCode": d.EmployeeCode,
-					"employeeName": d.EmployeeName,
-				})
-			}
-			if len(deviceNodes) > 0 {
-				node["children"] = deviceNodes
-			}
+			childNodes = append(childNodes, h.buildTree(children)...)
+		}
+		if len(g.Devices) > 0 {
+			childNodes = append(childNodes, h.buildDeviceNodes(g.Devices)...)
+		}
+		if len(childNodes) > 0 {
+			node["children"] = childNodes
 		}
 
 		result = append(result, node)
