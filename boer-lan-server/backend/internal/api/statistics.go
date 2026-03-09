@@ -301,6 +301,7 @@ func (h *StatisticsHandler) getProductionByDay() []gin.H {
 func (h *StatisticsHandler) GetDashboardData(c *gin.Context) {
 	deviceId := strings.TrimSpace(c.Query("deviceId"))
 	deviceIDs := parseDeviceIDs(c.Query("deviceIds"))
+	deviceId, deviceIDs = h.scopeDeviceFilter(c, deviceId, deviceIDs)
 
 	var totalPieces int
 	var todayPieces int
@@ -621,6 +622,7 @@ func (h *StatisticsHandler) GetSalaryStats(c *gin.Context) {
 	employeeKeyword := strings.TrimSpace(c.Query("employeeKeyword"))
 	deviceId := c.Query("deviceId")
 	deviceIDs := parseDeviceIDs(c.Query("deviceIds"))
+	deviceId, deviceIDs = h.scopeDeviceFilter(c, deviceId, deviceIDs)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
 	page, pageSize = normalizePagination(page, pageSize)
@@ -744,6 +746,7 @@ func (h *StatisticsHandler) GetSalaryDetail(c *gin.Context) {
 	employeeId := c.Query("employeeId")
 	deviceId := c.Query("deviceId")
 	deviceIDs := parseDeviceIDs(c.Query("deviceIds"))
+	deviceId, deviceIDs = h.scopeDeviceFilter(c, deviceId, deviceIDs)
 
 	query := h.buildProductionStatsBaseQuery(startDate, endDate, deviceId, deviceIDs)
 	if employeeId != "" {
@@ -804,6 +807,7 @@ func (h *StatisticsHandler) GetProcessOverview(c *gin.Context) {
 	endDate := c.Query("endDate")
 	deviceId := c.Query("deviceId")
 	deviceIDs := parseDeviceIDs(c.Query("deviceIds"))
+	deviceId, deviceIDs = h.scopeDeviceFilter(c, deviceId, deviceIDs)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
 	page, pageSize = normalizePagination(page, pageSize)
@@ -978,6 +982,7 @@ func (h *StatisticsHandler) GetDurationStats(c *gin.Context) {
 	endDate := c.Query("endDate")
 	deviceId := c.Query("deviceId")
 	deviceIDs := parseDeviceIDs(c.Query("deviceIds"))
+	deviceId, deviceIDs = h.scopeDeviceFilter(c, deviceId, deviceIDs)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
 	page, pageSize = normalizePagination(page, pageSize)
@@ -1168,6 +1173,7 @@ func (h *StatisticsHandler) GetAlarmStats(c *gin.Context) {
 	deviceId := c.Query("deviceId")
 	deviceIDs := parseDeviceIDs(c.Query("deviceIds"))
 	alarmType := c.Query("alarmType")
+	deviceId, deviceIDs = h.scopeDeviceFilter(c, deviceId, deviceIDs)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
 	page, pageSize = normalizePagination(page, pageSize)
@@ -1345,6 +1351,7 @@ func (h *StatisticsHandler) exportSalaryCSV(c *gin.Context) {
 	employeeKeyword := strings.TrimSpace(c.Query("employeeKeyword"))
 	deviceId := c.Query("deviceId")
 	deviceIDs := parseDeviceIDs(c.Query("deviceIds"))
+	deviceId, deviceIDs = h.scopeDeviceFilter(c, deviceId, deviceIDs)
 	mode := c.DefaultQuery("mode", "all")
 
 	baseQuery := h.buildSalaryStatsBaseQuery(startDate, endDate, employeeId, employeeKeyword, deviceId, deviceIDs)
@@ -1441,6 +1448,7 @@ func (h *StatisticsHandler) exportProcessCSV(c *gin.Context) {
 	endDate := c.Query("endDate")
 	deviceId := c.Query("deviceId")
 	deviceIDs := parseDeviceIDs(c.Query("deviceIds"))
+	deviceId, deviceIDs = h.scopeDeviceFilter(c, deviceId, deviceIDs)
 
 	baseQuery := h.buildProductionStatsBaseQuery(startDate, endDate, deviceId, deviceIDs)
 
@@ -1515,6 +1523,7 @@ func (h *StatisticsHandler) exportDurationCSV(c *gin.Context) {
 	endDate := c.Query("endDate")
 	deviceId := c.Query("deviceId")
 	deviceIDs := parseDeviceIDs(c.Query("deviceIds"))
+	deviceId, deviceIDs = h.scopeDeviceFilter(c, deviceId, deviceIDs)
 
 	baseProdQuery := h.buildProductionStatsBaseQuery(startDate, endDate, deviceId, deviceIDs)
 
@@ -1566,6 +1575,7 @@ func (h *StatisticsHandler) exportAlarmCSV(c *gin.Context) {
 	deviceId := c.Query("deviceId")
 	deviceIDs := parseDeviceIDs(c.Query("deviceIds"))
 	alarmType := c.Query("alarmType")
+	deviceId, deviceIDs = h.scopeDeviceFilter(c, deviceId, deviceIDs)
 
 	baseQuery := h.buildAlarmStatsBaseQuery(startDate, endDate, deviceId, deviceIDs, alarmType)
 
@@ -1793,6 +1803,63 @@ func (h *StatisticsHandler) buildAlarmStatsBaseQuery(startDate, endDate, deviceI
 		query = query.Where("ar.alarm_type = ?", alarmType)
 	}
 	return query
+}
+
+func (h *StatisticsHandler) scopeDeviceFilter(c *gin.Context, deviceId string, deviceIDs []uint) (string, []uint) {
+	scope, err := loadUserGroupScope(h.db, c.GetUint("userId"), c.GetString("role"))
+	if err != nil {
+		return "", []uint{0}
+	}
+
+	normalizedDeviceID := strings.TrimSpace(deviceId)
+	normalizedDeviceIDs := normalizeGroupIDs(deviceIDs)
+	if scope.All {
+		return normalizedDeviceID, normalizedDeviceIDs
+	}
+	if len(scope.GroupIDs) == 0 {
+		return "", []uint{0}
+	}
+
+	var allowedDeviceIDs []uint
+	if err := h.db.Model(&model.Device{}).
+		Where("group_id IN ?", scope.GroupIDs).
+		Pluck("id", &allowedDeviceIDs).Error; err != nil {
+		return "", []uint{0}
+	}
+	allowedDeviceIDs = normalizeGroupIDs(allowedDeviceIDs)
+	if len(allowedDeviceIDs) == 0 {
+		return "", []uint{0}
+	}
+	allowedSet := make(map[uint]struct{}, len(allowedDeviceIDs))
+	for _, id := range allowedDeviceIDs {
+		allowedSet[id] = struct{}{}
+	}
+
+	if normalizedDeviceID != "" {
+		parsed, err := strconv.ParseUint(normalizedDeviceID, 10, 64)
+		if err != nil {
+			return "", []uint{0}
+		}
+		if _, ok := allowedSet[uint(parsed)]; ok {
+			return normalizedDeviceID, nil
+		}
+		return "", []uint{0}
+	}
+
+	if len(normalizedDeviceIDs) > 0 {
+		filtered := make([]uint, 0, len(normalizedDeviceIDs))
+		for _, id := range normalizedDeviceIDs {
+			if _, ok := allowedSet[id]; ok {
+				filtered = append(filtered, id)
+			}
+		}
+		if len(filtered) == 0 {
+			return "", []uint{0}
+		}
+		return "", filtered
+	}
+
+	return "", allowedDeviceIDs
 }
 
 func parseDeviceIDs(raw string) []uint {
