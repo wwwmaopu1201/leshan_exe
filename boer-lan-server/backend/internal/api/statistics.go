@@ -26,9 +26,10 @@ func NewStatisticsHandler(db *gorm.DB) *StatisticsHandler {
 
 func (h *StatisticsHandler) GetHomeStats(c *gin.Context) {
 	// 设备状态统计
-	var totalDevices, onlineDevices, offlineDevices, alarmDevices int64
+	var totalDevices, onlineDevices, workingDevices, offlineDevices, alarmDevices int64
 	h.db.Model(&model.Device{}).Count(&totalDevices)
 	h.db.Model(&model.Device{}).Where("status IN ?", []string{"online", "working", "idle"}).Count(&onlineDevices)
+	h.db.Model(&model.Device{}).Where("status = ?", "working").Count(&workingDevices)
 	h.db.Model(&model.Device{}).Where("status = ?", "offline").Count(&offlineDevices)
 	h.db.Model(&model.Device{}).Where("status = ?", "alarm").Count(&alarmDevices)
 
@@ -52,6 +53,7 @@ func (h *StatisticsHandler) GetHomeStats(c *gin.Context) {
 		"data": gin.H{
 			"totalDevices":     totalDevices,
 			"onlineDevices":    onlineDevices,
+			"workingDevices":   workingDevices,
 			"offlineDevices":   offlineDevices,
 			"alarmDevices":     alarmDevices,
 			"weeklyEfficiency": weeklyEfficiency,

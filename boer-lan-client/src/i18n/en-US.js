@@ -70,6 +70,7 @@ export default {
     deviceStatus: 'Device Status',
     totalDevices: 'Total Devices',
     onlineDevices: 'Online Devices',
+    workingDevices: 'Working Devices',
     offlineDevices: 'Offline Devices',
     alarmDevices: 'Alarm Devices',
     weeklyEfficiency: 'Weekly Device Efficiency',

@@ -38,11 +38,11 @@
       <el-col :span="6">
         <div class="stat-card danger">
           <div class="stat-icon">
-            <i class="el-icon-warning"></i>
+            <i class="el-icon-loading"></i>
           </div>
           <div class="stat-content">
-            <div class="stat-value">{{ stats.alarmDevices }}</div>
-            <div class="stat-label">{{ $t('home.alarmDevices') }}</div>
+            <div class="stat-value">{{ stats.workingDevices }}</div>
+            <div class="stat-label">{{ $t('home.workingDevices') }}</div>
           </div>
         </div>
       </el-col>
@@ -98,6 +98,7 @@ export default {
       stats: {
         totalDevices: 0,
         onlineDevices: 0,
+        workingDevices: 0,
         offlineDevices: 0,
         alarmDevices: 0,
         weeklyEfficiency: [],
@@ -106,14 +107,17 @@ export default {
         topProduction: [],
         productionByHour: []
       },
+      refreshTimer: null,
       charts: {}
     }
   },
   mounted() {
     this.fetchData()
+    this.startAutoRefresh()
     window.addEventListener('resize', this.handleResize)
   },
   beforeDestroy() {
+    this.stopAutoRefresh()
     window.removeEventListener('resize', this.handleResize)
     Object.values(this.charts).forEach(chart => chart && chart.dispose())
   },
@@ -125,6 +129,7 @@ export default {
           this.stats = {
             totalDevices: res.data.totalDevices || 0,
             onlineDevices: res.data.onlineDevices || 0,
+            workingDevices: res.data.workingDevices || 0,
             offlineDevices: res.data.offlineDevices || 0,
             alarmDevices: res.data.alarmDevices || 0,
             weeklyEfficiency: res.data.weeklyEfficiency || [],
@@ -139,6 +144,18 @@ export default {
         }
       } catch (error) {
         console.error('Failed to fetch home stats:', error)
+      }
+    },
+    startAutoRefresh() {
+      this.stopAutoRefresh()
+      this.refreshTimer = setInterval(() => {
+        this.fetchData()
+      }, 60 * 1000)
+    },
+    stopAutoRefresh() {
+      if (this.refreshTimer) {
+        clearInterval(this.refreshTimer)
+        this.refreshTimer = null
       }
     },
     initCharts() {

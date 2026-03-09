@@ -70,6 +70,7 @@ export default {
     deviceStatus: '设备状态',
     totalDevices: '设备总数',
     onlineDevices: '在线设备',
+    workingDevices: '缝纫设备',
     offlineDevices: '离线设备',
     alarmDevices: '报警设备',
     weeklyEfficiency: '近7日设备使用效率',
