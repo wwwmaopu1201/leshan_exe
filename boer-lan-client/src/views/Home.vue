@@ -65,19 +65,28 @@
     </el-row>
 
     <el-row :gutter="20" class="chart-row">
-      <el-col :span="8">
+      <el-col :span="12">
         <div class="chart-card">
           <div class="chart-title">{{ $t('home.modelRatio') }}</div>
           <div ref="modelChart" class="chart-container"></div>
         </div>
       </el-col>
-      <el-col :span="8">
+      <el-col :span="12">
         <div class="chart-card">
           <div class="chart-title">{{ $t('home.topProduction') }}</div>
           <div ref="topChart" class="chart-container"></div>
         </div>
       </el-col>
-      <el-col :span="8">
+    </el-row>
+
+    <el-row :gutter="20" class="chart-row">
+      <el-col :span="12">
+        <div class="chart-card">
+          <div class="chart-title">{{ $t('home.currentStatus') }}</div>
+          <div ref="currentStatusChart" class="chart-container"></div>
+        </div>
+      </el-col>
+      <el-col :span="12">
         <div class="chart-card">
           <div class="chart-title">{{ $t('home.productionStats') }}</div>
           <div ref="productionChart" class="chart-container"></div>
@@ -105,7 +114,8 @@ export default {
         patternUsage: [],
         modelRatio: [],
         topProduction: [],
-        productionByHour: []
+        runningStatusByHour: [],
+        productionByDay: []
       },
       refreshTimer: null,
       charts: {}
@@ -136,7 +146,8 @@ export default {
             patternUsage: res.data.patternUsage || [],
             modelRatio: res.data.modelRatio || [],
             topProduction: res.data.topProduction || [],
-            productionByHour: res.data.productionByHour || []
+            runningStatusByHour: res.data.runningStatusByHour || [],
+            productionByDay: res.data.productionByDay || res.data.productionByHour || []
           }
           this.$nextTick(() => {
             this.initCharts()
@@ -163,6 +174,7 @@ export default {
       this.initPatternChart()
       this.initModelChart()
       this.initTopChart()
+      this.initCurrentStatusChart()
       this.initProductionChart()
     },
     initEfficiencyChart() {
@@ -325,9 +337,9 @@ export default {
         },
         xAxis: {
           type: 'category',
-          data: this.stats.productionByHour.map(d => d.hour),
+          data: this.stats.productionByDay.map(d => d.date),
           axisLine: { lineStyle: { color: '#ddd' } },
-          axisLabel: { color: '#666', rotate: 45 }
+          axisLabel: { color: '#666' }
         },
         yAxis: {
           type: 'value',
@@ -336,13 +348,65 @@ export default {
         },
         series: [{
           type: 'bar',
-          data: this.stats.productionByHour.map(d => d.value),
+          data: this.stats.productionByDay.map(d => d.value),
           barWidth: 20,
           itemStyle: {
             color: '#409EFF',
             borderRadius: [4, 4, 0, 0]
           }
         }]
+      })
+    },
+    initCurrentStatusChart() {
+      if (!this.$refs.currentStatusChart) return
+      const chart = echarts.init(this.$refs.currentStatusChart)
+      this.charts.currentStatus = chart
+      chart.setOption({
+        tooltip: {
+          trigger: 'axis'
+        },
+        legend: {
+          data: ['开机设备', '关机设备']
+        },
+        grid: {
+          left: '3%',
+          right: '4%',
+          bottom: '3%',
+          containLabel: true
+        },
+        xAxis: {
+          type: 'category',
+          data: this.stats.runningStatusByHour.map(d => d.hour),
+          axisLine: { lineStyle: { color: '#ddd' } },
+          axisLabel: { color: '#666', interval: 1, rotate: 45 }
+        },
+        yAxis: {
+          type: 'value',
+          axisLabel: { color: '#666' },
+          splitLine: { lineStyle: { color: '#eee' } }
+        },
+        series: [
+          {
+            name: '开机设备',
+            type: 'line',
+            smooth: true,
+            symbol: 'circle',
+            symbolSize: 6,
+            lineStyle: { color: '#67C23A', width: 2 },
+            itemStyle: { color: '#67C23A' },
+            data: this.stats.runningStatusByHour.map(d => d.online)
+          },
+          {
+            name: '关机设备',
+            type: 'line',
+            smooth: true,
+            symbol: 'circle',
+            symbolSize: 6,
+            lineStyle: { color: '#909399', width: 2 },
+            itemStyle: { color: '#909399' },
+            data: this.stats.runningStatusByHour.map(d => d.offline)
+          }
+        ]
       })
     },
     handleResize() {
