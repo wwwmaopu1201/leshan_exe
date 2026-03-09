@@ -100,7 +100,7 @@
                     :disabled="selectedDeviceIds.length === 0 || selectedGroup?.id === 'ungrouped' || selectedGroup?.parentLabel === '未分组'"
                     @click="removeSelectedDevicesFromGroup"
                   >
-                    批量移出分组
+                    批量删除设备
                   </el-button>
                 </div>
               </div>
@@ -156,7 +156,7 @@
                         size="small"
                         @click="handleRemoveDevice(scope.row)"
                       >
-                        移除
+                        删除
                       </el-button>
                     </template>
                     <span v-else class="text-muted">-</span>
@@ -258,6 +258,8 @@ import {
   createDeviceGroup,
   updateDeviceGroup,
   updateDevice,
+  deleteDevice,
+  batchDeleteDevices,
   deleteDeviceGroup,
   getDeviceList,
   moveToGroup
@@ -855,24 +857,28 @@ export default {
         return
       }
       try {
-        await this.$confirm(`确定将选中的 ${this.selectedDeviceIds.length} 台设备移出分组吗？`, '提示', {
+        await this.$confirm(
+          `确定删除选中的 ${this.selectedDeviceIds.length} 台设备吗？删除后设备将转为未分组并恢复初始名称。`,
+          '提示',
+          {
           confirmButtonText: '确定',
           cancelButtonText: '取消',
           type: 'warning'
-        })
-        const res = await moveToGroup(this.selectedDeviceIds, null)
+          }
+        )
+        const res = await batchDeleteDevices(this.selectedDeviceIds)
         if (res.code === 0) {
-          this.$message.success('批量移出成功')
+          this.$message.success(res.message || '批量删除成功')
           await this.fetchDevices()
           this.buildGroupTree()
           this.syncGroupDevices()
           return
         }
-        this.$message.error(res.message || '批量移出失败')
+        this.$message.error(res.message || '批量删除失败')
       } catch (error) {
         if (error !== 'cancel') {
           console.error('Batch remove devices failed:', error)
-          this.$message.error('批量移出失败')
+          this.$message.error('批量删除失败')
         }
       }
     },
@@ -1204,24 +1210,24 @@ export default {
       this.groupDialogMode = 'addRoot'
     },
     async handleRemoveDevice(row) {
-      this.$confirm(`确定要将设备"${row.name}"从当前分组移除吗？`, '提示', {
+      this.$confirm(`确定删除设备"${row.name}"吗？删除后设备将转为未分组并恢复初始名称。`, '提示', {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
         type: 'warning'
       }).then(async () => {
         try {
-          const res = await moveToGroup([row.id], null)
+          const res = await deleteDevice(row.id)
           if (res.code === 0) {
-            this.$message.success('移除成功')
+            this.$message.success(res.message || '删除成功')
             await this.fetchDevices()
             this.buildGroupTree()
             this.syncGroupDevices()
           } else {
-            this.$message.error(res.message || '移除失败')
+            this.$message.error(res.message || '删除失败')
           }
         } catch (error) {
           console.error('Remove device from group failed:', error)
-          this.$message.error('移除设备失败')
+          this.$message.error('删除设备失败')
         }
       }).catch(() => {})
     }
