@@ -558,6 +558,15 @@ export default {
         this.cancelControlMode()
         return
       }
+      if (
+        this.vnc.mode === 'control' &&
+        this.controlSession.expiresAt > 0 &&
+        Math.floor(Date.now() / 1000) >= this.controlSession.expiresAt
+      ) {
+        this.$message.warning('控制授权已过期，请重新确认后再连接')
+        this.cancelControlMode()
+        return
+      }
       if (this.selectedDevice.status === 'offline') {
         this.$message.warning('离线设备不可监控')
         return
