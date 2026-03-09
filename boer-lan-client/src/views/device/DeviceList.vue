@@ -78,6 +78,7 @@
         border
         :row-class-name="getRowClassName"
         @selection-change="handleSelectionChange"
+        @row-dblclick="handleRowDoubleClick"
       >
         <el-table-column type="selection" width="50" align="center" />
         <el-table-column prop="code" :label="$t('device.deviceCode')" width="120" />
@@ -400,6 +401,9 @@ export default {
         groupId: row.groupId || null
       }
       this.showEditDialog = true
+    },
+    handleRowDoubleClick(row) {
+      this.handleEdit(row)
     },
     handleMonitor(row) {
       this.$router.push('/device/monitor?id=' + row.id)

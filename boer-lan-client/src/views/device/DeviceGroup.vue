@@ -22,7 +22,7 @@
             @node-click="handleNodeClick"
           >
             <div class="tree-node flex-between" style="width: 100%" slot-scope="{ node, data }">
-              <span>
+              <span class="tree-node-label" @dblclick.stop="handleNodeDoubleClick(data)" title="双击可重命名分组">
                 <i :class="(data.children && data.children.length) ? 'el-icon-folder-opened' : 'el-icon-folder'"></i>
                 {{ node.label }}
                 <span class="device-count">({{ data.deviceCount || 0 }})</span>
@@ -401,6 +401,12 @@ export default {
       this.selectedGroup = data
       this.syncGroupDevices()
     },
+    handleNodeDoubleClick(data) {
+      if (!data || data.isRoot || data.isVirtual || data.id === 'all' || data.id === 'ungrouped') {
+        return
+      }
+      this.handleEditGroup(data)
+    },
     getStatusType(status) {
       const map = {
         online: 'success',
@@ -565,6 +571,10 @@ export default {
 
 <style lang="scss" scoped>
 .tree-node {
+  .tree-node-label {
+    cursor: pointer;
+  }
+
   .device-count {
     color: #909399;
     font-size: 12px;
