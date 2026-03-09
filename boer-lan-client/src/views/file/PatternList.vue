@@ -1,155 +1,162 @@
 <template>
   <div class="page-container">
-    <div class="search-bar">
-      <el-form :inline="true" :model="searchForm">
-        <el-form-item :label="$t('file.fileName')">
-          <el-input
-            v-model="searchForm.keyword"
-            :placeholder="$t('common.search')"
-            clearable
-            @keyup.enter.native="handleSearch"
-          />
-        </el-form-item>
-        <el-form-item label="花型类型">
-          <el-select
-            v-model="searchForm.patternType"
-            placeholder="全部类型"
-            clearable
-            filterable
-          >
-            <el-option
-              v-for="item in patternTypeOptions"
-              :key="item"
-              :label="item"
-              :value="item"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="订单编号">
-          <el-input
-            v-model="searchForm.orderNo"
-            placeholder="支持模糊查询"
-            clearable
-            @keyup.enter.native="handleSearch"
-          />
-        </el-form-item>
-        <el-form-item label="上传时间">
-          <el-date-picker
-            v-model="searchForm.dateRange"
-            type="daterange"
-            range-separator="至"
-            start-placeholder="开始日期"
-            end-placeholder="结束日期"
-            value-format="yyyy-MM-dd"
-          />
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" icon="el-icon-search" @click="handleSearch">
-            {{ $t('common.search') }}
-          </el-button>
-          <el-button icon="el-icon-refresh" @click="handleReset">
-            {{ $t('common.reset') }}
-          </el-button>
-        </el-form-item>
-      </el-form>
-    </div>
-
-    <div class="card">
-      <div class="table-actions flex-between">
-        <div>
-          <el-button type="primary" icon="el-icon-plus" @click="openUploadDialog">
-            添加文件
-          </el-button>
-          <el-button
-            icon="el-icon-edit-outline"
-            :disabled="selectedRows.length !== 1"
-            @click="openEditDialog(selectedRows[0])"
-          >
-            修改文件
-          </el-button>
-          <el-button
-            icon="el-icon-edit"
-            :disabled="!selectedRows.length"
-            @click="openBatchEditDialog"
-          >
-            批量修改
-          </el-button>
-          <el-button
-            type="success"
-            icon="el-icon-download"
-            :disabled="!selectedRows.length"
-            @click="handleBatchDownload"
-          >
-            {{ $t('file.batchDownload') }}
-          </el-button>
-          <el-button icon="el-icon-upload" @click="openDeviceFileDialog">
-            设备文件回传
-          </el-button>
-          <el-button
-            type="danger"
-            icon="el-icon-delete"
-            :disabled="!selectedRows.length"
-            @click="handleBatchDelete"
-          >
-            批量删除
-          </el-button>
+    <div class="pattern-layout">
+      <aside class="pattern-side">
+        <device-tree-panel v-model="deviceFilter" />
+      </aside>
+      <section class="pattern-main">
+        <div class="search-bar">
+          <el-form :inline="true" :model="searchForm">
+            <el-form-item :label="$t('file.fileName')">
+              <el-input
+                v-model="searchForm.keyword"
+                :placeholder="$t('common.search')"
+                clearable
+                @keyup.enter.native="handleSearch"
+              />
+            </el-form-item>
+            <el-form-item label="花型类型">
+              <el-select
+                v-model="searchForm.patternType"
+                placeholder="全部类型"
+                clearable
+                filterable
+              >
+                <el-option
+                  v-for="item in patternTypeOptions"
+                  :key="item"
+                  :label="item"
+                  :value="item"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="订单编号">
+              <el-input
+                v-model="searchForm.orderNo"
+                placeholder="支持模糊查询"
+                clearable
+                @keyup.enter.native="handleSearch"
+              />
+            </el-form-item>
+            <el-form-item label="上传时间">
+              <el-date-picker
+                v-model="searchForm.dateRange"
+                type="daterange"
+                range-separator="至"
+                start-placeholder="开始日期"
+                end-placeholder="结束日期"
+                value-format="yyyy-MM-dd"
+              />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" icon="el-icon-search" @click="handleSearch">
+                {{ $t('common.search') }}
+              </el-button>
+              <el-button icon="el-icon-refresh" @click="handleReset">
+                {{ $t('common.reset') }}
+              </el-button>
+            </el-form-item>
+          </el-form>
         </div>
-        <div>
-          <el-button icon="el-icon-refresh" circle @click="fetchData" />
+
+        <div class="card">
+          <div class="table-actions flex-between">
+            <div>
+              <el-button type="primary" icon="el-icon-plus" @click="openUploadDialog">
+                添加文件
+              </el-button>
+              <el-button
+                icon="el-icon-edit-outline"
+                :disabled="selectedRows.length !== 1"
+                @click="openEditDialog(selectedRows[0])"
+              >
+                修改文件
+              </el-button>
+              <el-button
+                icon="el-icon-edit"
+                :disabled="!selectedRows.length"
+                @click="openBatchEditDialog"
+              >
+                批量修改
+              </el-button>
+              <el-button
+                type="success"
+                icon="el-icon-download"
+                :disabled="!selectedRows.length"
+                @click="handleBatchDownload"
+              >
+                {{ $t('file.batchDownload') }}
+              </el-button>
+              <el-button icon="el-icon-upload" @click="openDeviceFileDialog">
+                设备文件回传
+              </el-button>
+              <el-button
+                type="danger"
+                icon="el-icon-delete"
+                :disabled="!selectedRows.length"
+                @click="handleBatchDelete"
+              >
+                批量删除
+              </el-button>
+            </div>
+            <div>
+              <el-button icon="el-icon-refresh" circle @click="fetchData" />
+            </div>
+          </div>
+
+          <el-table
+            v-loading="loading"
+            :data="tableData"
+            border
+            @selection-change="handleSelectionChange"
+          >
+            <el-table-column type="selection" width="50" align="center" />
+            <el-table-column type="index" label="序号" width="60" align="center" />
+            <el-table-column prop="name" :label="$t('file.fileName')" min-width="180">
+              <template slot-scope="scope">
+                <i class="el-icon-document" style="margin-right: 5px; color: #409EFF;"></i>
+                {{ scope.row.name }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="patternType" label="花型类型" width="130" />
+            <el-table-column prop="stitches" label="针数" width="100" />
+            <el-table-column prop="size" :label="$t('file.fileSize')" width="110" />
+            <el-table-column prop="unitPrice" label="工价" width="110" align="right">
+              <template slot-scope="scope">
+                {{ formatPrice(scope.row.unitPrice) }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="orderNo" label="订单编号" min-width="140" />
+            <el-table-column prop="uploadTime" :label="$t('file.uploadTime')" width="170" />
+            <el-table-column :label="$t('common.operation')" width="220" align="center">
+              <template slot-scope="scope">
+                <el-button type="text" size="small" @click="handlePreview(scope.row)">
+                  预览
+                </el-button>
+                <el-button type="text" size="small" @click="openEditDialog(scope.row)">
+                  编辑
+                </el-button>
+                <el-button type="text" size="small" @click="handleDownload(scope.row)">
+                  {{ $t('file.download') }}
+                </el-button>
+                <el-button type="text" size="small" class="danger-text" @click="handleDelete(scope.row)">
+                  {{ $t('common.delete') }}
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <el-pagination
+            :current-page="pagination.page"
+            :page-size="pagination.pageSize"
+            :total="pagination.total"
+            :page-sizes="[10, 20, 50, 100]"
+            layout="total, sizes, prev, pager, next, jumper"
+            @size-change="handleSizeChange"
+            @current-change="handlePageChange"
+          />
         </div>
-      </div>
-
-      <el-table
-        v-loading="loading"
-        :data="tableData"
-        border
-        @selection-change="handleSelectionChange"
-      >
-        <el-table-column type="selection" width="50" align="center" />
-        <el-table-column type="index" label="序号" width="60" align="center" />
-        <el-table-column prop="name" :label="$t('file.fileName')" min-width="180">
-          <template slot-scope="scope">
-            <i class="el-icon-document" style="margin-right: 5px; color: #409EFF;"></i>
-            {{ scope.row.name }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="patternType" label="花型类型" width="130" />
-        <el-table-column prop="stitches" label="针数" width="100" />
-        <el-table-column prop="size" :label="$t('file.fileSize')" width="110" />
-        <el-table-column prop="unitPrice" label="工价" width="110" align="right">
-          <template slot-scope="scope">
-            {{ formatPrice(scope.row.unitPrice) }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="orderNo" label="订单编号" min-width="140" />
-        <el-table-column prop="uploadTime" :label="$t('file.uploadTime')" width="170" />
-        <el-table-column :label="$t('common.operation')" width="220" align="center">
-          <template slot-scope="scope">
-            <el-button type="text" size="small" @click="handlePreview(scope.row)">
-              预览
-            </el-button>
-            <el-button type="text" size="small" @click="openEditDialog(scope.row)">
-              编辑
-            </el-button>
-            <el-button type="text" size="small" @click="handleDownload(scope.row)">
-              {{ $t('file.download') }}
-            </el-button>
-            <el-button type="text" size="small" class="danger-text" @click="handleDelete(scope.row)">
-              {{ $t('common.delete') }}
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <el-pagination
-        :current-page="pagination.page"
-        :page-size="pagination.pageSize"
-        :total="pagination.total"
-        :page-sizes="[10, 20, 50, 100]"
-        layout="total, sizes, prev, pager, next, jumper"
-        @size-change="handleSizeChange"
-        @current-change="handlePageChange"
-      />
+      </section>
     </div>
 
     <el-dialog
@@ -370,7 +377,7 @@
         ref="deviceTree"
         :data="deviceTree"
         show-checkbox
-        node-key="id"
+        node-key="_nodeKey"
         default-expand-all
         :props="{ children: 'children', label: 'label' }"
       />
@@ -616,6 +623,7 @@ import {
   clearCompletedUploads
 } from '@/api/pattern'
 import { getDeviceTree, getDeviceList } from '@/api/device'
+import DeviceTreePanel from '@/components/DeviceTreePanel.vue'
 
 const defaultUploadForm = () => ({
   name: '',
@@ -651,11 +659,20 @@ const defaultBatchEditForm = () => ({
 
 export default {
   name: 'PatternList',
+  components: {
+    DeviceTreePanel
+  },
   data() {
     return {
       loading: false,
       tableData: [],
       selectedRows: [],
+      deviceFilter: {
+        label: '',
+        nodeType: '',
+        deviceId: '',
+        deviceIds: []
+      },
       searchForm: {
         keyword: '',
         patternType: '',
@@ -757,11 +774,22 @@ export default {
       try {
         const res = await getDeviceTree()
         if (res.code === 0) {
-          this.deviceTree = res.data || []
+          this.deviceTree = this.attachNodeKeys(res.data || [])
         }
       } catch (error) {
         console.error('Failed to fetch device tree:', error)
       }
+    },
+    attachNodeKeys(nodes = []) {
+      return nodes.map(node => {
+        const nodeType = node.type === 'device' ? 'device' : 'group'
+        const children = Array.isArray(node.children) ? this.attachNodeKeys(node.children) : []
+        return {
+          ...node,
+          _nodeKey: `${nodeType}-${node.id}`,
+          children
+        }
+      })
     },
     async fetchDeviceOptions() {
       try {
@@ -858,6 +886,11 @@ export default {
       this.showDeviceFileDialog = true
       if (!this.deviceOptions.length) {
         await this.fetchDeviceOptions()
+      }
+      if (this.deviceFilter.deviceId) {
+        this.deviceFileQuery.deviceId = Number(this.deviceFilter.deviceId)
+      } else if (this.deviceFilter.deviceIds.length > 0) {
+        this.deviceFileQuery.deviceId = Number(this.deviceFilter.deviceIds[0])
       }
       if (!this.deviceFileQuery.deviceId && this.deviceOptions.length) {
         this.deviceFileQuery.deviceId = this.deviceOptions[0].id
@@ -1152,15 +1185,32 @@ export default {
     handleDownload(row) {
       this.downloadPatternIds = [row.id]
       this.showDeviceDialog = true
+      this.$nextTick(() => {
+        this.applyPreferredDownloadTargets()
+      })
     },
     handleBatchDownload() {
       this.downloadPatternIds = this.selectedRows.map(r => r.id)
       this.showDeviceDialog = true
+      this.$nextTick(() => {
+        this.applyPreferredDownloadTargets()
+      })
+    },
+    applyPreferredDownloadTargets() {
+      const treeRef = this.$refs.deviceTree
+      if (!treeRef) return
+      const preferredDeviceIds = this.deviceFilter.deviceIds.length > 0
+        ? this.deviceFilter.deviceIds
+        : (this.deviceFilter.deviceId ? [Number(this.deviceFilter.deviceId)] : [])
+      treeRef.setCheckedKeys([])
+      if (preferredDeviceIds.length > 0) {
+        treeRef.setCheckedKeys(preferredDeviceIds.map(id => `device-${id}`))
+      }
     },
     async confirmDownload() {
       const checkedNodes = this.$refs.deviceTree.getCheckedNodes()
       const deviceIds = checkedNodes
-        .filter(n => !n.children || n.children.length === 0)
+        .filter(n => n.type === 'device')
         .map(n => n.id)
 
       if (deviceIds.length === 0) {
@@ -1228,6 +1278,21 @@ export default {
 </script>
 
 <style lang="scss" scoped>
+.pattern-layout {
+  display: flex;
+  gap: 20px;
+}
+
+.pattern-side {
+  width: 280px;
+  flex-shrink: 0;
+}
+
+.pattern-main {
+  flex: 1;
+  min-width: 0;
+}
+
 .danger-text {
   color: #F56C6C !important;
 }
