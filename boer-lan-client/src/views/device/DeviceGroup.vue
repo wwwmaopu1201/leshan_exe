@@ -112,6 +112,7 @@
                 v-loading="loadingDevices"
                 :row-class-name="getDeviceRowClass"
                 @selection-change="handleDeviceSelectionChange"
+                @row-click="handleGroupDeviceRowClick"
               >
                 <el-table-column type="selection" width="48" />
                 <el-table-column label="序号" width="70" align="center">
@@ -237,6 +238,42 @@
       </span>
     </el-dialog>
 
+    <el-dialog
+      title="未分组设备快速分组"
+      :visible.sync="showQuickAssignDialog"
+      width="420px"
+      @close="resetQuickAssignForm"
+    >
+      <el-form label-width="90px">
+        <el-form-item label="设备编码">
+          <span>{{ quickAssignForm.code || '-' }}</span>
+        </el-form-item>
+        <el-form-item label="初始名称">
+          <span>{{ quickAssignForm.initialName || '-' }}</span>
+        </el-form-item>
+        <el-form-item label="设备名称" required>
+          <el-input v-model.trim="quickAssignForm.name" />
+        </el-form-item>
+        <el-form-item label="设备备注">
+          <el-input v-model.trim="quickAssignForm.remark" type="textarea" :rows="2" />
+        </el-form-item>
+        <el-form-item label="目标分组" required>
+          <el-select v-model="quickAssignForm.groupId" style="width: 100%;">
+            <el-option
+              v-for="item in flatGroups"
+              :key="item.id"
+              :label="item.name"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <span slot="footer" class="dialog-footer">
+        <el-button @click="showQuickAssignDialog = false">取消</el-button>
+        <el-button type="primary" :loading="quickAssignSaving" @click="handleQuickAssignSave">确定</el-button>
+      </span>
+    </el-dialog>
+
     <ul
       v-if="contextMenu.visible"
       class="group-context-menu"
@@ -248,6 +285,7 @@
       <template v-if="contextMenu.node && !contextMenu.node.isRoot && !contextMenu.node.isVirtual && !contextMenu.node.isDevice">
         <li @click="handleContextMenuAction('addSibling')">新增平级组</li>
         <li @click="handleContextMenuAction('addChild')">新增子组</li>
+        <li @click="handleContextMenuAction('moveSelectedHere')">移动已选设备到当前组</li>
         <li @click="handleContextMenuAction('moveUp')">上移</li>
         <li @click="handleContextMenuAction('moveDown')">下移</li>
         <li @click="handleContextMenuAction('edit')">重命名</li>
@@ -288,7 +326,17 @@ export default {
       selectedDeviceIds: [],
       showGroupDialog: false,
       showMoveDevicesDialog: false,
+      showQuickAssignDialog: false,
       moveTargetGroupId: 0,
+      quickAssignSaving: false,
+      quickAssignForm: {
+        id: null,
+        code: '',
+        initialName: '',
+        name: '',
+        remark: '',
+        groupId: null
+      },
       groupDialogMode: 'addRoot',
       groupForm: {
         id: null,
@@ -823,6 +871,78 @@ export default {
     handleDeviceSelectionChange(rows) {
       this.selectedDeviceIds = rows.map(item => item.id).filter(Boolean)
     },
+    handleGroupDeviceRowClick(row, column) {
+      if (!row || !column || column.type === 'selection') {
+        return
+      }
+      const isUngrouped = !(row.groupId && Number(row.groupId) > 0)
+      if (!isUngrouped) {
+        return
+      }
+      this.openQuickAssignDialog(row)
+    },
+    openQuickAssignDialog(row) {
+      this.quickAssignForm = {
+        id: row.id,
+        code: row.code || '',
+        initialName: row.initialName || '',
+        name: row.name || '',
+        remark: row.remark || '',
+        groupId: null
+      }
+      this.showQuickAssignDialog = true
+    },
+    resetQuickAssignForm() {
+      this.quickAssignForm = {
+        id: null,
+        code: '',
+        initialName: '',
+        name: '',
+        remark: '',
+        groupId: null
+      }
+    },
+    async handleQuickAssignSave() {
+      const deviceID = Number(this.quickAssignForm.id || 0)
+      if (deviceID <= 0) {
+        this.$message.warning('设备参数错误')
+        return
+      }
+      const name = String(this.quickAssignForm.name || '').trim()
+      if (!name) {
+        this.$message.warning('设备名称不能为空')
+        return
+      }
+      const targetGroupId = Number(this.quickAssignForm.groupId || 0)
+      if (targetGroupId <= 0) {
+        this.$message.warning('请选择目标分组')
+        return
+      }
+
+      this.quickAssignSaving = true
+      try {
+        const payload = {
+          name,
+          remark: String(this.quickAssignForm.remark || '').trim(),
+          groupId: targetGroupId
+        }
+        const res = await updateDevice(deviceID, payload)
+        if (res.code === 0) {
+          this.$message.success('设备分组成功')
+          this.showQuickAssignDialog = false
+          await this.fetchDevices()
+          this.buildGroupTree()
+          this.syncGroupDevices()
+          return
+        }
+        this.$message.error(res.message || '设备分组失败')
+      } catch (error) {
+        console.error('Quick assign device failed:', error)
+        this.$message.error('设备分组失败')
+      } finally {
+        this.quickAssignSaving = false
+      }
+    },
     openMoveDevicesDialog() {
       if (!this.selectedDeviceIds.length) {
         this.$message.warning('请先选择设备')
@@ -936,6 +1056,10 @@ export default {
         this.handleAddChild(data)
         return
       }
+      if (action === 'moveSelectedHere') {
+        this.moveSelectedDevicesToGroup(data)
+        return
+      }
       if (action === 'moveUp') {
         this.handleMoveGroup(data, 'up')
         return
@@ -950,6 +1074,31 @@ export default {
       }
       if (action === 'delete') {
         this.handleDeleteGroup(data)
+      }
+    },
+    async moveSelectedDevicesToGroup(groupNode) {
+      if (!this.selectedDeviceIds.length) {
+        this.$message.warning('请先在右侧列表勾选设备')
+        return
+      }
+      const targetGroupId = Number(groupNode?.id || 0)
+      if (targetGroupId <= 0) {
+        this.$message.warning('目标分组无效')
+        return
+      }
+      try {
+        const res = await moveToGroup(this.selectedDeviceIds, targetGroupId)
+        if (res.code === 0) {
+          this.$message.success('已移动到当前分组')
+          await this.fetchDevices()
+          this.buildGroupTree()
+          this.syncGroupDevices()
+          return
+        }
+        this.$message.error(res.message || '移动设备失败')
+      } catch (error) {
+        console.error('Move selected devices to context group failed:', error)
+        this.$message.error('移动设备失败')
       }
     },
     handleNodeDoubleClick(data) {
