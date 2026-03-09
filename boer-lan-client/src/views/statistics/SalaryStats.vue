@@ -23,6 +23,14 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item label="员工检索">
+          <el-input
+            v-model.trim="searchForm.employeeKeyword"
+            placeholder="姓名/工号"
+            clearable
+            @keyup.enter.native="handleSearch"
+          />
+        </el-form-item>
         <el-form-item :label="$t('statistics.device')">
           <device-tree-filter v-model="searchForm.deviceFilter" />
         </el-form-item>
@@ -178,6 +186,7 @@ export default {
       searchForm: {
         dateRange: [],
         employeeId: '',
+        employeeKeyword: '',
         deviceFilter: {
           label: '',
           nodeType: '',
@@ -238,6 +247,7 @@ export default {
           startDate: this.searchForm.dateRange?.[0],
           endDate: this.searchForm.dateRange?.[1],
           employeeId: this.searchForm.employeeId,
+          employeeKeyword: this.searchForm.employeeKeyword,
           deviceId: this.searchForm.deviceFilter.deviceId,
           deviceIds: this.searchForm.deviceFilter.deviceIds.join(','),
           page: this.pagination.page,
@@ -271,6 +281,7 @@ export default {
       this.searchForm = {
         dateRange: [],
         employeeId: '',
+        employeeKeyword: '',
         deviceFilter: {
           label: '',
           nodeType: '',
@@ -318,6 +329,7 @@ export default {
           startDate: this.searchForm.dateRange?.[0],
           endDate: this.searchForm.dateRange?.[1],
           employeeId: this.searchForm.employeeId,
+          employeeKeyword: this.searchForm.employeeKeyword,
           deviceId: this.searchForm.deviceFilter.deviceId,
           deviceIds: this.searchForm.deviceFilter.deviceIds.join(','),
           mode,

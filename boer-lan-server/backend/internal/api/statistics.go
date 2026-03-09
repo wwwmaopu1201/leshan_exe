@@ -627,13 +627,14 @@ func (h *StatisticsHandler) GetSalaryStats(c *gin.Context) {
 	startDate := c.Query("startDate")
 	endDate := c.Query("endDate")
 	employeeId := c.Query("employeeId")
+	employeeKeyword := strings.TrimSpace(c.Query("employeeKeyword"))
 	deviceId := c.Query("deviceId")
 	deviceIDs := parseDeviceIDs(c.Query("deviceIds"))
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
 	page, pageSize = normalizePagination(page, pageSize)
 
-	baseQuery := h.buildSalaryStatsBaseQuery(startDate, endDate, employeeId, deviceId, deviceIDs)
+	baseQuery := h.buildSalaryStatsBaseQuery(startDate, endDate, employeeId, employeeKeyword, deviceId, deviceIDs)
 
 	var total int64
 	baseQuery.Session(&gorm.Session{}).Count(&total)
@@ -1350,11 +1351,12 @@ func (h *StatisticsHandler) exportSalaryCSV(c *gin.Context) {
 	startDate := c.Query("startDate")
 	endDate := c.Query("endDate")
 	employeeId := c.Query("employeeId")
+	employeeKeyword := strings.TrimSpace(c.Query("employeeKeyword"))
 	deviceId := c.Query("deviceId")
 	deviceIDs := parseDeviceIDs(c.Query("deviceIds"))
 	mode := c.DefaultQuery("mode", "all")
 
-	baseQuery := h.buildSalaryStatsBaseQuery(startDate, endDate, employeeId, deviceId, deviceIDs)
+	baseQuery := h.buildSalaryStatsBaseQuery(startDate, endDate, employeeId, employeeKeyword, deviceId, deviceIDs)
 
 	fileNamePrefix := "salary_stats"
 	switch mode {
@@ -1757,13 +1759,17 @@ func (h *StatisticsHandler) loadEmployeeInfoByDeviceDate(startDate, endDate, dev
 	return result
 }
 
-func (h *StatisticsHandler) buildSalaryStatsBaseQuery(startDate, endDate, employeeId, deviceId string, deviceIDs []uint) *gorm.DB {
+func (h *StatisticsHandler) buildSalaryStatsBaseQuery(startDate, endDate, employeeId, employeeKeyword, deviceId string, deviceIDs []uint) *gorm.DB {
 	query := h.db.Table("salary_records sr").
 		Joins("LEFT JOIN employees e ON sr.employee_id = e.id").
 		Joins("LEFT JOIN devices d ON sr.device_id = d.id")
 	query = applyDateRangeFilter(query, "sr.record_date", startDate, endDate)
 	if employeeId != "" {
 		query = query.Where("sr.employee_id = ?", employeeId)
+	}
+	if employeeKeyword != "" {
+		like := "%" + employeeKeyword + "%"
+		query = query.Where("(e.name LIKE ? OR e.code LIKE ?)", like, like)
 	}
 	if len(deviceIDs) > 0 {
 		query = query.Where("sr.device_id IN ?", deviceIDs)
