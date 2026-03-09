@@ -3,11 +3,11 @@
     <div class="page-title">用户管理</div>
     <el-card>
       <el-form :inline="true" :model="searchForm" style="margin-bottom: 12px;">
-        <el-form-item label="账号/昵称">
+        <el-form-item label="账号/账号姓名">
           <el-input
             v-model="searchForm.keyword"
             clearable
-            placeholder="输入账号/昵称/手机号"
+            placeholder="输入账号/账号姓名/手机号"
             @keyup.enter.native="handleSearch"
           />
         </el-form-item>
@@ -48,7 +48,7 @@
       <el-table ref="userTableRef" :data="users" v-loading="loading" style="width: 100%;" @selection-change="handleSelectionChange">
         <el-table-column type="selection" width="48" />
         <el-table-column prop="username" label="用户名" min-width="130" />
-        <el-table-column prop="nickname" label="昵称" min-width="120" />
+        <el-table-column prop="nickname" label="账号姓名" min-width="120" />
         <el-table-column prop="role" label="角色" width="100" />
         <el-table-column prop="createTime" label="创建时间" width="170" />
         <el-table-column label="所属分组" min-width="180">
@@ -108,8 +108,8 @@
           />
         </el-form-item>
 
-        <el-form-item label="昵称" prop="nickname">
-          <el-input v-model="form.nickname" placeholder="请输入昵称" />
+        <el-form-item label="账号姓名" prop="nickname">
+          <el-input v-model="form.nickname" placeholder="请输入账号姓名" />
         </el-form-item>
 
         <el-form-item label="角色" prop="role">
@@ -250,7 +250,7 @@ export default {
           { required: true, message: '请输入密码', trigger: 'blur' },
           { min: 6, max: 32, message: '密码长度需在6-32位', trigger: 'blur' }
         ],
-        nickname: [{ required: true, message: '请输入昵称', trigger: 'blur' }],
+        nickname: [{ required: true, message: '请输入账号姓名', trigger: 'blur' }],
         role: [{ required: true, message: '请选择角色', trigger: 'change' }],
         phone: [{ validator: (rule, value, callback) => {
           const normalized = String(value || '').trim()
