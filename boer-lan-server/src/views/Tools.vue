@@ -41,6 +41,27 @@
             端口修改后需重启服务器程序生效；端口占用信息来自系统 `netstat` 输出。
           </div>
         </el-card>
+
+        <el-card class="tool-card">
+          <div slot="header">
+            <i class="el-icon-lock"></i>
+            <span>防火墙快捷操作</span>
+          </div>
+          <div class="button-group">
+            <el-button :loading="commandLoading" @click="showFirewallStatus" icon="el-icon-view">
+              查看防火墙状态
+            </el-button>
+            <el-button type="success" plain :loading="commandLoading" @click="setFirewallState(true)">
+              开启防火墙
+            </el-button>
+            <el-button type="danger" plain :loading="commandLoading" @click="setFirewallState(false)">
+              关闭防火墙
+            </el-button>
+          </div>
+          <div class="hint-text">
+            当前通过系统命令执行防火墙检查与开关，适用于 Windows（`netsh advfirewall`）。
+          </div>
+        </el-card>
       </el-col>
 
       <el-col :span="10">
@@ -272,6 +293,38 @@ export default {
     showNetstatOverview() {
       const args = this.isWindowsPlatform() ? ['-ano'] : ['-an']
       this.executeCommand('netstat', args, '端口占用总览')
+    },
+    showFirewallStatus() {
+      if (!this.isWindowsPlatform()) {
+        this.$message.warning('当前平台暂不支持该快捷操作')
+        return
+      }
+      this.executeCommand('netsh', ['advfirewall', 'show', 'allprofiles'], '防火墙状态')
+    },
+    async setFirewallState(enabled) {
+      if (!this.isWindowsPlatform()) {
+        this.$message.warning('当前平台暂不支持该快捷操作')
+        return
+      }
+      const actionText = enabled ? '开启' : '关闭'
+      try {
+        await this.$confirm(`确定要${actionText}系统防火墙吗？`, '提示', {
+          confirmButtonText: '确定',
+          cancelButtonText: '取消',
+          type: 'warning'
+        })
+      } catch (error) {
+        if (error !== 'cancel') {
+          console.error(`${actionText}防火墙确认失败`, error)
+        }
+        return
+      }
+      const state = enabled ? 'on' : 'off'
+      await this.executeCommand(
+        'netsh',
+        ['advfirewall', 'set', 'allprofiles', 'state', state],
+        `${actionText}防火墙`
+      )
     },
     async checkPortUsage() {
       const port = Number(this.portToCheck || 0)

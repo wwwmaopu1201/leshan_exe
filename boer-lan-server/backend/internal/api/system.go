@@ -279,6 +279,7 @@ func (h *SystemHandler) ExecuteCommand(c *gin.Context) {
 		"ping":     true,
 		"netstat":  true,
 		"hostname": true,
+		"netsh":    true,
 	}
 
 	if !allowedCommands[req.Command] {
