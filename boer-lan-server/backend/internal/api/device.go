@@ -72,6 +72,20 @@ func (h *DeviceHandler) getCurrentUserScope(c *gin.Context) userGroupScope {
 	return scope
 }
 
+func (h *DeviceHandler) canAccessGroup(scope userGroupScope, groupID *uint) bool {
+	if scope.All {
+		return true
+	}
+	if groupID == nil {
+		return false
+	}
+	return containsGroupID(scope.GroupIDs, *groupID)
+}
+
+func (h *DeviceHandler) canAccessDevice(scope userGroupScope, device model.Device) bool {
+	return h.canAccessGroup(scope, device.GroupID)
+}
+
 func buildVisibleGroupSet(groups []model.Group, allowedGroupIDs []uint) map[uint]struct{} {
 	groupMap := make(map[uint]model.Group, len(groups))
 	for _, group := range groups {
@@ -382,14 +396,12 @@ func (h *DeviceHandler) GetDevice(c *gin.Context) {
 	}
 
 	scope := h.getCurrentUserScope(c)
-	if !scope.All {
-		if device.GroupID == nil || !containsGroupID(scope.GroupIDs, *device.GroupID) {
-			c.JSON(http.StatusForbidden, gin.H{
-				"code":    403,
-				"message": "无权访问该设备",
-			})
-			return
-		}
+	if !h.canAccessDevice(scope, device) {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    403,
+			"message": "无权访问该设备",
+		})
+		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -431,6 +443,32 @@ func (h *DeviceHandler) CreateDevice(c *gin.Context) {
 		device.InitialName = device.Name
 	}
 
+	scope := h.getCurrentUserScope(c)
+	if device.GroupID != nil {
+		var groupCount int64
+		if err := h.db.Model(&model.Group{}).Where("id = ?", *device.GroupID).Count(&groupCount).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "分组校验失败",
+			})
+			return
+		}
+		if groupCount == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "分组不存在",
+			})
+			return
+		}
+	}
+	if !h.canAccessGroup(scope, device.GroupID) {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    403,
+			"message": "无权在该分组下创建设备",
+		})
+		return
+	}
+
 	if err := h.db.Create(&device).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -453,6 +491,15 @@ func (h *DeviceHandler) UpdateDevice(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{
 			"code":    404,
 			"message": "设备不存在",
+		})
+		return
+	}
+
+	scope := h.getCurrentUserScope(c)
+	if !h.canAccessDevice(scope, device) {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    403,
+			"message": "无权修改该设备",
 		})
 		return
 	}
@@ -535,6 +582,28 @@ func (h *DeviceHandler) UpdateDevice(c *gin.Context) {
 				})
 				return
 			}
+			var groupCount int64
+			if err := h.db.Model(&model.Group{}).Where("id = ?", groupID).Count(&groupCount).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"code":    500,
+					"message": "分组校验失败",
+				})
+				return
+			}
+			if groupCount == 0 {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"code":    400,
+					"message": "目标分组不存在",
+				})
+				return
+			}
+			if !scope.All && !containsGroupID(scope.GroupIDs, groupID) {
+				c.JSON(http.StatusForbidden, gin.H{
+					"code":    403,
+					"message": "无权移动设备到该分组",
+				})
+				return
+			}
 			updates["group_id"] = groupID
 		}
 	}
@@ -581,6 +650,15 @@ func (h *DeviceHandler) DeleteDevice(c *gin.Context) {
 		return
 	}
 
+	scope := h.getCurrentUserScope(c)
+	if !h.canAccessDevice(scope, device) {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    403,
+			"message": "无权操作该设备",
+		})
+		return
+	}
+
 	updates := map[string]interface{}{
 		"group_id":   nil,
 		"sort_order": 0,
@@ -620,6 +698,34 @@ func (h *DeviceHandler) BatchDeleteDevices(c *gin.Context) {
 			"message": "设备ID不能为空",
 		})
 		return
+	}
+
+	scope := h.getCurrentUserScope(c)
+	var devices []model.Device
+	if err := h.db.Select("id", "group_id").Where("id IN ?", req.IDs).Find(&devices).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "读取设备失败",
+		})
+		return
+	}
+	if len(devices) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": "设备不存在",
+		})
+		return
+	}
+	if !scope.All {
+		for _, device := range devices {
+			if !h.canAccessDevice(scope, device) {
+				c.JSON(http.StatusForbidden, gin.H{
+					"code":    403,
+					"message": "包含无权操作的设备",
+				})
+				return
+			}
+		}
 	}
 
 	updates := map[string]interface{}{
@@ -671,6 +777,15 @@ func (h *DeviceHandler) MoveToGroup(c *gin.Context) {
 		return
 	}
 
+	scope := h.getCurrentUserScope(c)
+	if req.GroupID != nil && !scope.All && !containsGroupID(scope.GroupIDs, *req.GroupID) {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    403,
+			"message": "无权移动到目标分组",
+		})
+		return
+	}
+
 	if req.GroupID != nil {
 		var groupCount int64
 		if err := h.db.Model(&model.Group{}).Where("id = ?", *req.GroupID).Count(&groupCount).Error; err != nil {
@@ -686,6 +801,33 @@ func (h *DeviceHandler) MoveToGroup(c *gin.Context) {
 				"message": "目标分组不存在",
 			})
 			return
+		}
+	}
+
+	var devices []model.Device
+	if err := h.db.Select("id", "group_id").Where("id IN ?", req.DeviceIDs).Find(&devices).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "读取设备失败",
+		})
+		return
+	}
+	if len(devices) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": "设备不存在",
+		})
+		return
+	}
+	if !scope.All {
+		for _, device := range devices {
+			if !h.canAccessDevice(scope, device) {
+				c.JSON(http.StatusForbidden, gin.H{
+					"code":    403,
+					"message": "包含无权移动的设备",
+				})
+				return
+			}
 		}
 	}
 
@@ -793,6 +935,24 @@ func (h *DeviceHandler) CreateDeviceGroup(c *gin.Context) {
 		return
 	}
 
+	scope := h.getCurrentUserScope(c)
+	if !scope.All {
+		if req.ParentID == nil {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"message": "无权创建根分组",
+			})
+			return
+		}
+		if !containsGroupID(scope.GroupIDs, *req.ParentID) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"message": "无权在该父分组下创建子分组",
+			})
+			return
+		}
+	}
+
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -881,6 +1041,15 @@ func (h *DeviceHandler) UpdateDeviceGroup(c *gin.Context) {
 		return
 	}
 
+	scope := h.getCurrentUserScope(c)
+	if !scope.All && !containsGroupID(scope.GroupIDs, group.ID) {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    403,
+			"message": "无权修改该分组",
+		})
+		return
+	}
+
 	var req struct {
 		Name      *string         `json:"name"`
 		ParentID  json.RawMessage `json:"parentId"`
@@ -900,6 +1069,13 @@ func (h *DeviceHandler) UpdateDeviceGroup(c *gin.Context) {
 	if len(req.ParentID) > 0 {
 		raw := strings.TrimSpace(string(req.ParentID))
 		if raw == "" || raw == "null" {
+			if !scope.All {
+				c.JSON(http.StatusForbidden, gin.H{
+					"code":    403,
+					"message": "无权将分组移动到根节点",
+				})
+				return
+			}
 			targetParentID = nil
 			updates["parent_id"] = nil
 		} else {
@@ -938,6 +1114,13 @@ func (h *DeviceHandler) UpdateDeviceGroup(c *gin.Context) {
 				c.JSON(http.StatusBadRequest, gin.H{
 					"code":    400,
 					"message": "父分组不存在",
+				})
+				return
+			}
+			if !scope.All && !containsGroupID(scope.GroupIDs, parsedParentID) {
+				c.JSON(http.StatusForbidden, gin.H{
+					"code":    403,
+					"message": "无权移动到目标父分组",
 				})
 				return
 			}
@@ -1045,6 +1228,35 @@ func (h *DeviceHandler) DeleteDeviceGroup(c *gin.Context) {
 			"message": "分组不存在",
 		})
 		return
+	}
+
+	scope := h.getCurrentUserScope(c)
+	if !scope.All && !containsGroupID(scope.GroupIDs, group.ID) {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    403,
+			"message": "无权删除该分组",
+		})
+		return
+	}
+	if !scope.All {
+		var outOfScopeChildren int64
+		if err := h.db.Model(&model.Group{}).
+			Where("parent_id = ?", group.ID).
+			Where("id NOT IN ?", scope.GroupIDs).
+			Count(&outOfScopeChildren).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "读取分组失败",
+			})
+			return
+		}
+		if outOfScopeChildren > 0 {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"message": "分组下存在无权操作的子分组",
+			})
+			return
+		}
 	}
 
 	var groupCount int64
