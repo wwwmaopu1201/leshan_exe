@@ -224,6 +224,34 @@
         </section>
       </div>
     </div>
+
+    <el-dialog
+      title="远程控制确认"
+      :visible.sync="controlConfirm.visible"
+      width="460px"
+      @closed="resetControlConfirmState"
+    >
+      <div class="control-confirm-tip">
+        切换远程控制前，请先在设备操作屏上同意远程控制，并填写设备端显示的确认口令。
+      </div>
+      <el-form label-width="90px">
+        <el-form-item label="确认口令" required>
+          <el-input
+            v-model.trim="controlConfirm.code"
+            placeholder="请输入设备端确认口令"
+          />
+        </el-form-item>
+        <el-form-item>
+          <el-checkbox v-model="controlConfirm.acknowledged">
+            我已在设备端完成远程控制授权
+          </el-checkbox>
+        </el-form-item>
+      </el-form>
+      <span slot="footer" class="dialog-footer">
+        <el-button @click="cancelControlMode">取消</el-button>
+        <el-button type="primary" @click="confirmControlMode">确认切换</el-button>
+      </span>
+    </el-dialog>
   </div>
 </template>
 
@@ -265,6 +293,11 @@ export default {
         connected: false,
         connecting: false,
         status: '未连接'
+      },
+      controlConfirm: {
+        visible: false,
+        acknowledged: false,
+        code: ''
       }
     }
   },
@@ -430,6 +463,7 @@ export default {
       if (this.selectedDevice && this.selectedDevice.id !== deviceId) {
         this.disconnectVNC(false)
       }
+      this.cancelControlMode()
       this.selectedDevice = this.deviceList.find(d => d.id === deviceId) || null
       if (this.selectedDevice) {
         this.loadDeviceData()
@@ -600,25 +634,53 @@ export default {
     },
     handleModeChange(mode) {
       if (mode === 'control') {
-        this.$confirm(
-          '切换到远程控制模式前，请先在设备操作屏确认允许远程控制。是否继续切换？',
-          '远程控制确认',
-          {
-            confirmButtonText: '继续',
-            cancelButtonText: '取消',
-            type: 'warning'
-          }
-        ).then(() => {
-          if (this.rfb) this.rfb.viewOnly = false
-        }).catch(() => {
+        if (!this.selectedDevice) {
+          this.$message.warning('请先选择设备')
           this.vnc.mode = 'monitor'
-          if (this.rfb) this.rfb.viewOnly = true
-        })
+          return
+        }
+        this.controlConfirm.visible = true
+        this.controlConfirm.acknowledged = false
+        this.controlConfirm.code = ''
+        this.vnc.mode = 'monitor'
+        if (this.rfb) this.rfb.viewOnly = true
         return
       }
       if (this.rfb) this.rfb.viewOnly = true
     },
+    confirmControlMode() {
+      if (!this.controlConfirm.code) {
+        this.$message.warning('请输入设备端确认口令')
+        return
+      }
+      if (!this.controlConfirm.acknowledged) {
+        this.$message.warning('请先确认已在设备端授权')
+        return
+      }
+      this.controlConfirm.visible = false
+      this.vnc.mode = 'control'
+      if (this.rfb) {
+        this.rfb.viewOnly = false
+      }
+      if (this.vnc.connected) {
+        this.vnc.status = '已连接（控制模式）'
+      }
+      this.$message.success('已切换到远程控制模式')
+    },
+    cancelControlMode() {
+      this.controlConfirm.visible = false
+      this.vnc.mode = 'monitor'
+      if (this.rfb) {
+        this.rfb.viewOnly = true
+      }
+    },
+    resetControlConfirmState() {
+      this.controlConfirm.visible = false
+      this.controlConfirm.code = ''
+      this.controlConfirm.acknowledged = false
+    },
     disconnectVNC(showMessage = true) {
+      this.cancelControlMode()
       if (this.rfb) {
         this.cleanupRfb(true)
       }
@@ -734,6 +796,12 @@ export default {
   display: flex;
   gap: 16px;
   align-items: flex-start;
+}
+
+.control-confirm-tip {
+  margin-bottom: 12px;
+  color: #606266;
+  line-height: 1.6;
 }
 
 .device-tree-panel {
