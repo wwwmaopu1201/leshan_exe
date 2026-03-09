@@ -699,10 +699,18 @@ func (h *DeviceHandler) BatchDeleteDevices(c *gin.Context) {
 		})
 		return
 	}
+	deviceIDs := normalizeGroupIDs(req.IDs)
+	if len(deviceIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "设备ID不能为空",
+		})
+		return
+	}
 
 	scope := h.getCurrentUserScope(c)
 	var devices []model.Device
-	if err := h.db.Select("id", "group_id").Where("id IN ?", req.IDs).Find(&devices).Error; err != nil {
+	if err := h.db.Select("id", "group_id").Where("id IN ?", deviceIDs).Find(&devices).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
 			"message": "读取设备失败",
@@ -727,22 +735,7 @@ func (h *DeviceHandler) BatchDeleteDevices(c *gin.Context) {
 			}
 		}
 	}
-
-	updates := map[string]interface{}{
-		"group_id":   nil,
-		"sort_order": 0,
-		// 批量删除与单个删除语义一致：移出分组并恢复为初始名/设备编码
-		"name": gorm.Expr("COALESCE(NULLIF(initial_name, ''), code)"),
-	}
-	result := h.db.Model(&model.Device{}).Where("id IN ?", req.IDs).Updates(updates)
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "批量移出分组失败",
-		})
-		return
-	}
-	if result.RowsAffected == 0 {
+	if len(devices) != len(deviceIDs) {
 		c.JSON(http.StatusNotFound, gin.H{
 			"code":    404,
 			"message": "设备不存在",
@@ -750,6 +743,20 @@ func (h *DeviceHandler) BatchDeleteDevices(c *gin.Context) {
 		return
 	}
 
+	updates := map[string]interface{}{
+		"group_id":   nil,
+		"sort_order": 0,
+		// 批量删除与单个删除语义一致：移出分组并恢复为初始名/设备编码
+		"name": gorm.Expr("COALESCE(NULLIF(initial_name, ''), code)"),
+	}
+	result := h.db.Model(&model.Device{}).Where("id IN ?", deviceIDs).Updates(updates)
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "批量移出分组失败",
+		})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "设备已批量移出分组",
@@ -770,6 +777,14 @@ func (h *DeviceHandler) MoveToGroup(c *gin.Context) {
 	}
 
 	if len(req.DeviceIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "设备ID不能为空",
+		})
+		return
+	}
+	deviceIDs := normalizeGroupIDs(req.DeviceIDs)
+	if len(deviceIDs) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": "设备ID不能为空",
@@ -805,7 +820,7 @@ func (h *DeviceHandler) MoveToGroup(c *gin.Context) {
 	}
 
 	var devices []model.Device
-	if err := h.db.Select("id", "group_id").Where("id IN ?", req.DeviceIDs).Find(&devices).Error; err != nil {
+	if err := h.db.Select("id", "group_id").Where("id IN ?", deviceIDs).Find(&devices).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
 			"message": "读取设备失败",
@@ -830,6 +845,13 @@ func (h *DeviceHandler) MoveToGroup(c *gin.Context) {
 			}
 		}
 	}
+	if len(devices) != len(deviceIDs) {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": "设备不存在",
+		})
+		return
+	}
 
 	tx := h.db.Begin()
 	if tx.Error != nil {
@@ -842,7 +864,7 @@ func (h *DeviceHandler) MoveToGroup(c *gin.Context) {
 
 	if req.GroupID == nil {
 		if err := tx.Model(&model.Device{}).
-			Where("id IN ?", req.DeviceIDs).
+			Where("id IN ?", deviceIDs).
 			Updates(map[string]interface{}{
 				"group_id":   nil,
 				"sort_order": 0,
@@ -868,7 +890,7 @@ func (h *DeviceHandler) MoveToGroup(c *gin.Context) {
 			return
 		}
 
-		for index, deviceID := range req.DeviceIDs {
+		for index, deviceID := range deviceIDs {
 			if err := tx.Model(&model.Device{}).
 				Where("id = ?", deviceID).
 				Updates(map[string]interface{}{
