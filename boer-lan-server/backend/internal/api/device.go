@@ -20,6 +20,45 @@ func NewDeviceHandler(db *gorm.DB) *DeviceHandler {
 	return &DeviceHandler{db: db}
 }
 
+func applyDeviceGroupParentScope(query *gorm.DB, parentID *uint) *gorm.DB {
+	if parentID == nil {
+		return query.Where("parent_id IS NULL")
+	}
+	return query.Where("parent_id = ?", *parentID)
+}
+
+func (h *DeviceHandler) isDescendantGroup(groupID uint, potentialDescendantID uint) bool {
+	var groups []model.Group
+	if err := h.db.Select("id", "parent_id").Find(&groups).Error; err != nil {
+		return false
+	}
+
+	childMap := make(map[uint][]uint)
+	for _, group := range groups {
+		if group.ParentID == nil {
+			continue
+		}
+		childMap[*group.ParentID] = append(childMap[*group.ParentID], group.ID)
+	}
+
+	queue := []uint{groupID}
+	visited := map[uint]bool{groupID: true}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		for _, child := range childMap[current] {
+			if child == potentialDescendantID {
+				return true
+			}
+			if !visited[child] {
+				visited[child] = true
+				queue = append(queue, child)
+			}
+		}
+	}
+	return false
+}
+
 func (h *DeviceHandler) GetDeviceTree(c *gin.Context) {
 	var groups []model.Group
 	h.db.Preload("Devices").Where("parent_id IS NULL").Find(&groups)
@@ -415,7 +454,7 @@ func (h *DeviceHandler) MoveToGroup(c *gin.Context) {
 
 func (h *DeviceHandler) GetDeviceGroups(c *gin.Context) {
 	var groups []model.Group
-	h.db.Find(&groups)
+	h.db.Order("parent_id IS NOT NULL, parent_id, sort_order, id").Find(&groups)
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
@@ -425,8 +464,12 @@ func (h *DeviceHandler) GetDeviceGroups(c *gin.Context) {
 }
 
 func (h *DeviceHandler) CreateDeviceGroup(c *gin.Context) {
-	var group model.Group
-	if err := c.ShouldBindJSON(&group); err != nil {
+	var req struct {
+		Name      string `json:"name" binding:"required"`
+		ParentID  *uint  `json:"parentId"`
+		SortOrder int    `json:"sortOrder"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": "参数错误",
@@ -434,13 +477,72 @@ func (h *DeviceHandler) CreateDeviceGroup(c *gin.Context) {
 		return
 	}
 
-	if group.SortOrder == 0 {
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "分组名称不能为空",
+		})
+		return
+	}
+	if len([]rune(name)) > 50 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "分组名称不能超过50个字符",
+		})
+		return
+	}
+
+	if req.ParentID != nil {
+		var parentCount int64
+		if err := h.db.Model(&model.Group{}).Where("id = ?", *req.ParentID).Count(&parentCount).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "创建分组失败",
+			})
+			return
+		}
+		if parentCount == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "父分组不存在",
+			})
+			return
+		}
+	}
+
+	var duplicateCount int64
+	dupQuery := applyDeviceGroupParentScope(h.db.Model(&model.Group{}), req.ParentID).
+		Where("name = ?", name)
+	if err := dupQuery.Count(&duplicateCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "创建分组失败",
+		})
+		return
+	}
+	if duplicateCount > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "同级分组名称已存在",
+		})
+		return
+	}
+
+	sortOrder := req.SortOrder
+	if sortOrder <= 0 {
 		var maxSort int
 		h.db.Model(&model.Group{}).
-			Where("parent_id IS ?", group.ParentID).
+			Where("parent_id IS ?", req.ParentID).
 			Select("COALESCE(MAX(sort_order), 0)").
 			Scan(&maxSort)
-		group.SortOrder = maxSort + 1
+		sortOrder = maxSort + 1
+	}
+
+	group := model.Group{
+		Name:      name,
+		ParentID:  req.ParentID,
+		SortOrder: sortOrder,
 	}
 
 	h.db.Create(&group)
@@ -463,9 +565,12 @@ func (h *DeviceHandler) UpdateDeviceGroup(c *gin.Context) {
 		return
 	}
 
-	originalParentID := group.ParentID
-
-	if err := c.ShouldBindJSON(&group); err != nil {
+	var req struct {
+		Name      *string         `json:"name"`
+		ParentID  json.RawMessage `json:"parentId"`
+		SortOrder *int            `json:"sortOrder"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": "参数错误",
@@ -473,16 +578,140 @@ func (h *DeviceHandler) UpdateDeviceGroup(c *gin.Context) {
 		return
 	}
 
-	if group.SortOrder == 0 && (originalParentID == nil && group.ParentID != nil || originalParentID != nil && group.ParentID == nil || (originalParentID != nil && group.ParentID != nil && *originalParentID != *group.ParentID)) {
-		var maxSort int
-		h.db.Model(&model.Group{}).
-			Where("parent_id IS ?", group.ParentID).
-			Select("COALESCE(MAX(sort_order), 0)").
-			Scan(&maxSort)
-		group.SortOrder = maxSort + 1
+	updates := map[string]interface{}{}
+	targetParentID := group.ParentID
+
+	if len(req.ParentID) > 0 {
+		raw := strings.TrimSpace(string(req.ParentID))
+		if raw == "" || raw == "null" {
+			targetParentID = nil
+			updates["parent_id"] = nil
+		} else {
+			var parsedParentID uint
+			if err := json.Unmarshal(req.ParentID, &parsedParentID); err != nil || parsedParentID == 0 {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"code":    400,
+					"message": "父分组参数错误",
+				})
+				return
+			}
+			if parsedParentID == group.ID {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"code":    400,
+					"message": "分组不能设置自己为父分组",
+				})
+				return
+			}
+			if h.isDescendantGroup(group.ID, parsedParentID) {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"code":    400,
+					"message": "不能移动到当前分组的子分组下",
+				})
+				return
+			}
+
+			var parentCount int64
+			if err := h.db.Model(&model.Group{}).Where("id = ?", parsedParentID).Count(&parentCount).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"code":    500,
+					"message": "更新分组失败",
+				})
+				return
+			}
+			if parentCount == 0 {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"code":    400,
+					"message": "父分组不存在",
+				})
+				return
+			}
+			targetParentID = &parsedParentID
+			updates["parent_id"] = parsedParentID
+		}
 	}
 
-	h.db.Save(&group)
+	targetName := group.Name
+	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		if name == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "分组名称不能为空",
+			})
+			return
+		}
+		if len([]rune(name)) > 50 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "分组名称不能超过50个字符",
+			})
+			return
+		}
+		targetName = name
+		updates["name"] = name
+	}
+
+	var duplicateCount int64
+	dupQuery := applyDeviceGroupParentScope(h.db.Model(&model.Group{}), targetParentID).
+		Where("id <> ? AND name = ?", group.ID, targetName)
+	if err := dupQuery.Count(&duplicateCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "更新分组失败",
+		})
+		return
+	}
+	if duplicateCount > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "同级分组名称已存在",
+		})
+		return
+	}
+
+	if req.SortOrder != nil && *req.SortOrder > 0 {
+		updates["sort_order"] = *req.SortOrder
+	}
+
+	parentChanged := false
+	if len(req.ParentID) > 0 {
+		switch {
+		case group.ParentID == nil && targetParentID != nil:
+			parentChanged = true
+		case group.ParentID != nil && targetParentID == nil:
+			parentChanged = true
+		case group.ParentID != nil && targetParentID != nil && *group.ParentID != *targetParentID:
+			parentChanged = true
+		}
+	}
+
+	if parentChanged && req.SortOrder == nil {
+		var maxSort int
+		h.db.Model(&model.Group{}).
+			Where("parent_id IS ?", targetParentID).
+			Select("COALESCE(MAX(sort_order), 0)").
+			Scan(&maxSort)
+		updates["sort_order"] = maxSort + 1
+	}
+
+	if len(updates) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    0,
+			"data":    group,
+			"message": "success",
+		})
+		return
+	}
+
+	if err := h.db.Model(&group).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "更新分组失败",
+		})
+		return
+	}
+
+	_ = h.db.First(&group, group.ID).Error
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
@@ -498,6 +727,16 @@ func (h *DeviceHandler) DeleteDeviceGroup(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{
 			"code":    404,
 			"message": "分组不存在",
+		})
+		return
+	}
+
+	var groupCount int64
+	h.db.Model(&model.Group{}).Count(&groupCount)
+	if groupCount <= 1 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "至少保留一个设备分组",
 		})
 		return
 	}

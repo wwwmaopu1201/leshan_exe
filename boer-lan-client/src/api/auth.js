@@ -33,7 +33,17 @@ export function getUserInfo() {
         id: 1,
         username: 'admin',
         nickname: '管理员',
-        role: 'admin'
+        role: 'admin',
+        disabled: false,
+        permissions: {
+          home: true,
+          dashboard: true,
+          employeeManagement: true,
+          fileManagement: true,
+          remoteMonitoring: true,
+          statistics: true,
+          deviceManagement: true
+        }
       },
       message: 'success'
     })

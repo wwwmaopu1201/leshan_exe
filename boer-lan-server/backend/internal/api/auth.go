@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"boer-lan-server/internal/model"
@@ -56,6 +57,13 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		})
 		return
 	}
+	if user.Disabled {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    403,
+			"message": "账号已被禁用",
+		})
+		return
+	}
 
 	// Generate token
 	token, err := utils.GenerateToken(user.ID, user.Username, user.Role)
@@ -81,12 +89,15 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		"data": gin.H{
 			"token": token,
 			"user": gin.H{
-				"id":       user.ID,
-				"username": user.Username,
-				"nickname": user.Nickname,
-				"role":     user.Role,
-				"email":    user.Email,
-				"phone":    user.Phone,
+				"id":          user.ID,
+				"username":    user.Username,
+				"nickname":    user.Nickname,
+				"role":        user.Role,
+				"email":       user.Email,
+				"phone":       user.Phone,
+				"disabled":    user.Disabled,
+				"permissions": user.Permissions,
+				"createTime":  user.CreatedAt.Format("2006-01-02 15:04:05"),
 			},
 		},
 		"message": "success",
@@ -115,12 +126,15 @@ func (h *AuthHandler) GetUserInfo(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
-			"id":       user.ID,
-			"username": user.Username,
-			"nickname": user.Nickname,
-			"role":     user.Role,
-			"email":    user.Email,
-			"phone":    user.Phone,
+			"id":          user.ID,
+			"username":    user.Username,
+			"nickname":    user.Nickname,
+			"role":        user.Role,
+			"email":       user.Email,
+			"phone":       user.Phone,
+			"disabled":    user.Disabled,
+			"permissions": user.Permissions,
+			"createTime":  user.CreatedAt.Format("2006-01-02 15:04:05"),
 		},
 		"message": "success",
 	})
@@ -137,6 +151,22 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": "参数错误",
+		})
+		return
+	}
+	req.OldPassword = strings.TrimSpace(req.OldPassword)
+	req.NewPassword = strings.TrimSpace(req.NewPassword)
+	if len(req.NewPassword) < 6 || len(req.NewPassword) > 32 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "新密码长度需在6-32位",
+		})
+		return
+	}
+	if req.NewPassword == req.OldPassword {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "新密码不能与原密码相同",
 		})
 		return
 	}

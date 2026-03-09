@@ -40,10 +40,10 @@
       <div class="password-tips">
         <h4>密码要求:</h4>
         <ul>
-          <li>密码长度至少8位</li>
-          <li>必须包含大小写字母和数字</li>
-          <li>可以包含特殊字符(!@#$%^&*)</li>
+          <li>密码长度为6-32位</li>
+          <li>支持数字、字母、常见符号组合</li>
           <li>新密码不能与原密码相同</li>
+          <li>保存后会自动退出，请使用新密码重新登录</li>
         </ul>
       </div>
     </div>
@@ -67,8 +67,8 @@ export default {
     const validateNewPassword = (rule, value, callback) => {
       if (value === this.form.oldPassword) {
         callback(new Error('新密码不能与原密码相同'))
-      } else if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/.test(value)) {
-        callback(new Error('密码必须包含大小写字母和数字，且长度至少8位'))
+      } else if (!value || value.length < 6 || value.length > 32) {
+        callback(new Error('密码长度需在6-32位'))
       } else {
         callback()
       }
@@ -104,8 +104,12 @@ export default {
           newPassword: this.form.newPassword
         })
         if (res.code === 0) {
-          this.$message.success(this.$t('profile.passwordUpdated'))
+          this.$message.success('密码修改成功，请重新登录')
           this.handleReset()
+          setTimeout(() => {
+            this.$store.dispatch('logout')
+            this.$router.replace('/login')
+          }, 500)
         } else {
           this.$message.error(res.message || '密码修改失败')
         }

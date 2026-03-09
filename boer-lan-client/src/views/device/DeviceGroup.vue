@@ -289,12 +289,24 @@ export default {
       roots.forEach(calcCount)
       roots.sort((a, b) => (a.sortOrder - b.sortOrder) || (a.id - b.id))
 
+      const ungroupedCount = this.allDevices.filter(device => !(device.groupId && Number(device.groupId) > 0)).length
+      const ungroupedNode = {
+        id: 'ungrouped',
+        label: '未分组设备',
+        parentId: null,
+        parentLabel: '',
+        children: [],
+        deviceCount: ungroupedCount,
+        isRoot: true,
+        isVirtual: true
+      }
+
       this.groupTree = [{
         id: 'all',
         label: '全部设备',
         parentId: null,
         parentLabel: '',
-        children: roots,
+        children: [ungroupedNode, ...roots],
         deviceCount: this.allDevices.length,
         isRoot: true
       }]
@@ -354,6 +366,12 @@ export default {
 
       if (this.selectedGroup.id === 'all') {
         this.groupDevices = this.sortDevicesForDisplay(this.allDevices)
+        return
+      }
+      if (this.selectedGroup.id === 'ungrouped') {
+        this.groupDevices = this.sortDevicesForDisplay(
+          this.allDevices.filter(device => !(device.groupId && Number(device.groupId) > 0))
+        )
         return
       }
 

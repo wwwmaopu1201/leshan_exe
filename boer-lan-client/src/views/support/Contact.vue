@@ -42,6 +42,27 @@
               <div class="contact-info">
                 <div class="contact-label">{{ $t('support.address') }}</div>
                 <div class="contact-value">浙江省杭州市滨江区科技园区XXX号</div>
+                <el-link type="primary" :underline="false" @click="openMap" style="padding: 0;">查看地图</el-link>
+              </div>
+            </div>
+
+            <div class="contact-item">
+              <div class="contact-icon cyan">
+                <i class="el-icon-video-play"></i>
+              </div>
+              <div class="contact-info">
+                <div class="contact-label">抖音号</div>
+                <div class="contact-value">@boer_lan</div>
+              </div>
+            </div>
+
+            <div class="contact-item">
+              <div class="contact-icon teal">
+                <i class="el-icon-chat-dot-square"></i>
+              </div>
+              <div class="contact-info">
+                <div class="contact-label">微信公众号</div>
+                <div class="contact-value">博尔智能缝制</div>
               </div>
             </div>
           </div>
@@ -131,6 +152,10 @@ export default {
     }
   },
   methods: {
+    openMap() {
+      const address = encodeURIComponent('浙江省杭州市滨江区科技园区XXX号')
+      window.open(`https://uri.amap.com/search?keyword=${address}`, '_blank')
+    },
     async handleSubmit() {
       try {
         await this.$refs.formRef.validate()
@@ -184,6 +209,8 @@ export default {
     &.green { background: linear-gradient(135deg, #67C23A, #5daf34); }
     &.orange { background: linear-gradient(135deg, #E6A23C, #d69330); }
     &.purple { background: linear-gradient(135deg, #9b59b6, #8e44ad); }
+    &.cyan { background: linear-gradient(135deg, #36cfc9, #13c2c2); }
+    &.teal { background: linear-gradient(135deg, #52c41a, #389e0d); }
   }
 
   .contact-info {

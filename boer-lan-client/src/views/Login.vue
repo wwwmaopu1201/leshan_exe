@@ -85,6 +85,21 @@ import { login } from '@/api/auth'
 export default {
   name: 'Login',
   data() {
+    const validateServerConfig = (rule, value, callback) => {
+      const ip = String(value || '').trim()
+      const port = String(this.loginForm.port || '').trim()
+      if (!ip) {
+        callback(new Error(this.$t('login.serverIpRequired')))
+        return
+      }
+      const portNum = Number(port)
+      if (!port || Number.isNaN(portNum) || !Number.isInteger(portNum) || portNum < 1 || portNum > 65535) {
+        callback(new Error('端口号需为1-65535的整数'))
+        return
+      }
+      callback()
+    }
+
     return {
       loginForm: {
         serverIp: localStorage.getItem('serverIp') || '127.0.0.1',
@@ -95,7 +110,7 @@ export default {
       },
       loginRules: {
         serverIp: [
-          { required: false }
+          { validator: validateServerConfig, trigger: 'blur' }
         ],
         username: [
           { required: true, message: '请输入账号', trigger: 'blur' }
@@ -118,6 +133,9 @@ export default {
       }
 
       this.loading = true
+      this.loginForm.serverIp = String(this.loginForm.serverIp || '').trim()
+      this.loginForm.port = String(this.loginForm.port || '').trim()
+      this.loginForm.username = String(this.loginForm.username || '').trim()
 
       // 保存服务器配置
       this.updateServerConfig({

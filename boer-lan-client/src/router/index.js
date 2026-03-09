@@ -4,6 +4,7 @@ import MainLayout from '@/layouts/MainLayout.vue'
 import store from '@/store'
 import { checkRoutePermission, PERMISSIONS } from '@/utils/permission'
 import { Message } from 'element-ui'
+import { getUserInfo } from '@/api/auth'
 
 Vue.use(VueRouter)
 
@@ -215,27 +216,47 @@ router.beforeEach((to, from, next) => {
       return
     }
 
-    // 检查用户是否被禁用
-    if (store.getters.isUserDisabled) {
-      Message.error('您的账户已被禁用，请联系管理员')
-      store.dispatch('logout')
-      next({ name: 'Login' })
-      return
-    }
-
-    // 检查路由权限
-    if (!checkRoutePermission(to)) {
-      Message.error('您没有权限访问该页面')
-      const fallbackPath = '/profile/info'
-      if (to.path !== fallbackPath) {
-        next({ path: fallbackPath })
-      } else {
-        next(false)
+    const proceed = async () => {
+      // 页面刷新后从后端拉取用户信息，确保权限与禁用状态有效
+      if (!store.state.user) {
+        try {
+          const res = await getUserInfo()
+          if (res.code === 0 && res.data) {
+            store.commit('SET_USER', res.data)
+          } else {
+            throw new Error('获取用户信息失败')
+          }
+        } catch (error) {
+          store.dispatch('logout')
+          next({ name: 'Login' })
+          return
+        }
       }
-      return
+
+      // 检查用户是否被禁用
+      if (store.getters.isUserDisabled) {
+        Message.error('您的账户已被禁用，请联系管理员')
+        store.dispatch('logout')
+        next({ name: 'Login' })
+        return
+      }
+
+      // 检查路由权限
+      if (!checkRoutePermission(to)) {
+        Message.error('您没有权限访问该页面')
+        const fallbackPath = '/profile/info'
+        if (to.path !== fallbackPath) {
+          next({ path: fallbackPath })
+        } else {
+          next(false)
+        }
+        return
+      }
+
+      next()
     }
 
-    next()
+    proceed()
   } else {
     next()
   }
