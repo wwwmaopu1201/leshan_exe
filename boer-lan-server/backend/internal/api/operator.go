@@ -281,19 +281,30 @@ func (h *OperatorHandler) MoveOperatorsToGroup(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	operatorIDs := normalizeGroupIDs(req.OperatorIDs)
+	if len(operatorIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "操作员参数错误"})
+		return
+	}
 	if err := ensureOperatorGroupExists(h.db, req.GroupID); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "分组参数错误"})
 		return
 	}
 
-	result := h.db.Model(&model.Operator{}).Where("id IN ?", req.OperatorIDs).
+	var count int64
+	if err := h.db.Model(&model.Operator{}).Where("id IN ?", operatorIDs).Count(&count).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if int(count) != len(operatorIDs) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "操作员不存在"})
+		return
+	}
+
+	result := h.db.Model(&model.Operator{}).Where("id IN ?", operatorIDs).
 		Update("group_id", req.GroupID)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
-		return
-	}
-	if result.RowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "操作员不存在"})
 		return
 	}
 

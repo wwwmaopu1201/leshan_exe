@@ -498,6 +498,11 @@ func (h *UserHandler) MoveUsersToGroup(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	userIDs := normalizeGroupIDs(req.UserIDs)
+	if len(userIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "账号参数错误"})
+		return
+	}
 
 	groupIDs := []uint{}
 	if req.GroupID != nil && *req.GroupID > 0 {
@@ -507,7 +512,18 @@ func (h *UserHandler) MoveUsersToGroup(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "分组参数错误"})
 		return
 	}
-	result := h.db.Model(&model.User{}).Where("id IN ?", req.UserIDs).
+
+	var count int64
+	if err := h.db.Model(&model.User{}).Where("id IN ?", userIDs).Count(&count).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if int(count) != len(userIDs) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "账号不存在"})
+		return
+	}
+
+	result := h.db.Model(&model.User{}).Where("id IN ?", userIDs).
 		Updates(map[string]interface{}{
 			"group_id":  req.GroupID,
 			"group_ids": encodeGroupIDs(groupIDs),
@@ -516,11 +532,6 @@ func (h *UserHandler) MoveUsersToGroup(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
 		return
 	}
-	if result.RowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "账号不存在"})
-		return
-	}
-
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"msg":  "移动成功",
