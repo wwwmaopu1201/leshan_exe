@@ -191,45 +191,14 @@ export default {
       }
     },
     downloadManual() {
-      const content = `
-博尔局域网客户端操作说明 v1.0.0
-
-1. 软件概述
-博尔局域网管理软件用于设备管理、花型下发、数据统计与员工管理。
-
-2. 安装指南
-系统要求：Windows 10/11 64位，4GB内存，500MB可用空间，局域网环境。
-安装步骤：运行安装包 -> 按向导安装 -> 启动客户端。
-
-3. 登录使用
-输入服务器IP、端口、账号、密码后登录。
-建议勾选“记住密码”减少重复输入。
-
-4. 设备管理
-可按分组管理设备，查看设备在线状态并执行分组操作。
-
-5. 花型管理
-支持花型上传、下发、队列与日志查看。
-
-6. 数据统计
-支持工资统计、加工概况、时长统计和报警统计。
-
-7. 常见问题
-无法连接服务器：检查IP、端口与网络连通性。
-设备离线：检查设备开机与网络配置。
-花型下发失败：确认设备在线并检查文件格式。
-`.trim()
-
-      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
-      const url = URL.createObjectURL(blob)
+      const url = `${process.env.BASE_URL}manuals/client-user-manual.pdf`
       const link = document.createElement('a')
       link.href = url
-      link.download = '局域网客户端操作说明-v1.0.0.txt'
+      link.download = '局域网客户端操作说明-v1.0.0.pdf'
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
-      URL.revokeObjectURL(url)
-      this.$message.success('操作说明已下载')
+      this.$message.success('操作说明 PDF 已下载')
     }
   }
 }
