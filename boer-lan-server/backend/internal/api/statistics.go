@@ -148,18 +148,7 @@ func (h *StatisticsHandler) getPatternUsage() []gin.H {
 	}
 
 	if len(patternUsage) == 0 {
-		patternUsage = []gin.H{
-			{"name": "Pattern-001", "value": 35},
-			{"name": "Pattern-002", "value": 28},
-			{"name": "Pattern-003", "value": 22},
-			{"name": "Pattern-004", "value": 18},
-			{"name": "Pattern-005", "value": 16},
-			{"name": "Pattern-006", "value": 14},
-			{"name": "Pattern-007", "value": 12},
-			{"name": "Pattern-008", "value": 10},
-			{"name": "Pattern-009", "value": 8},
-			{"name": "其他", "value": 15},
-		}
+		return []gin.H{}
 	}
 
 	return patternUsage
@@ -445,7 +434,7 @@ func (h *StatisticsHandler) getDashboardSpindleSpeed(deviceId string, deviceIDs 
 		Scan(&rows)
 
 	if len(rows) == 0 {
-		return 3500
+		return 0
 	}
 
 	deviceSpeeds := make(map[uint]float64)
@@ -464,7 +453,7 @@ func (h *StatisticsHandler) getDashboardSpindleSpeed(deviceId string, deviceIDs 
 	}
 
 	if len(deviceSpeeds) == 0 {
-		return 3500
+		return 0
 	}
 
 	total := 0.0
