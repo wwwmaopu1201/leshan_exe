@@ -48,6 +48,9 @@
             <span>防火墙快捷操作</span>
           </div>
           <div class="button-group">
+            <el-button :loading="commandLoading" @click="openFirewallConfig" icon="el-icon-setting">
+              打开防火墙配置
+            </el-button>
             <el-button :loading="commandLoading" @click="showFirewallStatus" icon="el-icon-view">
               查看防火墙状态
             </el-button>
@@ -293,6 +296,13 @@ export default {
     showNetstatOverview() {
       const args = this.isWindowsPlatform() ? ['-ano'] : ['-an']
       this.executeCommand('netstat', args, '端口占用总览')
+    },
+    openFirewallConfig() {
+      if (!this.isWindowsPlatform()) {
+        this.$message.warning('当前平台暂不支持该快捷操作')
+        return
+      }
+      this.executeCommand('control', ['firewall.cpl'], '打开防火墙配置')
     },
     showFirewallStatus() {
       if (!this.isWindowsPlatform()) {

@@ -280,6 +280,7 @@ func (h *SystemHandler) ExecuteCommand(c *gin.Context) {
 		"netstat":  true,
 		"hostname": true,
 		"netsh":    true,
+		"control":  true,
 	}
 
 	if !allowedCommands[req.Command] {
