@@ -36,6 +36,9 @@
             <el-button :loading="commandLoading" @click="showNetstatOverview">
               查看全部端口
             </el-button>
+            <el-button :loading="commandLoading" @click="checkServerPortUsage">
+              查看当前服务端口进程
+            </el-button>
           </div>
           <div class="hint-text">
             端口修改后需重启服务器程序生效；端口占用基于 `netstat`，Windows 下会自动联查 `tasklist` 进程信息。
@@ -373,6 +376,15 @@ export default {
       } finally {
         this.commandLoading = false
       }
+    },
+    checkServerPortUsage() {
+      const serverPort = Number(this.serverInfo.port || this.settings.serverPort || 0)
+      if (!serverPort || serverPort < 1 || serverPort > 65535) {
+        this.$message.warning('当前服务端口不可用，请先检查服务配置')
+        return
+      }
+      this.portToCheck = serverPort
+      this.checkPortUsage()
     },
     filterPortLines(output, port) {
       const lines = String(output || '').split(/\r?\n/)
