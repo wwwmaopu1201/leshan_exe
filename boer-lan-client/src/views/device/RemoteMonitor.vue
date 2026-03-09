@@ -781,10 +781,9 @@ export default {
       const timeData = hourlyProduction.map(item => item.hour || item.date || '-')
       const productionData = hourlyProduction.map(item => Number(item.value || 0))
       const spindleBase = Number(this.realtimeData.spindleSpeed || 0)
-      const speedData = timeData.map((_, index) => {
+      const speedData = timeData.map(() => {
         if (spindleBase <= 0) return 0
-        const ratio = 0.88 + (index % 5) * 0.03
-        return Math.round(spindleBase * ratio)
+        return Math.round(spindleBase)
       })
 
       this.chart.setOption({
