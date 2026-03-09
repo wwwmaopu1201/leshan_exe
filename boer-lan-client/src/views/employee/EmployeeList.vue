@@ -120,15 +120,31 @@
       title="批量导入员工"
       :visible.sync="showImportDialog"
       width="680px"
+      @close="resetImportDialog"
     >
       <div style="margin-bottom: 8px; color: #606266;">
         每行格式：`员工工号,员工姓名,手机号,备注`（前三列必填）
+      </div>
+      <div style="margin-bottom: 10px;">
+        <el-button size="small" icon="el-icon-folder-opened" @click="triggerImportFileSelect">
+          选择CSV文件
+        </el-button>
+        <span style="margin-left: 8px; color: #909399;">
+          {{ importFileName || '未选择文件' }}
+        </span>
+        <input
+          ref="importFileInput"
+          type="file"
+          accept=".csv,text/csv"
+          style="display: none;"
+          @change="handleImportFileChange"
+        >
       </div>
       <el-input
         v-model="importText"
         type="textarea"
         :rows="10"
-        placeholder="例如：&#10;E10001,张三,13800138000,一组员工&#10;E10002,李四,13900139000,二组员工"
+        placeholder="可直接粘贴CSV内容，或点击上方“选择CSV文件”自动填充&#10;例如：&#10;E10001,张三,13800138000,一组员工&#10;E10002,李四,13900139000,二组员工"
       />
       <span slot="footer" class="dialog-footer">
         <el-button @click="showImportDialog = false">{{ $t('common.cancel') }}</el-button>
@@ -160,6 +176,7 @@ export default {
       showImportDialog: false,
       importing: false,
       importText: '',
+      importFileName: '',
       editForm: {
         id: null,
         code: '',
@@ -245,6 +262,120 @@ export default {
     resetEditForm() {
       this.$refs.editFormRef?.resetFields()
     },
+    resetImportDialog() {
+      this.importText = ''
+      this.importFileName = ''
+      if (this.$refs.importFileInput) {
+        this.$refs.importFileInput.value = ''
+      }
+    },
+    triggerImportFileSelect() {
+      if (!this.$refs.importFileInput) {
+        return
+      }
+      this.$refs.importFileInput.value = ''
+      this.$refs.importFileInput.click()
+    },
+    async handleImportFileChange(event) {
+      const file = event?.target?.files?.[0]
+      if (!file) {
+        return
+      }
+      if (!/\.csv$/i.test(file.name)) {
+        this.$message.warning('请选择CSV文件')
+        return
+      }
+      try {
+        const text = await this.readImportFile(file)
+        this.importText = text
+        this.importFileName = file.name
+        this.$message.success(`已读取文件：${file.name}`)
+      } catch (error) {
+        console.error('Read import file failed:', error)
+        this.$message.error('读取CSV文件失败，请重试')
+      }
+    },
+    readImportFile(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => {
+          const text = typeof reader.result === 'string' ? reader.result : ''
+          resolve(text.replace(/^\uFEFF/, ''))
+        }
+        reader.onerror = () => reject(reader.error || new Error('读取文件失败'))
+        reader.readAsText(file, 'utf-8')
+      })
+    },
+    parseCsvLine(line) {
+      const values = []
+      let current = ''
+      let inQuotes = false
+
+      for (let i = 0; i < line.length; i += 1) {
+        const char = line[i]
+        if (char === '"') {
+          if (inQuotes && line[i + 1] === '"') {
+            current += '"'
+            i += 1
+          } else {
+            inQuotes = !inQuotes
+          }
+          continue
+        }
+        if (char === ',' && !inQuotes) {
+          values.push(current.trim())
+          current = ''
+          continue
+        }
+        current += char
+      }
+      values.push(current.trim())
+
+      return values
+    },
+    isImportHeader(parts) {
+      const first = (parts[0] || '').replace(/\s/g, '').toLowerCase()
+      return first === '员工工号' || first === 'employeecode' || first === 'code'
+    },
+    parseImportText() {
+      const lines = this.importText
+        .replace(/^\uFEFF/, '')
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(Boolean)
+
+      const employees = []
+      const lineErrors = []
+
+      lines.forEach((line, index) => {
+        const parts = this.parseCsvLine(line).map(part => part.trim())
+        if (index === 0 && this.isImportHeader(parts)) {
+          return
+        }
+        const [code, name, phone, remark] = parts
+        const lineNo = index + 1
+        if (!code || !name || !phone) {
+          lineErrors.push(`第${lineNo}行格式错误: ${line}`)
+          return
+        }
+        if (code.length > 11) {
+          lineErrors.push(`第${lineNo}行工号超过11位: ${line}`)
+          return
+        }
+        if (!/^1[3-9]\d{9}$/.test(phone)) {
+          lineErrors.push(`第${lineNo}行手机号格式错误: ${line}`)
+          return
+        }
+        employees.push({
+          code,
+          name,
+          phone,
+          remark: remark || ''
+        })
+      })
+
+      return { employees, lineErrors }
+    },
     downloadImportTemplate() {
       const headers = ['员工工号', '员工姓名', '手机号', '备注']
       const examples = [
@@ -325,40 +456,12 @@ export default {
       }).catch(() => {})
     },
     async handleImport() {
-      const lines = this.importText
-        .split('\n')
-        .map(line => line.trim())
-        .filter(Boolean)
-
-      if (!lines.length) {
+      if (!this.importText.trim()) {
         this.$message.warning('请输入导入内容')
         return
       }
 
-      const employees = []
-      const lineErrors = []
-      for (const line of lines) {
-        const parts = line.split(',').map(part => part?.trim())
-        const [code, name, phone, remark] = parts
-        if (!code || !name || !phone) {
-          lineErrors.push(`格式错误: ${line}`)
-          continue
-        }
-        if (code.length > 11) {
-          lineErrors.push(`工号超过11位: ${line}`)
-          continue
-        }
-        if (!/^1[3-9]\d{9}$/.test(phone)) {
-          lineErrors.push(`手机号格式错误: ${line}`)
-          continue
-        }
-        employees.push({
-          code,
-          name,
-          phone,
-          remark: remark || ''
-        })
-      }
+      const { employees, lineErrors } = this.parseImportText()
 
       if (!employees.length) {
         this.$message.warning('未解析到有效员工数据')
@@ -379,7 +482,6 @@ export default {
           if (errors.length) {
             this.$alert(errors.join('\n'), '导入失败明细', { type: 'warning' })
           }
-          this.importText = ''
           this.showImportDialog = false
           this.fetchData()
         } else {
