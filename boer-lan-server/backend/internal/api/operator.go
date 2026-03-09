@@ -29,6 +29,13 @@ func isValidOperatorUsername(username string) bool {
 	return matched
 }
 
+func ensureOperatorGroupExists(db *gorm.DB, groupID *uint) error {
+	if groupID == nil || *groupID == 0 {
+		return nil
+	}
+	return ensureGroupIDsExist(db, []uint{*groupID})
+}
+
 // GetOperatorList 获取操作员列表
 func (h *OperatorHandler) GetOperatorList(c *gin.Context) {
 	groupID := c.Query("groupId")
@@ -118,6 +125,10 @@ func (h *OperatorHandler) CreateOperator(c *gin.Context) {
 	}
 	if len(req.Password) < 6 || len(req.Password) > 32 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "密码长度需在6-32位"})
+		return
+	}
+	if err := ensureOperatorGroupExists(h.db, req.GroupID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "分组参数错误"})
 		return
 	}
 
@@ -217,6 +228,10 @@ func (h *OperatorHandler) UpdateOperator(c *gin.Context) {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "分组参数错误"})
 				return
 			}
+			if err := ensureOperatorGroupExists(h.db, &groupID); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "分组参数错误"})
+				return
+			}
 			updates["group_id"] = groupID
 		}
 	}
@@ -269,6 +284,10 @@ func (h *OperatorHandler) MoveOperatorsToGroup(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if err := ensureOperatorGroupExists(h.db, req.GroupID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "分组参数错误"})
+		return
+	}
 
 	if err := h.db.Model(&model.Operator{}).Where("id IN ?", req.OperatorIDs).
 		Update("group_id", req.GroupID).Error; err != nil {
@@ -315,6 +334,10 @@ func (h *OperatorHandler) ImportOperators(c *gin.Context) {
 		}
 		if len(password) < 6 || len(password) > 32 {
 			errors = append(errors, op.Username+" 密码长度需在6-32位")
+			continue
+		}
+		if err := ensureOperatorGroupExists(tx, op.GroupID); err != nil {
+			errors = append(errors, username+" 分组参数错误")
 			continue
 		}
 
