@@ -497,12 +497,17 @@ func (h *UserHandler) MoveUsersToGroup(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "分组参数错误"})
 		return
 	}
-	if err := h.db.Model(&model.User{}).Where("id IN ?", req.UserIDs).
+	result := h.db.Model(&model.User{}).Where("id IN ?", req.UserIDs).
 		Updates(map[string]interface{}{
 			"group_id":  req.GroupID,
 			"group_ids": encodeGroupIDs(groupIDs),
-		}).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		})
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+		return
+	}
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "账号不存在"})
 		return
 	}
 

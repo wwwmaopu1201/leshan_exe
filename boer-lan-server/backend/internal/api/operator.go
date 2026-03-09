@@ -289,9 +289,14 @@ func (h *OperatorHandler) MoveOperatorsToGroup(c *gin.Context) {
 		return
 	}
 
-	if err := h.db.Model(&model.Operator{}).Where("id IN ?", req.OperatorIDs).
-		Update("group_id", req.GroupID).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	result := h.db.Model(&model.Operator{}).Where("id IN ?", req.OperatorIDs).
+		Update("group_id", req.GroupID)
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+		return
+	}
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "操作员不存在"})
 		return
 	}
 
