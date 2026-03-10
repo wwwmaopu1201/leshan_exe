@@ -1,0 +1,71 @@
+name: Build Server Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'boer-lan-server/**'
+      - '.github/workflows/build-server-windows.yml'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: boer-lan-server/package-lock.json
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: boer-lan-server/backend/go.mod
+          cache-dependency-path: boer-lan-server/backend/go.sum
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        working-directory: boer-lan-server
+        run: npm ci
+
+      - name: Build Go backend exe
+        working-directory: boer-lan-server/backend
+        run: go build -ldflags="-s -w" -o ../src-tauri/backend-server.exe cmd/server/main.go
+
+      - name: Copy config
+        run: |
+          New-Item -ItemType Directory -Force -Path boer-lan-server/src-tauri/config | Out-Null
+          Copy-Item boer-lan-server/backend/configs/config.yaml boer-lan-server/src-tauri/config/config.yaml -Force
+
+      - name: Build Tauri app
+        working-directory: boer-lan-server
+        run: npm run tauri:build
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-windows-installer
+          path: |
+            boer-lan-server/src-tauri/target/release/bundle/msi/*.msi
+            boer-lan-server/src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+
+      - name: Create release (tag only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            boer-lan-server/src-tauri/target/release/bundle/msi/*.msi
+            boer-lan-server/src-tauri/target/release/bundle/nsis/*.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
