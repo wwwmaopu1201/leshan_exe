@@ -174,7 +174,8 @@ export default {
         this.$message.success(this.$t('login.loginSuccess'))
         this.$router.push('/home')
       } catch (error) {
-        this.$message.error(error.message || this.$t('login.loginFailed'))
+        const message = error.userMessage || error.response?.data?.message || this.$t('login.loginFailed')
+        this.$message.error(message)
       } finally {
         this.loading = false
       }

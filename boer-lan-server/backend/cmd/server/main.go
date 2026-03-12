@@ -7,10 +7,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"boer-lan-server/internal/api"
 	"boer-lan-server/internal/model"
 	"boer-lan-server/internal/service"
+	"boer-lan-server/pkg/trial"
 	"boer-lan-server/pkg/utils"
 
 	"github.com/gin-gonic/gin"
@@ -49,6 +51,13 @@ var (
 )
 
 func main() {
+	trialStatus, err := trial.Ensure()
+	if err != nil {
+		log.Fatalf("Trial validation failed: %s", trialStatus.Message)
+	}
+	trial.StartExpiryWatcher(trialStatus)
+	log.Printf("Trial valid until %s", trialStatus.ExpiresAt.Format(time.RFC3339))
+
 	// Load config
 	loadConfig()
 

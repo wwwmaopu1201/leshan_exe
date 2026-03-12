@@ -11,7 +11,8 @@ export function login(data) {
   return request({
     url: '/auth/login',
     method: 'post',
-    data
+    data,
+    suppressErrorMessage: true
   })
 }
 

@@ -8,6 +8,42 @@ const service = axios.create({
   timeout: 30000
 })
 
+function resolveErrorMessage(error) {
+  const responseData = error?.response?.data
+  const responseMessage = responseData?.message || responseData?.error
+  if (typeof responseMessage === 'string' && responseMessage.trim()) {
+    return responseMessage.trim()
+  }
+
+  if (error?.message && !String(error.message).startsWith('Request failed with status code')) {
+    if (error.message.includes('timeout')) {
+      return '请求超时'
+    }
+    if (error.message.includes('Network Error')) {
+      return '网络连接失败'
+    }
+  }
+
+  if (error?.response) {
+    switch (error.response.status) {
+      case 400:
+        return '请求参数错误'
+      case 401:
+        return store.state.token ? '登录已过期，请重新登录' : '账号或密码错误'
+      case 403:
+        return '没有权限访问'
+      case 404:
+        return '请求的资源不存在'
+      case 500:
+        return '服务器错误'
+      default:
+        return '请求失败'
+    }
+  }
+
+  return '请求失败'
+}
+
 // 请求拦截器
 service.interceptors.request.use(
   config => {
@@ -42,15 +78,22 @@ service.interceptors.response.use(
 
     // 假设后端返回格式为 { code: 0, data: {}, message: '' }
     if (res.code !== 0 && res.code !== 200) {
-      Message.error(res.message || '请求失败')
+      const message = res.message || res.error || '请求失败'
+      const businessError = new Error(message)
+      businessError.userMessage = message
+      businessError.response = response
+      businessError.config = response.config
 
-      // Token过期或无效
-      if (res.code === 401) {
+      if (!response.config?.suppressErrorMessage) {
+        Message.error(message)
+      }
+
+      if (res.code === 401 && store.state.token) {
         store.dispatch('logout')
         router.push('/login')
       }
 
-      return Promise.reject(new Error(res.message || '请求失败'))
+      return Promise.reject(businessError)
     }
 
     // 检查用户是否被禁用（仅在登录后检查）
@@ -66,31 +109,16 @@ service.interceptors.response.use(
   error => {
     console.error('Response error:', error)
 
-    if (error.response) {
-      switch (error.response.status) {
-        case 401:
-          Message.error('登录已过期，请重新登录')
-          store.dispatch('logout')
-          router.push('/login')
-          break
-        case 403:
-          Message.error('没有权限访问')
-          break
-        case 404:
-          Message.error('请求的资源不存在')
-          break
-        case 500:
-          Message.error('服务器错误')
-          break
-        default:
-          Message.error(error.response.data?.message || '请求失败')
-      }
-    } else if (error.message.includes('timeout')) {
-      Message.error('请求超时')
-    } else if (error.message.includes('Network Error')) {
-      Message.error('网络连接失败')
-    } else {
-      Message.error(error.message || '请求失败')
+    const message = resolveErrorMessage(error)
+    error.userMessage = message
+
+    if (error.response?.status === 401 && store.state.token) {
+      store.dispatch('logout')
+      router.push('/login')
+    }
+
+    if (!error.config?.suppressErrorMessage) {
+      Message.error(message)
     }
 
     return Promise.reject(error)
