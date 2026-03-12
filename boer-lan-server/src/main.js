@@ -27,7 +27,7 @@ function renderBootMessage(message) {
 async function waitForBackend(retries = 30) {
   for (let i = 0; i < retries; i++) {
     try {
-      await request.get('/system/info', { timeout: 1000, suppressErrorMessage: true })
+      await request.get('/healthz', { timeout: 1000, suppressErrorMessage: true })
       console.log(`Backend is ready: ${getRequestBaseURL()}`)
       return true
     } catch (error) {

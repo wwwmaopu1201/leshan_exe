@@ -20,6 +20,9 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, se
 	// Auth routes (public)
 	authHandler := NewAuthHandler(db, jwtSecret, jwtExpire)
 	api.POST("/auth/login", authHandler.Login)
+	api.GET("/healthz", func(c *gin.Context) {
+		c.JSON(200, gin.H{"code": 0, "message": "ok"})
+	})
 	api.GET("/device/vnc/ws/:id", deviceHandler.ProxyVNCWebSocket)
 
 	// Protected routes

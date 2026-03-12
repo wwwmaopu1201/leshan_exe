@@ -19,9 +19,12 @@ if (-not (Test-Path $backendExe)) {
   throw "Backend executable not found: $backendExe"
 }
 
-$configDir = Join-Path $releaseDir 'config'
-if (-not (Test-Path $configDir)) {
-  throw "Config directory not found: $configDir"
+$configDir = @(
+  (Join-Path $PSScriptRoot '..\src-tauri\config'),
+  (Join-Path $releaseDir 'config')
+) | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $configDir) {
+  throw "Config directory not found in src-tauri/config or $releaseDir/config"
 }
 
 if (Test-Path $appDir) {

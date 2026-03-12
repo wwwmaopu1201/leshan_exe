@@ -49,7 +49,7 @@ jobs:
 
       - name: Build Tauri app
         working-directory: boer-lan-server
-        run: npm run tauri:build
+        run: npm run tauri:build:portable
 
       - name: Build portable package
         working-directory: boer-lan-server

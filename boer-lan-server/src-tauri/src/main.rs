@@ -3,6 +3,8 @@
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Child, Command};
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use std::sync::Mutex;
 use tauri::Manager;
 
@@ -10,6 +12,9 @@ struct AppState {
     backend_process: Mutex<Option<Child>>,
     port_file: PathBuf,
 }
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 fn backend_binary_name() -> &'static str {
     #[cfg(target_os = "windows")]
@@ -103,6 +108,9 @@ fn main() {
                     .env("CONFIG_PATH", config_dir.join("config.yaml"))
                     .env("DATA_DIR", &data_dir)
                     .env("PORT_FILE", &port_file);
+
+                #[cfg(target_os = "windows")]
+                cmd.creation_flags(CREATE_NO_WINDOW);
 
                 match cmd.spawn() {
                     Ok(child) => {

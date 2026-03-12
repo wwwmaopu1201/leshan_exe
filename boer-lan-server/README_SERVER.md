@@ -86,7 +86,7 @@ http://localhost:8088/admin
 
 ```bash
 cd boer-lan-server
-npm run tauri:build
+npm run tauri:build:portable
 npm run package:portable:win
 ```
 

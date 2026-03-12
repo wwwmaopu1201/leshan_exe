@@ -8,6 +8,7 @@
     "build": "vite build",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
+    "tauri:build:portable": "tauri build --no-bundle",
     "package:portable:win": "powershell -ExecutionPolicy Bypass -File scripts/package-portable.ps1",
     "build:backend": "cd backend && go build -ldflags=\"-s -w\" -o ../src-tauri/backend-server cmd/server/main.go",
     "build:all": "npm run build:backend && npm run tauri:build"
