@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -54,6 +55,7 @@ func main() {
 	// Initialize database
 	initDB()
 	applyServerConfigOverrides()
+	persistRuntimePort()
 
 	// Initialize Gin
 	if config.Server.Mode == "release" {
@@ -105,6 +107,29 @@ func applyServerConfigOverrides() {
 		log.Printf("Server port overridden by server_config: %d -> %d", config.Server.Port, port)
 	}
 	config.Server.Port = port
+}
+
+func persistRuntimePort() {
+	portFile := strings.TrimSpace(os.Getenv("PORT_FILE"))
+	if portFile == "" {
+		dataDir := strings.TrimSpace(os.Getenv("DATA_DIR"))
+		if dataDir == "" {
+			return
+		}
+		portFile = filepath.Join(dataDir, "backend-port.txt")
+	}
+
+	if err := os.MkdirAll(filepath.Dir(portFile), 0755); err != nil {
+		log.Printf("Failed to create backend port directory: %v", err)
+		return
+	}
+
+	if err := os.WriteFile(portFile, []byte(strconv.Itoa(config.Server.Port)), 0644); err != nil {
+		log.Printf("Failed to persist backend port: %v", err)
+		return
+	}
+
+	log.Printf("Backend runtime port written to: %s", portFile)
 }
 
 func loadConfig() {
