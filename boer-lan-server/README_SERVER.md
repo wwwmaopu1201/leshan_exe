@@ -77,9 +77,9 @@ http://localhost:8088/admin
 
 ### 便携版（免安装）
 
-- GitHub Actions 工作流 `Build Server Windows Package` 会额外产出 `server-windows-portable` 免安装产物
+- GitHub Actions 工作流 `Build Server Windows Portable` 只产出 `server-windows-portable` 免安装产物
 - 下载 artifact 后解压，直接运行 `Boer-LAN-Server.exe`
-- 如需发布附件，也会额外生成 `Boer-LAN-Server-windows-portable.zip`
+- Release 附件也只会生成 `Boer-LAN-Server-windows-portable.zip`
 - 便携版会自动携带 `backend-server.exe` 和 `config/config.yaml`
 
 ### 本地打包

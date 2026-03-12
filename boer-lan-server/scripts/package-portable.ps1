@@ -34,7 +34,7 @@ Copy-Item $backendExe (Join-Path $appDir 'backend-server.exe') -Force
 Copy-Item $configDir (Join-Path $appDir 'config') -Recurse -Force
 
 @"
-博尔局域网服务器绿色版
+博尔局域网服务器便携版
 
 1. 解压后直接运行 Boer-LAN-Server.exe
 2. 数据目录会在首次启动后自动创建

@@ -1,4 +1,4 @@
-name: Build Server Windows Package
+name: Build Server Windows Portable
 
 on:
   workflow_dispatch:
@@ -56,20 +56,11 @@ jobs:
         shell: pwsh
         run: ./scripts/package-portable.ps1
 
-      - name: Upload portable exe artifact
+      - name: Upload portable artifact
         uses: actions/upload-artifact@v4
         with:
           name: server-windows-portable
           path: boer-lan-server/src-tauri/target/release/portable/Boer-LAN-Server
-          if-no-files-found: error
-
-      - name: Upload installer artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: server-windows-installer
-          path: |
-            boer-lan-server/src-tauri/target/release/bundle/msi/*.msi
-            boer-lan-server/src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error
 
       - name: Create release (tag only)
@@ -78,7 +69,5 @@ jobs:
         with:
           files: |
             boer-lan-server/src-tauri/target/release/portable/Boer-LAN-Server-windows-portable.zip
-            boer-lan-server/src-tauri/target/release/bundle/msi/*.msi
-            boer-lan-server/src-tauri/target/release/bundle/nsis/*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
