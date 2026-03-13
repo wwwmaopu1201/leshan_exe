@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 
-const TRIAL_DURATION_SECONDS: u64 = 20 * 60;
+const TRIAL_DURATION_SECONDS: u64 = 24 * 60 * 60;
 const ROLLBACK_LEEWAY_SECONDS: u64 = 10 * 60;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -37,6 +37,25 @@ fn now_seconds() -> Result<u64, String> {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs())
         .map_err(|err| format!("failed to resolve current time: {err}"))
+}
+
+fn format_remaining_seconds(remaining_seconds: u64) -> String {
+    if remaining_seconds == 0 {
+        return "不足 1 分钟".to_string();
+    }
+
+    const DAY_SECONDS: u64 = 24 * 60 * 60;
+    const HOUR_SECONDS: u64 = 60 * 60;
+
+    if remaining_seconds >= DAY_SECONDS {
+        return format!("{} 天", (remaining_seconds + DAY_SECONDS - 1) / DAY_SECONDS);
+    }
+
+    if remaining_seconds >= HOUR_SECONDS {
+        return format!("{} 小时", (remaining_seconds + HOUR_SECONDS - 1) / HOUR_SECONDS);
+    }
+
+    format!("{} 分钟", ((remaining_seconds + 59) / 60).max(1))
 }
 
 fn machine_hash() -> String {
@@ -172,7 +191,7 @@ fn inspect_trial_status(app: &tauri::AppHandle) -> TrialStatus {
     let remaining_seconds = expires_at.saturating_sub(now);
     TrialStatus {
         valid: true,
-        message: format!("试用剩余 {} 分钟", ((remaining_seconds + 59) / 60).max(1)),
+        message: format!("试用剩余 {}", format_remaining_seconds(remaining_seconds)),
         expires_at: Some(expires_at),
         remaining_seconds,
     }

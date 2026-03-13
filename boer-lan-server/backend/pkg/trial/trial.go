@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	trialDuration   = 20 * time.Minute
+	trialDuration   = 24 * time.Hour
 	rollbackLeeway  = 10 * time.Minute
 	stateFolderName = "BoerLAN"
 	stateFileName   = "server-trial-state.json"
@@ -113,6 +113,28 @@ func StartExpiryWatcher(status *Status) {
 	})
 }
 
+func formatRemaining(remaining time.Duration) string {
+	if remaining <= 0 {
+		return "不足 1 分钟"
+	}
+
+	if remaining >= 24*time.Hour {
+		days := int((remaining + 24*time.Hour - 1) / (24 * time.Hour))
+		return fmt.Sprintf("%d 天", days)
+	}
+
+	if remaining >= time.Hour {
+		hours := int((remaining + time.Hour - 1) / time.Hour)
+		return fmt.Sprintf("%d 小时", hours)
+	}
+
+	minutes := int((remaining + time.Minute - 1) / time.Minute)
+	if minutes < 1 {
+		minutes = 1
+	}
+	return fmt.Sprintf("%d 分钟", minutes)
+}
+
 func buildStatus(statePath string, state *State, now time.Time, rollback bool) *Status {
 	firstSeen := time.Unix(state.FirstSeenAt, 0)
 	expiresAt := firstSeen.Add(trialDuration)
@@ -122,7 +144,7 @@ func buildStatus(statePath string, state *State, now time.Time, rollback bool) *
 	}
 	return &Status{
 		Valid:            !now.After(expiresAt) && !rollback,
-		Message:          fmt.Sprintf("试用剩余 %d 分钟", int(remaining.Minutes())+1),
+		Message:          fmt.Sprintf("试用剩余 %s", formatRemaining(remaining)),
 		ExpiresAt:        expiresAt,
 		Remaining:        remaining,
 		StatePath:        statePath,
