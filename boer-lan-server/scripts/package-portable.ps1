@@ -19,14 +19,6 @@ if (-not (Test-Path $backendExe)) {
   throw "Backend executable not found: $backendExe"
 }
 
-$configDir = @(
-  (Join-Path $PSScriptRoot '..\src-tauri\config'),
-  (Join-Path $releaseDir 'config')
-) | Where-Object { Test-Path $_ } | Select-Object -First 1
-if (-not $configDir) {
-  throw "Config directory not found in src-tauri/config or $releaseDir/config"
-}
-
 if (Test-Path $appDir) {
   Remove-Item $appDir -Recurse -Force
 }
@@ -34,14 +26,14 @@ if (Test-Path $appDir) {
 New-Item -ItemType Directory -Force -Path $appDir | Out-Null
 Copy-Item $appExe (Join-Path $appDir 'Boer-LAN-Server.exe') -Force
 Copy-Item $backendExe (Join-Path $appDir 'backend-server.exe') -Force
-Copy-Item $configDir (Join-Path $appDir 'config') -Recurse -Force
 
 @"
 博尔局域网服务器便携版
 
 1. 解压后直接运行 Boer-LAN-Server.exe
 2. 数据目录会在首次启动后自动创建
-3. 如系统缺少 WebView2，请先安装 WebView2 Runtime
+3. 服务端配置使用程序内置默认值
+4. 如系统缺少 WebView2，请先安装 WebView2 Runtime
 "@ | Set-Content -Path (Join-Path $appDir '启动说明.txt') -Encoding UTF8
 
 if (Test-Path $archivePath) {

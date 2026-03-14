@@ -141,25 +141,40 @@ func persistRuntimePort() {
 	log.Printf("Backend runtime port written to: %s", portFile)
 }
 
+func defaultConfig() Config {
+	var cfg Config
+	cfg.Server.Port = 8088
+	cfg.Server.Mode = "release"
+	cfg.Database.Type = "sqlite"
+	cfg.Database.Path = ""
+	cfg.JWT.Secret = "boer-lan-secret-key-2024"
+	cfg.JWT.Expire = 24
+	return cfg
+}
+
 func loadConfig() {
-	// 支持从环境变量读取配置文件路径
+	config = defaultConfig()
+
+	// 开发环境下支持从环境变量读取配置文件路径；打包后若文件不存在则使用内置默认配置
 	configPath := os.Getenv("CONFIG_PATH")
 	if configPath == "" {
 		configPath = "configs/config.yaml"
 	}
 
 	data, err := os.ReadFile(configPath)
-	if err != nil {
+	if err == nil {
+		if err := yaml.Unmarshal(data, &config); err != nil {
+			log.Fatalf("Failed to parse config file: %v", err)
+		}
+		log.Printf("Config loaded from: %s", configPath)
+	} else if os.IsNotExist(err) {
+		log.Printf("Config file not found, using embedded defaults")
+	} else {
 		log.Fatalf("Failed to read config file: %v", err)
-	}
-
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		log.Fatalf("Failed to parse config file: %v", err)
 	}
 
 	utils.JWTSecret = config.JWT.Secret
 	utils.JWTExpire = config.JWT.Expire
-	log.Printf("Config loaded from: %s", configPath)
 }
 
 func initDB() {

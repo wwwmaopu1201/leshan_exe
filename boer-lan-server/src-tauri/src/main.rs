@@ -235,15 +235,12 @@ fn main() {
                 if trial_status.valid {
                     let resource_dir = resolve_resource_dir(app.path().resource_dir().ok())
                         .map_err(|err| -> Box<dyn std::error::Error> { err.into() })?;
-
                     let backend_path = resource_dir.join(backend_binary_name());
-                    let config_dir = resource_dir.join("config");
 
                     std::fs::create_dir_all(&data_dir).expect("failed to create data directory");
 
                     let mut cmd = Command::new(&backend_path);
                     cmd.current_dir(&resource_dir)
-                        .env("CONFIG_PATH", config_dir.join("config.yaml"))
                         .env("DATA_DIR", &data_dir)
                         .env("PORT_FILE", &port_file);
 

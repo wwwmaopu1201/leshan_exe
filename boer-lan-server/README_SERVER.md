@@ -80,7 +80,7 @@ http://localhost:8088/admin
 - GitHub Actions 工作流 `Build Server Windows Portable` 只产出 `server-windows-portable` 免安装产物
 - 下载 artifact 后解压，直接运行 `Boer-LAN-Server.exe`
 - Release 附件也只会生成 `Boer-LAN-Server-windows-portable.zip`
-- 便携版会自动携带 `backend-server.exe` 和 `config/config.yaml`
+- 便携版会自动携带 `backend-server.exe`，服务端配置使用程序内置默认值
 
 ### 本地打包
 
@@ -235,7 +235,7 @@ boer-lan-server/
 │       ├── index.html
 │       └── app.js
 ├── configs/
-│   └── config.yaml          # 配置文件
+│   └── config.yaml          # 开发环境可选配置文件
 ├── data/                    # SQLite数据库目录（自动创建）
 └── go.mod
 ```

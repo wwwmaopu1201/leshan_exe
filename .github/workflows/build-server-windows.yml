@@ -42,11 +42,6 @@ jobs:
         working-directory: boer-lan-server/backend
         run: go build -ldflags="-s -w" -o ../src-tauri/backend-server.exe cmd/server/main.go
 
-      - name: Copy config
-        run: |
-          New-Item -ItemType Directory -Force -Path boer-lan-server/src-tauri/config | Out-Null
-          Copy-Item boer-lan-server/backend/configs/config.yaml boer-lan-server/src-tauri/config/config.yaml -Force
-
       - name: Build Tauri app
         working-directory: boer-lan-server
         run: npm run tauri:build:portable
