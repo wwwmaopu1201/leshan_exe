@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 
-$appVersion = 'V1.0.1'
+$appVersion = 'V1.0.5'
 $appExeName = "Boer-LAN-Server-$appVersion.exe"
 
 $releaseDir = (Resolve-Path (Join-Path $PSScriptRoot '..\src-tauri\target\release')).Path
