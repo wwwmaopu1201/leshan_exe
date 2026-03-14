@@ -1,5 +1,8 @@
 $ErrorActionPreference = 'Stop'
 
+$appVersion = 'V1.0.1'
+$appExeName = "Boer-LAN-Manager-$appVersion.exe"
+
 $releaseDir = (Resolve-Path (Join-Path $PSScriptRoot '..\src-tauri\target\release')).Path
 $portableRoot = Join-Path $releaseDir 'portable'
 $appDir = Join-Path $portableRoot 'Boer-LAN-Manager'
@@ -7,7 +10,7 @@ $archivePath = Join-Path $portableRoot 'Boer-LAN-Manager-windows-portable.zip'
 
 $appExe = @(
   (Join-Path $releaseDir 'boer-lan-client.exe'),
-  (Join-Path $releaseDir 'Boer-LAN-Manager.exe')
+  (Join-Path $releaseDir 'Boer-LAN-Manager-V1.0.1.exe')
 ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 
 if (-not $appExe) {
@@ -19,12 +22,12 @@ if (Test-Path $appDir) {
 }
 
 New-Item -ItemType Directory -Force -Path $appDir | Out-Null
-Copy-Item $appExe (Join-Path $appDir 'Boer-LAN-Manager.exe') -Force
+Copy-Item $appExe (Join-Path $appDir $appExeName) -Force
 
 @"
 博尔局域网管理软件便携版
 
-1. 解压后直接运行 Boer-LAN-Manager.exe
+1. 解压后直接运行 $appExeName
 2. 如系统缺少 WebView2，请先安装 WebView2 Runtime
 "@ | Set-Content -Path (Join-Path $appDir '启动说明.txt') -Encoding UTF8
 

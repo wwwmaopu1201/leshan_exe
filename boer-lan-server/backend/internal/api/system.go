@@ -54,15 +54,10 @@ func NewSystemHandler(db *gorm.DB, serverPort int) *SystemHandler {
 
 // GetServerInfo 获取服务器信息
 func (h *SystemHandler) GetServerInfo(c *gin.Context) {
-	// 获取所有网卡IP地址
-	addrs, _ := net.InterfaceAddrs()
+	primaryIP := pickPrimaryIPv4()
 	var ips []string
-	for _, addr := range addrs {
-		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil {
-				ips = append(ips, ipnet.IP.String())
-			}
-		}
+	if primaryIP != "" {
+		ips = []string{primaryIP}
 	}
 
 	// 获取工作目录
@@ -80,10 +75,103 @@ func (h *SystemHandler) GetServerInfo(c *gin.Context) {
 			"dataDir": dataDir,
 			"os":      runtime.GOOS,
 			"arch":    runtime.GOARCH,
-			"version": "1.0.0",
+			"version": "1.0.1",
 			"uptime":  time.Now().Unix(),
 		},
 	})
+}
+
+func pickPrimaryIPv4() string {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+
+	bestIP := ""
+	bestScore := -1
+
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+
+		penalty := virtualInterfacePenalty(iface.Name)
+
+		for _, addr := range addrs {
+			ipnet, ok := addr.(*net.IPNet)
+			if !ok || ipnet.IP == nil {
+				continue
+			}
+
+			ipv4 := ipnet.IP.To4()
+			if ipv4 == nil || ipv4.IsLoopback() {
+				continue
+			}
+
+			if isLinkLocalIPv4(ipv4) {
+				continue
+			}
+
+			score := scoreIPv4(ipv4) - penalty
+			if score > bestScore {
+				bestScore = score
+				bestIP = ipv4.String()
+			}
+		}
+	}
+
+	return bestIP
+}
+
+func isLinkLocalIPv4(ip net.IP) bool {
+	ipv4 := ip.To4()
+	return ipv4 != nil && ipv4[0] == 169 && ipv4[1] == 254
+}
+
+func scoreIPv4(ip net.IP) int {
+	ipv4 := ip.To4()
+	if ipv4 == nil {
+		return 0
+	}
+
+	if ipv4[0] == 192 && ipv4[1] == 168 {
+		return 300
+	}
+	if ipv4[0] == 10 {
+		return 260
+	}
+	if ipv4[0] == 172 && ipv4[1] >= 16 && ipv4[1] <= 31 {
+		return 240
+	}
+	if ip.IsPrivate() {
+		return 220
+	}
+	if ip.IsGlobalUnicast() {
+		return 120
+	}
+
+	return 0
+}
+
+func virtualInterfacePenalty(name string) int {
+	lowered := strings.ToLower(strings.TrimSpace(name))
+	if lowered == "" {
+		return 0
+	}
+
+	keywords := []string{"virtual", "vmware", "vbox", "docker", "veth", "vethernet", "hyper-v", "tailscale", "tap", "tun", "utun", "hamachi", "zerotier", "wireguard"}
+	for _, keyword := range keywords {
+		if strings.Contains(lowered, keyword) {
+			return 120
+		}
+	}
+
+	return 0
 }
 
 // GetDebugLogs 获取调试日志
