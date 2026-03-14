@@ -188,13 +188,15 @@ func writeState(path string, state *State) error {
 }
 
 func resolveStatePath() (string, error) {
+	dataDir := strings.TrimSpace(os.Getenv("DATA_DIR"))
+	if dataDir != "" {
+		return filepath.Join(dataDir, stateFileName), nil
+	}
+
 	if runtime.GOOS == "windows" {
-		baseDir := strings.TrimSpace(os.Getenv("ProgramData"))
-		if baseDir == "" {
-			baseDir = strings.TrimSpace(os.Getenv("PROGRAMDATA"))
-		}
-		if baseDir != "" {
-			return filepath.Join(baseDir, stateFolderName, stateFileName), nil
+		localAppData := strings.TrimSpace(os.Getenv("LOCALAPPDATA"))
+		if localAppData != "" {
+			return filepath.Join(localAppData, stateFolderName, stateFileName), nil
 		}
 	}
 

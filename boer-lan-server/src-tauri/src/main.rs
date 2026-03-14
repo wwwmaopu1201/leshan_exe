@@ -106,22 +106,16 @@ fn format_remaining_seconds(remaining_seconds: u64) -> String {
     }
 
     if remaining_seconds >= HOUR_SECONDS {
-        return format!("{} 小时", (remaining_seconds + HOUR_SECONDS - 1) / HOUR_SECONDS);
+        return format!(
+            "{} 小时",
+            (remaining_seconds + HOUR_SECONDS - 1) / HOUR_SECONDS
+        );
     }
 
     format!("{} 分钟", ((remaining_seconds + 59) / 60).max(1))
 }
 
 fn trial_state_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(program_data) = env::var("ProgramData") {
-            if !program_data.trim().is_empty() {
-                return Ok(PathBuf::from(program_data).join("BoerLAN").join("server-trial-state.json"));
-            }
-        }
-    }
-
     app.path()
         .app_data_dir()
         .map(|dir| dir.join("server-trial-state.json"))
@@ -164,8 +158,10 @@ fn inspect_trial_status(app: &tauri::AppHandle) -> TrialStatus {
 
     let state = match fs::read_to_string(&state_path)
         .map_err(|err| format!("failed to read server trial state: {err}"))
-        .and_then(|content| serde_json::from_str::<TrialState>(&content).map_err(|err| format!("failed to parse server trial state: {err}")))
-    {
+        .and_then(|content| {
+            serde_json::from_str::<TrialState>(&content)
+                .map_err(|err| format!("failed to parse server trial state: {err}"))
+        }) {
         Ok(state) => state,
         Err(err) => {
             return TrialStatus {
@@ -223,7 +219,10 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![get_backend_port, get_trial_status])
         .setup(|app| {
-            let data_dir = app.path().app_data_dir().expect("failed to get app data dir");
+            let data_dir = app
+                .path()
+                .app_data_dir()
+                .expect("failed to get app data dir");
             let port_file = data_dir.join("backend-port.txt");
             let app_state = AppState {
                 backend_process: Mutex::new(None),
@@ -262,13 +261,18 @@ fn main() {
                         }
                     }
                 } else {
-                    eprintln!("Trial check blocked backend startup: {}", trial_status.message);
+                    eprintln!(
+                        "Trial check blocked backend startup: {}",
+                        trial_status.message
+                    );
                 }
             }
 
             #[cfg(debug_assertions)]
             {
-                println!("Development mode: Backend should be started manually via 'npm run dev:all'");
+                println!(
+                    "Development mode: Backend should be started manually via 'npm run dev:all'"
+                );
             }
 
             app.manage(app_state);

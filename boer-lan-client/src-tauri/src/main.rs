@@ -52,7 +52,10 @@ fn format_remaining_seconds(remaining_seconds: u64) -> String {
     }
 
     if remaining_seconds >= HOUR_SECONDS {
-        return format!("{} 小时", (remaining_seconds + HOUR_SECONDS - 1) / HOUR_SECONDS);
+        return format!(
+            "{} 小时",
+            (remaining_seconds + HOUR_SECONDS - 1) / HOUR_SECONDS
+        );
     }
 
     format!("{} 分钟", ((remaining_seconds + 59) / 60).max(1))
@@ -75,15 +78,6 @@ fn machine_hash() -> String {
 }
 
 fn trial_state_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(program_data) = env::var("ProgramData") {
-            if !program_data.trim().is_empty() {
-                return Ok(PathBuf::from(program_data).join("BoerLAN").join("client-trial-state.json"));
-            }
-        }
-    }
-
     app.path()
         .app_data_dir()
         .map(|dir| dir.join("client-trial-state.json"))
@@ -92,9 +86,11 @@ fn trial_state_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 
 fn write_state(path: &PathBuf, state: &TrialState) -> Result<(), String> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|err| format!("failed to create client trial dir: {err}"))?;
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("failed to create client trial dir: {err}"))?;
     }
-    let content = serde_json::to_string(state).map_err(|err| format!("failed to encode client trial state: {err}"))?;
+    let content = serde_json::to_string(state)
+        .map_err(|err| format!("failed to encode client trial state: {err}"))?;
     fs::write(path, content).map_err(|err| format!("failed to write client trial state: {err}"))
 }
 
@@ -128,8 +124,10 @@ fn inspect_trial_status(app: &tauri::AppHandle) -> TrialStatus {
     let mut state = if state_path.exists() {
         match fs::read_to_string(&state_path)
             .map_err(|err| format!("failed to read client trial state: {err}"))
-            .and_then(|content| serde_json::from_str::<TrialState>(&content).map_err(|err| format!("failed to parse client trial state: {err}")))
-        {
+            .and_then(|content| {
+                serde_json::from_str::<TrialState>(&content)
+                    .map_err(|err| format!("failed to parse client trial state: {err}"))
+            }) {
             Ok(state) => state,
             Err(err) => {
                 return TrialStatus {
