@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -50,7 +51,35 @@ var (
 	db     *gorm.DB
 )
 
+func setupLogFile() *os.File {
+	// 日志文件放在程序所在目录下的 logs 文件夹
+	exePath, err := os.Executable()
+	if err != nil {
+		exePath = "."
+	}
+	logDir := filepath.Join(filepath.Dir(exePath), "logs")
+	os.MkdirAll(logDir, 0755)
+
+	logFile := filepath.Join(logDir, fmt.Sprintf("server_%s.log", time.Now().Format("2006-01-02")))
+	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		log.Printf("Failed to open log file %s: %v, logging to console only", logFile, err)
+		return nil
+	}
+
+	// 同时输出到控制台和文件
+	log.SetOutput(io.MultiWriter(os.Stdout, f))
+	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
+	log.Printf("Log file: %s", logFile)
+	return f
+}
+
 func main() {
+	logFile := setupLogFile()
+	if logFile != nil {
+		defer logFile.Close()
+	}
+
 	trialStatus, err := trial.Ensure()
 	if err != nil {
 		log.Fatalf("Trial validation failed: %s", trialStatus.Message)
@@ -87,6 +116,11 @@ func main() {
 	externalDBSyncWorker := service.NewExternalDBSyncService(db)
 	externalDBSyncWorker.Start()
 	defer externalDBSyncWorker.Stop()
+
+	// Start TCP server for device communication
+	tcpServer := service.NewTCPServer(db)
+	tcpServer.Start()
+	defer tcpServer.Stop()
 
 	// Start server
 	addr := fmt.Sprintf(":%d", config.Server.Port)
