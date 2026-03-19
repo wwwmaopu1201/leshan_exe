@@ -71,6 +71,7 @@ func (h *SystemHandler) GetServerInfo(c *gin.Context) {
 		"data": gin.H{
 			"ips":     ips,
 			"port":    h.serverPort,
+			"tcpPort": service.TCPPort,
 			"workDir": workDir,
 			"dataDir": dataDir,
 			"os":      runtime.GOOS,

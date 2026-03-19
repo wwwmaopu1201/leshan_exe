@@ -26,7 +26,7 @@
       <div class="top-header">
         <div class="server-info">
           <span>服务器端口: <strong>{{ serverInfo.port }}</strong></span>
-          <span>服务器IP: <strong>{{ serverInfo.ips.join(', ') }}</strong></span>
+          <span>服务器IP: <strong>{{ serverAddress }}</strong></span>
         </div>
         <div>
           <el-button @click="logout" size="small">退出登录</el-button>
@@ -59,6 +59,7 @@ export default {
       serverInfo: {
         ips: [],
         port: 8088,
+        tcpPort: 38400,
         workDir: '',
         dataDir: '',
         os: '',
@@ -69,6 +70,15 @@ export default {
   computed: {
     currentPath() {
       return this.$route.path
+    },
+    serverAddress() {
+      const ips = Array.isArray(this.serverInfo.ips) ? this.serverInfo.ips.filter(Boolean) : []
+      if (!ips.length) {
+        return '-'
+      }
+
+      const tcpPort = Number(this.serverInfo.tcpPort || 0)
+      return tcpPort > 0 ? `${ips.join(', ')}:${tcpPort}` : ips.join(', ')
     }
   },
   mounted() {
