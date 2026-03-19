@@ -15,17 +15,19 @@ import (
 )
 
 const (
-	trialDuration   = 72 * time.Hour
-	rollbackLeeway  = 10 * time.Minute
-	stateFolderName = "BoerLAN"
-	stateFileName   = "server-trial-state.json"
+	trialDuration      = 72 * time.Hour
+	rollbackLeeway     = 10 * time.Minute
+	trialPolicyVersion = 2
+	stateFolderName    = "BoerLAN"
+	stateFileName      = "server-trial-state.json"
 )
 
 type State struct {
-	MachineHash string `json:"machineHash"`
-	FirstSeenAt int64  `json:"firstSeenAt"`
-	LastSeenAt  int64  `json:"lastSeenAt"`
-	LaunchCount int64  `json:"launchCount"`
+	MachineHash   string `json:"machineHash"`
+	FirstSeenAt   int64  `json:"firstSeenAt"`
+	LastSeenAt    int64  `json:"lastSeenAt"`
+	LaunchCount   int64  `json:"launchCount"`
+	PolicyVersion int    `json:"policyVersion,omitempty"`
 }
 
 type Status struct {
@@ -59,10 +61,11 @@ func Ensure() (*Status, error) {
 
 	if !exists {
 		state = &State{
-			MachineHash: machineHash,
-			FirstSeenAt: now.Unix(),
-			LastSeenAt:  now.Unix(),
-			LaunchCount: 1,
+			MachineHash:   machineHash,
+			FirstSeenAt:   now.Unix(),
+			LastSeenAt:    now.Unix(),
+			LaunchCount:   1,
+			PolicyVersion: trialPolicyVersion,
 		}
 		if err := writeState(statePath, state); err != nil {
 			return nil, err
@@ -75,6 +78,13 @@ func Ensure() (*Status, error) {
 		status.Valid = false
 		status.Message = "试用授权已绑定到其他设备，无法继续使用"
 		return status, errors.New(status.Message)
+	}
+
+	if state.PolicyVersion < trialPolicyVersion {
+		state.FirstSeenAt = now.Unix()
+		state.LastSeenAt = now.Unix()
+		state.LaunchCount = 0
+		state.PolicyVersion = trialPolicyVersion
 	}
 
 	lastSeen := time.Unix(state.LastSeenAt, 0)

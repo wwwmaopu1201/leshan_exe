@@ -16,12 +16,18 @@ struct AppState {
     port_file: PathBuf,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct TrialState {
+    #[serde(rename = "machineHash", default)]
+    machine_hash: String,
     #[serde(rename = "firstSeenAt")]
     first_seen_at: u64,
     #[serde(rename = "lastSeenAt")]
     last_seen_at: u64,
+    #[serde(rename = "launchCount", default)]
+    launch_count: u64,
+    #[serde(rename = "policyVersion", default)]
+    policy_version: u32,
 }
 
 #[derive(Debug, Serialize)]
@@ -36,6 +42,7 @@ struct TrialStatus {
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 const TRIAL_DURATION_SECONDS: u64 = 3 * 24 * 60 * 60;
 const ROLLBACK_LEEWAY_SECONDS: u64 = 10 * 60;
+const TRIAL_POLICY_VERSION: u32 = 2;
 
 fn backend_binary_name() -> &'static str {
     #[cfg(target_os = "windows")]
@@ -122,6 +129,16 @@ fn trial_state_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         .map_err(|err| format!("failed to resolve server trial path: {err}"))
 }
 
+fn write_trial_state(path: &PathBuf, state: &TrialState) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("failed to create server trial dir: {err}"))?;
+    }
+    let content = serde_json::to_string(state)
+        .map_err(|err| format!("failed to encode server trial state: {err}"))?;
+    fs::write(path, content).map_err(|err| format!("failed to write server trial state: {err}"))
+}
+
 fn inspect_trial_status(app: &tauri::AppHandle) -> TrialStatus {
     let state_path = match trial_state_path(app) {
         Ok(path) => path,
@@ -156,7 +173,7 @@ fn inspect_trial_status(app: &tauri::AppHandle) -> TrialStatus {
         };
     }
 
-    let state = match fs::read_to_string(&state_path)
+    let mut state = match fs::read_to_string(&state_path)
         .map_err(|err| format!("failed to read server trial state: {err}"))
         .and_then(|content| {
             serde_json::from_str::<TrialState>(&content)
@@ -172,6 +189,22 @@ fn inspect_trial_status(app: &tauri::AppHandle) -> TrialStatus {
             }
         }
     };
+
+    if state.policy_version < TRIAL_POLICY_VERSION {
+        state.first_seen_at = now;
+        state.last_seen_at = now;
+        state.launch_count = 0;
+        state.policy_version = TRIAL_POLICY_VERSION;
+
+        if let Err(err) = write_trial_state(&state_path, &state) {
+            return TrialStatus {
+                valid: false,
+                message: format!("试用状态写入失败：{err}"),
+                expires_at: None,
+                remaining_seconds: 0,
+            };
+        }
+    }
 
     if now + ROLLBACK_LEEWAY_SECONDS < state.last_seen_at {
         return TrialStatus {

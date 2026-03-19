@@ -11,6 +11,7 @@ use tauri::Manager;
 
 const TRIAL_DURATION_SECONDS: u64 = 3 * 24 * 60 * 60;
 const ROLLBACK_LEEWAY_SECONDS: u64 = 10 * 60;
+const TRIAL_POLICY_VERSION: u32 = 2;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct TrialState {
@@ -22,6 +23,8 @@ struct TrialState {
     last_seen_at: u64,
     #[serde(rename = "launchCount")]
     launch_count: u64,
+    #[serde(rename = "policyVersion", default)]
+    policy_version: u32,
 }
 
 #[derive(Debug, Serialize)]
@@ -144,6 +147,7 @@ fn inspect_trial_status(app: &tauri::AppHandle) -> TrialStatus {
             first_seen_at: now,
             last_seen_at: now,
             launch_count: 0,
+            policy_version: TRIAL_POLICY_VERSION,
         }
     };
 
@@ -154,6 +158,13 @@ fn inspect_trial_status(app: &tauri::AppHandle) -> TrialStatus {
             expires_at: Some(state.first_seen_at + TRIAL_DURATION_SECONDS),
             remaining_seconds: 0,
         };
+    }
+
+    if state.policy_version < TRIAL_POLICY_VERSION {
+        state.first_seen_at = now;
+        state.last_seen_at = now;
+        state.launch_count = 0;
+        state.policy_version = TRIAL_POLICY_VERSION;
     }
 
     if now + ROLLBACK_LEEWAY_SECONDS < state.last_seen_at {
