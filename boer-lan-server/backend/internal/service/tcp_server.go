@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"net"
 	"sync"
 	"time"
@@ -9,7 +10,7 @@ import (
 )
 
 const (
-	TCPPort              = 2000
+	TCPPort              = 38400
 	HeartbeatTimeout     = 60 * time.Second
 	OfflineCheckInterval = 15 * time.Second
 )
@@ -87,7 +88,7 @@ func (s *TCPServer) Stop() {
 
 func (s *TCPServer) serve() {
 	var err error
-	s.listener, err = net.Listen("tcp", ":2000")
+	s.listener, err = net.Listen("tcp", fmt.Sprintf(":%d", TCPPort))
 	if err != nil {
 		emitTCPLog(s.db, "error", true, "[TCP] Failed to listen on port %d: %v", TCPPort, err)
 		return
