@@ -26,7 +26,8 @@
       <div class="top-header">
         <div class="server-info">
           <span>服务器端口: <strong>{{ serverInfo.port }}</strong></span>
-          <span>服务器IP: <strong>{{ serverAddress }}</strong></span>
+          <span>服务器IP: <strong>{{ serverIpText }}</strong></span>
+          <span>设备TCP端口: <strong>{{ serverInfo.tcpPort || '-' }}</strong></span>
         </div>
         <div>
           <el-button @click="logout" size="small">退出登录</el-button>
@@ -71,14 +72,9 @@ export default {
     currentPath() {
       return this.$route.path
     },
-    serverAddress() {
+    serverIpText() {
       const ips = Array.isArray(this.serverInfo.ips) ? this.serverInfo.ips.filter(Boolean) : []
-      if (!ips.length) {
-        return '-'
-      }
-
-      const tcpPort = Number(this.serverInfo.tcpPort || 0)
-      return tcpPort > 0 ? `${ips.join(', ')}:${tcpPort}` : ips.join(', ')
+      return ips.length ? ips.join(', ') : '-'
     }
   },
   mounted() {
