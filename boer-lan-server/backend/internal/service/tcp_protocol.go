@@ -17,29 +17,29 @@ const (
 // ParamType + ParamNo 指令常量
 const (
 	// 注册
-	PTRegister    uint16 = 0x0B2A
-	PNRegister    uint16 = 0x0002
+	PTRegister uint16 = 0x0B2A
+	PNRegister uint16 = 0x0002
 	// 心跳
-	PTHeartbeat   uint16 = 0x0B2A
-	PNHeartbeat   uint16 = 0x0001
+	PTHeartbeat uint16 = 0x0B2A
+	PNHeartbeat uint16 = 0x0001
 	// 时间同步
-	PTTimeSync    uint16 = 0x0B2A
-	PNTimeSync    uint16 = 0x0003
+	PTTimeSync uint16 = 0x0B2A
+	PNTimeSync uint16 = 0x0003
 	// 设备信息（设备型号+编号+名称）
-	PTDeviceInfo  uint16 = 0x1302
-	PNDeviceInfo  uint16 = 0x10FA
+	PTDeviceInfo uint16 = 0x1302
+	PNDeviceInfo uint16 = 0x10FA
 	// 主板SN
 	PTMainboardSN uint16 = 0x1302
 	PNMainboardSN uint16 = 0x157C
 	// 开始/停止缝制
-	PTSewing      uint16 = 0x0B29
-	PNSewing      uint16 = 0x0032
+	PTSewing uint16 = 0x0B29
+	PNSewing uint16 = 0x0032
 	// 报警
-	PTAlarm       uint16 = 0x0B97
-	PNAlarm       uint16 = 0x0001
+	PTAlarm uint16 = 0x0B97
+	PNAlarm uint16 = 0x0001
 	// 生产数据
-	PTProduction  uint16 = 0x0B2A
-	PNProduction  uint16 = 0x000C
+	PTProduction uint16 = 0x0B2A
+	PNProduction uint16 = 0x000C
 )
 
 // Packet 协议数据包
@@ -147,18 +147,41 @@ func CRC16Modbus(data []byte) uint16 {
 // findHeader 在字节流中寻找 0x44 0x54 包头
 func findHeader(reader io.Reader) error {
 	buf := make([]byte, 1)
+	sample := make([]byte, 0, 32)
+	bytesRead := 0
 	for {
 		if _, err := io.ReadFull(reader, buf); err != nil {
-			return err
+			return wrapHeaderReadError(err, sample, bytesRead)
+		}
+		bytesRead++
+		if len(sample) < cap(sample) {
+			sample = append(sample, buf[0])
 		}
 		if buf[0] != HeaderByte1 {
 			continue
 		}
 		if _, err := io.ReadFull(reader, buf); err != nil {
-			return err
+			return wrapHeaderReadError(err, sample, bytesRead)
+		}
+		bytesRead++
+		if len(sample) < cap(sample) {
+			sample = append(sample, buf[0])
 		}
 		if buf[0] == HeaderByte2 {
 			return nil
 		}
 	}
+}
+
+func wrapHeaderReadError(err error, sample []byte, bytesRead int) error {
+	if err == nil {
+		return nil
+	}
+	if bytesRead == 0 {
+		return err
+	}
+	if len(sample) == 0 {
+		return fmt.Errorf("read %d bytes before header match: %w", bytesRead, err)
+	}
+	return fmt.Errorf("read %d bytes before header match, sample=% X: %w", bytesRead, sample, err)
 }

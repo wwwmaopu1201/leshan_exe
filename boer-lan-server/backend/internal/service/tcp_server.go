@@ -1,7 +1,6 @@
 package service
 
 import (
-	"log"
 	"net"
 	"sync"
 	"time"
@@ -10,8 +9,8 @@ import (
 )
 
 const (
-	TCPPort             = 2000
-	HeartbeatTimeout    = 60 * time.Second
+	TCPPort              = 2000
+	HeartbeatTimeout     = 60 * time.Second
 	OfflineCheckInterval = 15 * time.Second
 )
 
@@ -90,10 +89,10 @@ func (s *TCPServer) serve() {
 	var err error
 	s.listener, err = net.Listen("tcp", ":2000")
 	if err != nil {
-		log.Printf("[TCP] Failed to listen on port %d: %v", TCPPort, err)
+		emitTCPLog(s.db, "error", true, "[TCP] Failed to listen on port %d: %v", TCPPort, err)
 		return
 	}
-	log.Printf("[TCP] Server listening on port %d", TCPPort)
+	emitTCPLog(s.db, "info", true, "[TCP] Server listening on port %d", TCPPort)
 
 	for {
 		conn, err := s.listener.Accept()
@@ -102,7 +101,7 @@ func (s *TCPServer) serve() {
 			case <-s.stopCh:
 				return
 			default:
-				log.Printf("[TCP] Accept error: %v", err)
+				emitTCPLog(s.db, "error", true, "[TCP] Accept error: %v", err)
 				continue
 			}
 		}
@@ -124,11 +123,10 @@ func (s *TCPServer) offlineChecker() {
 			now := time.Now()
 			for _, dc := range s.connMgr.GetAll() {
 				if now.Sub(dc.lastHeartbeat) > HeartbeatTimeout {
-					log.Printf("[TCP] Device %s heartbeat timeout, closing connection", dc.deviceCode)
+					emitTCPLog(s.db, "warn", true, "[TCP] Device %s heartbeat timeout, closing connection", dc.deviceCode)
 					dc.conn.Close()
 				}
 			}
 		}
 	}
 }
-

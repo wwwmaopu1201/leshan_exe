@@ -1,6 +1,6 @@
 {
   "name": "boer-lan-server",
-  "version": "1.0.0",
+  "version": "1.0.6",
   "scripts": {
     "dev": "vite",
     "dev:backend": "cd backend && go run cmd/server/main.go",

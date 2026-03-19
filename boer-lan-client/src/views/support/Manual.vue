@@ -45,7 +45,7 @@
         <div class="content-header">
           <h2>{{ $t('support.userManual') }}</h2>
           <div class="header-actions">
-            <div class="version">{{ $t('support.version') }}: v1.0.0</div>
+            <div class="version">{{ $t('support.version') }}: v1.0.6</div>
             <el-button size="small" type="primary" icon="el-icon-download" @click="downloadManual">
               下载说明
             </el-button>
@@ -194,7 +194,7 @@ export default {
       const url = `${process.env.BASE_URL}manuals/client-user-manual.pdf`
       const link = document.createElement('a')
       link.href = url
-      link.download = '局域网客户端操作说明-v1.0.0.pdf'
+      link.download = '局域网客户端操作说明-v1.0.6.pdf'
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)

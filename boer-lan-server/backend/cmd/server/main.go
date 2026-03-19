@@ -47,11 +47,18 @@ type Config struct {
 }
 
 var (
-	config Config
-	db     *gorm.DB
+	config             Config
+	db                 *gorm.DB
+	runtimeLogSettings LogSettings
 )
 
-func setupLogFile() *os.File {
+type LogSettings struct {
+	LogToStdout         bool
+	EnableHTTPAccessLog bool
+	GORMLogLevel        logger.LogLevel
+}
+
+func setupLogging(settings LogSettings) *os.File {
 	// 日志文件放在程序所在目录下的 logs 文件夹
 	exePath, err := os.Executable()
 	if err != nil {
@@ -67,15 +74,82 @@ func setupLogFile() *os.File {
 		return nil
 	}
 
-	// 同时输出到控制台和文件
-	log.SetOutput(io.MultiWriter(os.Stdout, f))
+	writers := []io.Writer{f}
+	if settings.LogToStdout {
+		writers = append(writers, os.Stdout)
+	}
+
+	log.SetOutput(io.MultiWriter(writers...))
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
 	log.Printf("Log file: %s", logFile)
 	return f
 }
 
+func parseEnvBool(name string, fallback bool) bool {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return fallback
+	}
+
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func parseGORMLogLevel(value string, fallback logger.LogLevel) logger.LogLevel {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "silent":
+		return logger.Silent
+	case "error":
+		return logger.Error
+	case "warn", "warning":
+		return logger.Warn
+	case "info":
+		return logger.Info
+	default:
+		return fallback
+	}
+}
+
+func resolveLogSettings() LogSettings {
+	quietMode := parseEnvBool("QUIET_MODE", true)
+
+	settings := LogSettings{
+		LogToStdout:         !quietMode,
+		EnableHTTPAccessLog: !quietMode,
+		GORMLogLevel:        logger.Info,
+	}
+	if quietMode {
+		settings.GORMLogLevel = logger.Error
+	}
+
+	settings.LogToStdout = parseEnvBool("LOG_TO_STDOUT", settings.LogToStdout)
+	settings.EnableHTTPAccessLog = parseEnvBool("HTTP_ACCESS_LOG", settings.EnableHTTPAccessLog)
+
+	if level := strings.TrimSpace(os.Getenv("GORM_LOG_LEVEL")); level != "" {
+		settings.GORMLogLevel = parseGORMLogLevel(level, settings.GORMLogLevel)
+	}
+
+	return settings
+}
+
+func newGORMLogger(level logger.LogLevel) logger.Interface {
+	return logger.New(
+		log.New(log.Writer(), "", log.LstdFlags),
+		logger.Config{
+			SlowThreshold:             time.Second,
+			LogLevel:                  level,
+			IgnoreRecordNotFoundError: true,
+			Colorful:                  false,
+		},
+	)
+}
+
 func main() {
-	logFile := setupLogFile()
+	runtimeLogSettings = resolveLogSettings()
+	logFile := setupLogging(runtimeLogSettings)
 	if logFile != nil {
 		defer logFile.Close()
 	}
@@ -100,7 +174,11 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	r := gin.Default()
+	r := gin.New()
+	if runtimeLogSettings.EnableHTTPAccessLog {
+		r.Use(gin.LoggerWithWriter(log.Writer()))
+	}
+	r.Use(gin.RecoveryWithWriter(log.Writer()))
 
 	// CORS middleware
 	r.Use(corsMiddleware())
@@ -237,7 +315,7 @@ func initDB() {
 		}
 
 		db, err = gorm.Open(sqlite.Open(config.Database.Path), &gorm.Config{
-			Logger: logger.Default.LogMode(logger.Info),
+			Logger: newGORMLogger(runtimeLogSettings.GORMLogLevel),
 		})
 		if err != nil {
 			log.Fatalf("Failed to connect to SQLite database: %v", err)
@@ -254,7 +332,7 @@ func initDB() {
 			config.Database.Charset,
 		)
 		db, err = gorm.Open(mysql.Open(dsn), &gorm.Config{
-			Logger: logger.Default.LogMode(logger.Info),
+			Logger: newGORMLogger(runtimeLogSettings.GORMLogLevel),
 		})
 		if err != nil {
 			log.Fatalf("Failed to connect to MySQL database: %v", err)

@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	trialDuration   = 24 * time.Hour
+	trialDuration   = 72 * time.Hour
 	rollbackLeeway  = 10 * time.Minute
 	stateFolderName = "BoerLAN"
 	stateFileName   = "server-trial-state.json"

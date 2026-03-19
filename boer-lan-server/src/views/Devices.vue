@@ -181,6 +181,7 @@ export default {
       moving: false,
       devices: [],
       groups: [],
+      refreshTimer: null,
       total: 0,
       page: 1,
       pageSize: 20,
@@ -208,6 +209,15 @@ export default {
   mounted() {
     this.loadGroups()
     this.loadDevices()
+    this.refreshTimer = setInterval(() => {
+      this.autoRefreshDevices()
+    }, 5000)
+  },
+  beforeDestroy() {
+    if (this.refreshTimer) {
+      clearInterval(this.refreshTimer)
+      this.refreshTimer = null
+    }
   },
   methods: {
     async loadGroups() {
@@ -248,6 +258,18 @@ export default {
       } finally {
         this.loading = false
       }
+    },
+    autoRefreshDevices() {
+      if (this.loading || this.saving || this.moving) {
+        return
+      }
+      if (this.editDialogVisible || this.moveDialogVisible) {
+        return
+      }
+      if (this.selectedDeviceIds.length > 0) {
+        return
+      }
+      this.loadDevices()
     },
     handleSearch() {
       this.page = 1

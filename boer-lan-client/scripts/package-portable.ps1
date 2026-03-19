@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 
-$appVersion = 'V1.0.5'
+$appVersion = 'V1.0.6'
 $appExeName = "Boer-LAN-Manager-$appVersion.exe"
 
 $releaseDir = (Resolve-Path (Join-Path $PSScriptRoot '..\src-tauri\target\release')).Path
@@ -10,7 +10,7 @@ $archivePath = Join-Path $portableRoot 'Boer-LAN-Manager-windows-portable.zip'
 
 $appExe = @(
   (Join-Path $releaseDir 'boer-lan-client.exe'),
-  (Join-Path $releaseDir 'Boer-LAN-Manager-V1.0.5.exe')
+  (Join-Path $releaseDir 'Boer-LAN-Manager-V1.0.6.exe')
 ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 
 if (-not $appExe) {
