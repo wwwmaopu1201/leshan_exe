@@ -1,93 +1,155 @@
 <template>
-  <div>
-    <div class="page-title">账号管理</div>
-    <el-card>
-      <el-form :inline="true" :model="searchForm" style="margin-bottom: 12px;">
-        <el-form-item label="账号/账号姓名">
-          <el-input
-            v-model="searchForm.keyword"
-            clearable
-            placeholder="输入账号/账号姓名/手机号"
-            @keyup.enter.native="handleSearch"
-          />
-        </el-form-item>
-        <el-form-item label="创建时间">
-          <el-date-picker
-            v-model="searchForm.dateRange"
-            type="daterange"
-            value-format="yyyy-MM-dd"
-            range-separator="至"
-            start-placeholder="开始日期"
-            end-placeholder="结束日期"
-          />
-        </el-form-item>
-        <el-form-item label="角色">
-          <el-select v-model="searchForm.role" clearable placeholder="全部角色">
-            <el-option
-              v-for="item in roles"
-              :key="item.id || item.ID"
-              :label="item.name"
-              :value="item.name"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" icon="el-icon-search" @click="handleSearch">搜索</el-button>
-          <el-button icon="el-icon-refresh" @click="handleReset">重置</el-button>
-        </el-form-item>
-      </el-form>
+  <div class="page-shell">
+    <div class="page-header">
+      <div class="page-title-block">
+        <h2>账号管理</h2>
+        <p>左侧直接维护分组，右侧维护账号和角色，用于按不同工厂配置账号可见范围。</p>
+      </div>
+    </div>
 
-      <div style="margin-bottom: 16px; display: flex; gap: 8px;">
-        <el-button type="primary" icon="el-icon-plus" @click="openCreateDialog">新建账号</el-button>
-        <el-button icon="el-icon-share" :disabled="selectedUserIds.length === 0" @click="openMoveDialog">
-          批量移动分组
-        </el-button>
-        <el-button icon="el-icon-refresh" @click="loadData">刷新</el-button>
+    <div class="panel-layout">
+      <div class="panel-side">
+        <group-manager-panel
+          ref="groupManagerRef"
+          v-model="groupFilter"
+          title="分组管理"
+          subtitle="分组管理已并入账号管理页面"
+          @refresh="loadData"
+        />
       </div>
 
-      <el-table ref="userTableRef" :data="users" v-loading="loading" style="width: 100%;" @selection-change="handleSelectionChange">
-        <el-table-column type="selection" width="48" />
-        <el-table-column prop="username" label="账号" min-width="130" />
-        <el-table-column prop="nickname" label="账号姓名" min-width="120" />
-        <el-table-column prop="role" label="角色" width="100" />
-        <el-table-column prop="createTime" label="创建时间" width="170" />
-        <el-table-column label="可见分组" min-width="180">
-          <template slot-scope="{ row }">
-            {{ formatGroupName(row) }}
-          </template>
-        </el-table-column>
-        <el-table-column label="权限" min-width="260">
-          <template slot-scope="{ row }">
-            <el-tag
-              v-for="item in getPermissionTags(row.permissions)"
-              :key="`${row.id || row.ID}-${item.key}`"
-              size="mini"
-              style="margin-right: 4px; margin-bottom: 4px;"
-            >
-              {{ item.label }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="disabled" label="状态" width="100">
-          <template slot-scope="{ row }">
-            <el-tag :type="row.disabled ? 'danger' : 'success'">
-              {{ row.disabled ? '已禁用' : '正常' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="180">
-          <template slot-scope="{ row }">
-            <el-button size="small" @click="openEditDialog(row)" icon="el-icon-edit">编辑</el-button>
-            <el-button size="small" type="danger" @click="deleteUser(row)" icon="el-icon-delete">删除</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-card>
+      <div class="panel-main">
+        <div class="filter-panel">
+          <el-form :inline="true" :model="searchForm">
+            <el-form-item label="账号/账号姓名">
+              <el-input
+                v-model.trim="searchForm.keyword"
+                clearable
+                placeholder="输入账号/账号姓名/手机号"
+                @keyup.enter.native="handleSearch"
+              />
+            </el-form-item>
+            <el-form-item label="创建时间">
+              <el-date-picker
+                v-model="searchForm.dateRange"
+                type="daterange"
+                value-format="yyyy-MM-dd"
+                range-separator="至"
+                start-placeholder="开始日期"
+                end-placeholder="结束日期"
+              />
+            </el-form-item>
+            <el-form-item label="角色">
+              <el-select v-model="searchForm.role" clearable placeholder="全部角色">
+                <el-option
+                  v-for="item in roles"
+                  :key="item.id || item.ID"
+                  :label="item.name"
+                  :value="item.name"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" icon="el-icon-search" @click="handleSearch">搜索</el-button>
+              <el-button icon="el-icon-refresh" @click="handleReset">重置</el-button>
+            </el-form-item>
+          </el-form>
+        </div>
+
+        <div class="surface-card">
+          <div class="action-row">
+            <div class="action-group">
+              <el-button
+                size="small"
+                :type="groupFilter.mode === 'all' ? 'primary' : 'default'"
+                plain
+                @click="setGroupScope('all')"
+              >
+                全部账号
+              </el-button>
+              <el-button
+                size="small"
+                :type="groupFilter.mode === 'ungrouped' ? 'danger' : 'default'"
+                plain
+                @click="setGroupScope('ungrouped')"
+              >
+                未分组账号
+              </el-button>
+              <div class="soft-note">
+                <i class="el-icon-folder-opened"></i>
+                <span>当前范围：{{ scopeLabel }}，共 {{ filteredUsers.length }} 个账号</span>
+              </div>
+            </div>
+
+            <div class="action-group">
+              <el-button type="primary" icon="el-icon-plus" @click="openCreateDialog">新建账号</el-button>
+              <el-button icon="el-icon-share" :disabled="selectedUserIds.length === 0" @click="openMoveDialog">
+                批量移动分组
+              </el-button>
+              <el-button icon="el-icon-refresh" @click="loadData">刷新</el-button>
+            </div>
+          </div>
+
+          <el-table
+            ref="userTableRef"
+            :data="filteredUsers"
+            v-loading="loading"
+            border
+            style="width: 100%; margin-top: 18px;"
+            :row-class-name="rowClassName"
+            @selection-change="handleSelectionChange"
+          >
+            <el-table-column type="selection" width="48" />
+            <el-table-column label="序号" width="70" align="center">
+              <template slot-scope="{ $index }">
+                {{ $index + 1 }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="username" label="账号" min-width="130" />
+            <el-table-column prop="nickname" label="账号姓名" min-width="120" />
+            <el-table-column prop="phone" label="手机号" width="130" />
+            <el-table-column prop="role" label="角色" width="100" />
+            <el-table-column prop="createTime" label="创建时间" width="170" />
+            <el-table-column label="可见分组" min-width="200">
+              <template slot-scope="{ row }">
+                {{ formatGroupName(row) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="权限" min-width="260">
+              <template slot-scope="{ row }">
+                <el-tag
+                  v-for="item in getPermissionTags(row.permissions)"
+                  :key="`${row.id || row.ID}-${item.key}`"
+                  size="mini"
+                  effect="plain"
+                  style="margin-right: 6px; margin-bottom: 6px;"
+                >
+                  {{ item.label }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="disabled" label="状态" width="100" align="center">
+              <template slot-scope="{ row }">
+                <span :class="['status-pill', row.disabled ? 'danger' : 'success']">
+                  {{ row.disabled ? '已禁用' : '正常' }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="180" align="center">
+              <template slot-scope="{ row }">
+                <el-button size="small" @click="openEditDialog(row)">编辑</el-button>
+                <el-button size="small" type="danger" @click="deleteUser(row)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </div>
+    </div>
 
     <el-dialog
       :title="form.id ? '编辑账号' : '新建账号'"
       :visible.sync="dialogVisible"
-      width="640px"
+      width="660px"
       @close="resetForm"
     >
       <el-form ref="userFormRef" :model="form" :rules="rules" label-width="110px">
@@ -109,7 +171,7 @@
         </el-form-item>
 
         <el-form-item label="账号姓名" prop="nickname">
-          <el-input v-model="form.nickname" placeholder="请输入账号姓名" />
+          <el-input v-model.trim="form.nickname" placeholder="请输入账号姓名" />
         </el-form-item>
 
         <el-form-item label="角色" prop="role">
@@ -124,11 +186,11 @@
         </el-form-item>
 
         <el-form-item label="邮箱">
-          <el-input v-model="form.email" placeholder="可选" />
+          <el-input v-model.trim="form.email" placeholder="可选" />
         </el-form-item>
 
         <el-form-item label="手机号" prop="phone">
-          <el-input v-model="form.phone" placeholder="请输入手机号" />
+          <el-input v-model.trim="form.phone" placeholder="请输入手机号" />
         </el-form-item>
 
         <el-form-item :label="isAdminRole(form.role) ? '可见分组' : '所属分组'">
@@ -156,7 +218,7 @@
               :value="item.id"
             />
           </el-select>
-          <div v-if="isAdminRole(form.role)" style="margin-top: 4px; color: #909399; line-height: 1.4;">
+          <div v-if="isAdminRole(form.role)" class="dialog-tip" style="margin-top: 6px;">
             管理员未选择分组时，默认可查看全部分组设备。
           </div>
         </el-form-item>
@@ -175,12 +237,13 @@
               v-for="item in getRolePermissionTags(form.role)"
               :key="item.key"
               size="mini"
-              style="margin-right: 4px; margin-bottom: 4px;"
+              effect="plain"
+              style="margin-right: 6px; margin-bottom: 6px;"
             >
               {{ item.label }}
             </el-tag>
           </div>
-          <div v-else style="color: #909399;">当前角色未配置权限</div>
+          <div v-else class="muted-text">当前角色未配置权限</div>
         </el-form-item>
       </el-form>
 
@@ -206,7 +269,7 @@
             />
           </el-select>
         </el-form-item>
-        <div style="color: #606266;">已选择 {{ selectedUserIds.length }} 个账号</div>
+        <div class="dialog-tip">已选择 {{ selectedUserIds.length }} 个账号</div>
       </el-form>
       <span slot="footer" class="dialog-footer">
         <el-button @click="moveDialogVisible = false">取消</el-button>
@@ -217,10 +280,15 @@
 </template>
 
 <script>
+import GroupManagerPanel from '@/components/GroupManagerPanel.vue'
+
 const DEFAULT_PERMISSION_KEYS = ['home', 'dashboard', 'deviceManagement', 'remoteMonitoring', 'fileManagement', 'statistics', 'employeeManagement']
 
 export default {
   name: 'Users',
+  components: {
+    GroupManagerPanel
+  },
   data() {
     return {
       loading: false,
@@ -238,6 +306,11 @@ export default {
         role: ''
       },
       dialogVisible: false,
+      groupFilter: {
+        mode: 'all',
+        groupId: null,
+        label: ''
+      },
       permissionOptions: [
         { key: 'home', label: '首页' },
         { key: 'dashboard', label: '数据看板' },
@@ -272,12 +345,47 @@ export default {
         ],
         nickname: [{ required: true, message: '请输入账号姓名', trigger: 'blur' }],
         role: [{ required: true, message: '请选择角色', trigger: 'change' }],
-        phone: [{ validator: (rule, value, callback) => {
-          const normalized = String(value || '').trim()
-          if (!normalized) return callback(new Error('请输入手机号'))
-          if (!/^1[3-9]\d{9}$/.test(normalized)) return callback(new Error('手机号格式不正确'))
-          return callback()
-        }, trigger: 'blur' }]
+        phone: [{
+          validator: (rule, value, callback) => {
+            const normalized = String(value || '').trim()
+            if (!normalized) return callback(new Error('请输入手机号'))
+            if (!/^1[3-9]\d{9}$/.test(normalized)) return callback(new Error('手机号格式不正确'))
+            return callback()
+          },
+          trigger: 'blur'
+        }]
+      }
+    }
+  },
+  computed: {
+    scopeLabel() {
+      if (this.groupFilter.mode === 'group') {
+        return this.groupFilter.label || '指定分组'
+      }
+      if (this.groupFilter.mode === 'ungrouped') {
+        return '未分组账号'
+      }
+      return '全部账号'
+    },
+    filteredUsers() {
+      if (this.groupFilter.mode === 'ungrouped') {
+        return this.users.filter(user => !this.normalizeGroupIds(user.groupIds, user.groupId).length)
+      }
+      if (this.groupFilter.mode === 'group' && this.groupFilter.groupId) {
+        const targetIds = this.collectDescendantGroupIds(Number(this.groupFilter.groupId))
+        return this.users.filter(user => this.normalizeGroupIds(user.groupIds, user.groupId).some(id => targetIds.includes(id)))
+      }
+      return this.users
+    }
+  },
+  watch: {
+    groupFilter: {
+      deep: true,
+      handler() {
+        this.selectedUserIds = []
+        this.$nextTick(() => {
+          this.$refs.userTableRef?.clearSelection()
+        })
       }
     }
   },
@@ -308,7 +416,7 @@ export default {
           }))
         }
         if (groupsRes.code === 0) {
-          this.groups = Array.isArray(groupsRes.data) ? groupsRes.data : []
+          this.groups = this.normalizeGroupList(Array.isArray(groupsRes.data) ? groupsRes.data : [])
         }
         if (rolesRes.code === 0) {
           this.roles = Array.isArray(rolesRes.data) ? rolesRes.data : []
@@ -326,6 +434,24 @@ export default {
       } finally {
         this.loading = false
       }
+    },
+    setGroupScope(mode) {
+      if (mode === 'ungrouped') {
+        this.groupFilter = {
+          mode: 'ungrouped',
+          groupId: null,
+          label: '未分组账号'
+        }
+        return
+      }
+      this.groupFilter = {
+        mode: 'all',
+        groupId: null,
+        label: ''
+      }
+    },
+    rowClassName({ row }) {
+      return this.normalizeGroupIds(row.groupIds, row.groupId).length ? '' : 'row-ungrouped'
     },
     handleSelectionChange(rows) {
       this.selectedUserIds = rows.map(item => item.id || item.ID).filter(Boolean)
@@ -387,6 +513,31 @@ export default {
           .map(item => Number(item))
           .filter(item => Number.isFinite(item) && item > 0)
       ))
+    },
+    normalizeGroupList(groups = []) {
+      return groups.map(item => ({
+        ...item,
+        id: item.id || item.ID,
+        parentId: item.parentId || item.ParentID || item.parent?.id || null
+      }))
+    },
+    collectDescendantGroupIds(groupId) {
+      const target = Number(groupId)
+      if (!Number.isFinite(target) || target <= 0) {
+        return []
+      }
+      const ids = [target]
+      const queue = [target]
+      while (queue.length) {
+        const current = queue.shift()
+        this.groups.forEach(group => {
+          if (Number(group.parentId) === current && !ids.includes(group.id)) {
+            ids.push(group.id)
+            queue.push(group.id)
+          }
+        })
+      }
+      return ids
     },
     parsePermissions(raw) {
       const defaultMap = this.permissionOptions.reduce((acc, item) => {
@@ -471,7 +622,7 @@ export default {
           return item?.name || '-'
         }).join('；')
       }
-      if (!user.group) return '-'
+      if (!user.group) return '未分组'
       if (user.group.parent) {
         return `${user.group.parent.name} / ${user.group.name}`
       }
@@ -508,7 +659,7 @@ export default {
       }
 
       let candidate = build(8)
-      const exists = (name) => this.users.some(item => item.username === name)
+      const exists = name => this.users.some(item => item.username === name)
       let tries = 0
       while (exists(candidate) && tries < 20) {
         candidate = build(8)
@@ -537,11 +688,15 @@ export default {
       }
     },
     resetForm() {
-      this.$refs.userFormRef?.resetFields()
+      this.$refs.userFormRef?.clearValidate()
     },
     async saveUser() {
+      const valid = await this.$refs.userFormRef.validate().catch(() => false)
+      if (!valid) {
+        return
+      }
+
       try {
-        await this.$refs.userFormRef.validate()
         this.saving = true
 
         const payload = {
@@ -592,7 +747,7 @@ export default {
     },
     async deleteUser(row) {
       try {
-        await this.$confirm(`确定要删除账号「${row.username}」吗?`, '警告', {
+        await this.$confirm(`确定要删除账号「${row.username}」吗？`, '警告', {
           type: 'warning'
         })
         const res = await this.$axios.delete('/user', {
@@ -613,9 +768,7 @@ export default {
 </script>
 
 <style scoped>
-.page-title {
-  font-size: 20px;
-  font-weight: bold;
-  margin-bottom: 20px;
+::v-deep .row-ungrouped td {
+  background: rgba(239, 90, 90, 0.045);
 }
 </style>

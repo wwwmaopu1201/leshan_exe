@@ -19,10 +19,10 @@ const routes = [
       { path: 'home', name: 'Home', component: () => import('@/views/Home.vue') },
       { path: 'tools', name: 'Tools', component: () => import('@/views/Tools.vue') },
       { path: 'database', name: 'Database', component: () => import('@/views/Database.vue') },
-      { path: 'groups', name: 'Groups', component: () => import('@/views/Groups.vue') },
+      { path: 'groups', redirect: '/users' },
       { path: 'roles', name: 'Roles', component: () => import('@/views/Roles.vue') },
       { path: 'users', name: 'Users', component: () => import('@/views/Users.vue') },
-      { path: 'operators', name: 'Operators', component: () => import('@/views/Operators.vue') },
+      { path: 'operators', redirect: '/users' },
       { path: 'devices', name: 'Devices', component: () => import('@/views/Devices.vue') }
     ]
   }

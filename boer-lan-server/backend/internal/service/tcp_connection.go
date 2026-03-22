@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
 	"boer-lan-server/internal/model"
@@ -21,9 +22,14 @@ type DeviceConnection struct {
 	db             *gorm.DB
 	deviceCode     string
 	deviceID       uint
+	deviceFlag     string
+	deviceModel    uint32
+	deviceName     string
 	lastHeartbeat  time.Time
 	connMgr        *ConnectionManager
 	warnedNoPacket bool
+	patternMu      sync.Mutex
+	patternPacketC chan *Packet
 }
 
 // NewDeviceConnection 创建新的设备连接处理器
@@ -98,7 +104,7 @@ func (dc *DeviceConnection) Handle() {
 			pkt.Addr2,
 			pkt.ParamType,
 			pkt.ParamNo,
-			int(pkt.FrameNo)+1,
+			int(pkt.FrameNo),
 			int(pkt.TotalFrames),
 			len(pkt.Data),
 			packetDataPreview(pkt.Data, 24),
@@ -109,6 +115,10 @@ func (dc *DeviceConnection) Handle() {
 
 // dispatch 根据ParamType和ParamNo分发处理
 func (dc *DeviceConnection) dispatch(pkt *Packet) {
+	if dc.routePatternPacket(pkt) {
+		return
+	}
+
 	switch {
 	case pkt.ParamType == PTRegister && pkt.ParamNo == PNRegister:
 		dc.handleRegister(pkt)
@@ -132,126 +142,184 @@ func (dc *DeviceConnection) dispatch(pkt *Packet) {
 	}
 }
 
+func (dc *DeviceConnection) beginPatternSession() (chan *Packet, func(), error) {
+	dc.patternMu.Lock()
+	defer dc.patternMu.Unlock()
+
+	if dc.patternPacketC != nil {
+		return nil, nil, fmt.Errorf("device %s pattern transfer busy", dc.deviceCode)
+	}
+
+	ch := make(chan *Packet, 64)
+	dc.patternPacketC = ch
+
+	cleanup := func() {
+		dc.patternMu.Lock()
+		defer dc.patternMu.Unlock()
+		if dc.patternPacketC == ch {
+			dc.patternPacketC = nil
+		}
+	}
+
+	return ch, cleanup, nil
+}
+
+func (dc *DeviceConnection) routePatternPacket(pkt *Packet) bool {
+	if !isPatternCommand(pkt) {
+		return false
+	}
+
+	dc.patternMu.Lock()
+	ch := dc.patternPacketC
+	dc.patternMu.Unlock()
+	if ch == nil {
+		return false
+	}
+
+	select {
+	case ch <- pkt:
+	default:
+		emitTCPLog(dc.db, "warn", true,
+			"[TCP] Pattern packet dropped due to full session buffer: device=%s type=0x%04X no=0x%04X",
+			dc.deviceCode, pkt.ParamType, pkt.ParamNo)
+	}
+	return true
+}
+
 // handleRegister 处理注册消息：回复注册确认
 func (dc *DeviceConnection) handleRegister(pkt *Packet) {
 	emitTCPLog(dc.db, "info", true, "[TCP] Register request from %s addr1=%d addr2=%d len=%d data=%s",
 		dc.conn.RemoteAddr(), pkt.Addr1, pkt.Addr2, len(pkt.Data), packetDataPreview(pkt.Data, 24))
-	// 回复注册：交换Addr1和Addr2，保持相同ParamType/ParamNo
-	reply := &Packet{
-		Addr1:       pkt.Addr2,
-		Addr2:       pkt.Addr1,
-		ParamType:   pkt.ParamType,
-		ParamNo:     pkt.ParamNo,
-		TotalFrames: 1,
-		FrameNo:     0,
-		Data:        pkt.Data,
-	}
-	dc.send(reply)
+	dc.send(buildProtocolReply(pkt, nil))
 }
 
 // handleDeviceInfo 处理设备信息：解析型号+编号+名称，upsert到数据库
 func (dc *DeviceConnection) handleDeviceInfo(pkt *Packet) {
-	if len(pkt.Data) < 4 {
-		emitTCPLog(dc.db, "warn", true, "[TCP] Device info data too short: %d bytes (expected at least 4)", len(pkt.Data))
+	if len(pkt.Data) < 8 {
+		emitTCPLog(dc.db, "warn", true, "[TCP] Device info data too short: %d bytes (expected at least 8)", len(pkt.Data))
 		return
 	}
 
-	// 数据格式：device_type(2B) + device_code(2B) + device_name(剩余)
-	// device_type: 设备类型编号
-	// device_code: 设备编号（16位整数）
-	// device_name: 设备名称（字符串，可能以0结尾）
-	deviceTypeCode := binary.BigEndian.Uint16(pkt.Data[0:2])
-	deviceCodeNum := binary.BigEndian.Uint16(pkt.Data[2:4])
-
-	// 设备名称从第4字节开始
-	deviceName := trimNullBytes(pkt.Data[4:])
-
-	// 根据类型编号映射设备类型和型号
-	deviceType, modelName := mapDeviceType(deviceTypeCode)
-
-	// 设备编号格式化为字符串
+	// 协议格式与 xieyi_test 一致：
+	// model(uint32) + deviceId(uint32) + name(utf8)
+	modelCode := binary.BigEndian.Uint32(pkt.Data[0:4])
+	deviceCodeNum := binary.BigEndian.Uint32(pkt.Data[4:8])
+	deviceName := normalizeProtocolText(pkt.Data[8:])
+	deviceType, modelName := mapDeviceModel(modelCode)
 	code := fmt.Sprintf("%d", deviceCodeNum)
-	if strings.TrimSpace(deviceName) == "" {
+	if deviceName == "" {
 		deviceName = "设备" + code
 	}
 
 	ip := extractIP(dc.conn.RemoteAddr().String())
+	now := time.Now()
+	mainboardSN := strings.TrimSpace(dc.deviceFlag)
 
-	emitTCPLog(dc.db, "info", true, "[TCP] Device info: type=%s model=%s code=%s name=%s ip=%s",
-		deviceType, modelName, code, deviceName, ip)
+	emitTCPLog(dc.db, "info", true,
+		"[TCP] Device info: modelCode=%d code=%s name=%s type=%s model=%s ip=%s flag=%s",
+		modelCode, code, deviceName, deviceType, modelName, ip, mainboardSN)
 
-	// Upsert设备记录
 	var device model.Device
-	result := dc.db.Where(model.Device{Code: code}).Assign(model.Device{
-		Name:        deviceName,
-		InitialName: deviceName,
-		Type:        deviceType,
-		ModelName:   modelName,
-		IP:          ip,
-		Status:      "online",
-		LastOnline:  time.Now(),
-	}).FirstOrCreate(&device)
-
-	if result.Error != nil {
-		emitTCPLog(dc.db, "error", true, "[TCP] Failed to upsert device %s: %v", code, result.Error)
+	err := dc.db.Where("code = ?", code).First(&device).Error
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		device = model.Device{
+			Code:        code,
+			Name:        deviceName,
+			InitialName: deviceName,
+			Type:        deviceType,
+			ModelName:   modelName,
+			MainboardSN: mainboardSN,
+			IP:          ip,
+			Status:      "online",
+			LastOnline:  now,
+		}
+		if err := dc.db.Create(&device).Error; err != nil {
+			emitTCPLog(dc.db, "error", true, "[TCP] Failed to create device %s: %v", code, err)
+			return
+		}
+	case err != nil:
+		emitTCPLog(dc.db, "error", true, "[TCP] Failed to query device %s: %v", code, err)
 		return
-	}
-
-	// 如果设备已存在，更新字段（FirstOrCreate在记录已存在时不执行Assign）
-	if result.RowsAffected == 0 {
-		dc.db.Model(&device).Updates(map[string]interface{}{
+	default:
+		updates := map[string]interface{}{
+			"type":        deviceType,
+			"model_name":  modelName,
 			"ip":          ip,
 			"status":      "online",
-			"last_online": time.Now(),
-		})
+			"last_online": now,
+		}
+		if strings.TrimSpace(device.Name) == "" {
+			updates["name"] = deviceName
+		}
+		if strings.TrimSpace(device.InitialName) == "" {
+			updates["initial_name"] = deviceName
+		}
+		if mainboardSN != "" {
+			updates["mainboard_sn"] = mainboardSN
+		}
+		if err := dc.db.Model(&device).Updates(updates).Error; err != nil {
+			emitTCPLog(dc.db, "error", true, "[TCP] Failed to update device %s: %v", code, err)
+			return
+		}
+	}
+
+	if dc.deviceCode != "" && dc.deviceCode != code && dc.connMgr != nil {
+		dc.connMgr.Unregister(dc.deviceCode, dc)
 	}
 
 	dc.deviceCode = code
 	dc.deviceID = device.ID
-	dc.connMgr.Register(code, dc)
+	dc.deviceModel = modelCode
+	dc.deviceName = deviceName
+	dc.lastHeartbeat = now
+	if dc.connMgr != nil {
+		dc.connMgr.Register(code, dc)
+	}
 
-	emitTCPLog(dc.db, "info", true, "[TCP] Device registered: code=%s id=%d name=%s ip=%s", code, device.ID, deviceName, ip)
+	emitTCPLog(dc.db, "info", true,
+		"[TCP] Device registered: code=%s id=%d name=%s modelCode=%d model=%s ip=%s",
+		code, device.ID, deviceName, modelCode, modelName, ip)
 }
 
-// handleMainboardSN 处理主板序列号
+// handleMainboardSN 处理设备标志符，兼容沿用 mainboard_sn 字段存储
 func (dc *DeviceConnection) handleMainboardSN(pkt *Packet) {
-	sn := trimNullBytes(pkt.Data)
+	sn := normalizeProtocolText(pkt.Data)
+	dc.deviceFlag = sn
 	if dc.deviceID == 0 {
-		emitTCPLog(dc.db, "warn", true, "[TCP] MainboardSN received before device registration: sn=%s remote=%s",
+		emitTCPLog(dc.db, "info", true, "[TCP] Device flag cached before device registration: flag=%s remote=%s",
 			sn, dc.conn.RemoteAddr())
 		return
 	}
-	dc.db.Model(&model.Device{}).Where("id = ?", dc.deviceID).Update("mainboard_sn", sn)
-	emitTCPLog(dc.db, "info", true, "[TCP] MainboardSN updated: device=%s sn=%s", dc.deviceCode, sn)
-}
-
-// handleTimeSync 处理时间同步：回复BCD编码的当前时间
-func (dc *DeviceConnection) handleTimeSync(pkt *Packet) {
-	now := time.Now()
-	// BCD编码：年(2B)+月(1B)+日(1B)+时(1B)+分(1B)+秒(1B) = 7字节
-	data := make([]byte, 7)
-	year := now.Year()
-	data[0] = toBCD(byte(year / 100))
-	data[1] = toBCD(byte(year % 100))
-	data[2] = toBCD(byte(now.Month()))
-	data[3] = toBCD(byte(now.Day()))
-	data[4] = toBCD(byte(now.Hour()))
-	data[5] = toBCD(byte(now.Minute()))
-	data[6] = toBCD(byte(now.Second()))
-
-	reply := &Packet{
-		Addr1:       pkt.Addr2,
-		Addr2:       pkt.Addr1,
-		ParamType:   pkt.ParamType,
-		ParamNo:     pkt.ParamNo,
-		TotalFrames: 1,
-		FrameNo:     0,
-		Data:        data,
+	if err := dc.db.Model(&model.Device{}).Where("id = ?", dc.deviceID).Update("mainboard_sn", sn).Error; err != nil {
+		emitTCPLog(dc.db, "error", true, "[TCP] Failed to update device flag: device=%s flag=%s err=%v", dc.deviceCode, sn, err)
+		return
 	}
-	dc.send(reply)
+	emitTCPLog(dc.db, "info", true, "[TCP] Device flag updated: device=%s flag=%s", dc.deviceCode, sn)
 }
 
-// handleHeartbeat 处理心跳：原样回复，更新时间
+// handleTimeSync 处理时间同步。
+// 如果设备上传的是合法 BCD 时间，仅记录；若为空或非法，则按测试服务端规则回 8 字节当前时间。
+func (dc *DeviceConnection) handleTimeSync(pkt *Packet) {
+	if len(pkt.Data) >= 7 {
+		deviceTime, err := parseProtocolBCDDateTime(pkt.Data)
+		if err == nil {
+			emitTCPLog(dc.db, "info", true, "[TCP] Time sync value from device %s: %s", dc.deviceCode, deviceTime.Format("2006-01-02 15:04:05"))
+			return
+		}
+		emitTCPLog(dc.db, "warn", true,
+			"[TCP] Invalid time sync payload from %s (device=%s): %v data=%s",
+			dc.conn.RemoteAddr(),
+			dc.deviceCode,
+			err,
+			packetDataPreview(pkt.Data, 24),
+		)
+	}
+
+	dc.send(buildProtocolReply(pkt, encodeProtocolBCDDateTime(time.Now())))
+}
+
+// handleHeartbeat 处理心跳：回复固定空包，更新时间
 func (dc *DeviceConnection) handleHeartbeat(pkt *Packet) {
 	dc.lastHeartbeat = time.Now()
 
@@ -267,17 +335,7 @@ func (dc *DeviceConnection) handleHeartbeat(pkt *Packet) {
 		})
 	}
 
-	// 原样回复心跳
-	reply := &Packet{
-		Addr1:       pkt.Addr2,
-		Addr2:       pkt.Addr1,
-		ParamType:   pkt.ParamType,
-		ParamNo:     pkt.ParamNo,
-		TotalFrames: 1,
-		FrameNo:     0,
-		Data:        pkt.Data,
-	}
-	dc.send(reply)
+	dc.send(buildProtocolReply(pkt, nil))
 }
 
 // handleSewing 处理开始/停止缝制
@@ -337,64 +395,86 @@ func (dc *DeviceConnection) handleAlarm(pkt *Packet) {
 
 // handleProduction 处理生产数据
 func (dc *DeviceConnection) handleProduction(pkt *Packet) {
+	production, err := parseProductionDataNewPayload(pkt.Data)
+	if err != nil {
+		emitTCPLog(dc.db, "warn", true, "[TCP] Production data parse failed: %v data=%s", err, packetDataPreview(pkt.Data, 32))
+		return
+	}
+
+	emitTCPLog(dc.db, "info", true,
+		"[TCP] Production data: device=%s payloadDeviceId=%d patternId=%d patternName=%s start=%s startNeedle=%d end=%s endNeedle=%d userId=%s stopReason=%d",
+		dc.deviceCode,
+		production.DeviceCode,
+		production.PatternID,
+		production.PatternName,
+		production.StartTime.Format("2006-01-02 15:04:05"),
+		production.StartNeedle,
+		production.EndTime.Format("2006-01-02 15:04:05"),
+		production.EndNeedle,
+		production.UserID,
+		production.StopReason,
+	)
+
+	dc.send(buildProtocolReply(pkt, []byte{0x00}))
+
 	if dc.deviceID == 0 {
+		emitTCPLog(dc.db, "warn", true, "[TCP] Production data received before device registration: payloadDeviceId=%d remote=%s",
+			production.DeviceCode, dc.conn.RemoteAddr())
 		return
 	}
 
-	// 生产数据82字节记录
-	data := pkt.Data
-	if len(data) < 82 {
-		emitTCPLog(dc.db, "warn", true, "[TCP] Production data too short: %d bytes (expected 82)", len(data))
-		return
+	recordTime := production.EndTime
+	if recordTime.IsZero() {
+		recordTime = time.Now()
 	}
-
-	// 解析生产数据字段
-	// 偏移量根据协议定义：
-	// 0-3:   加工件数 (uint32)
-	// 4-11:  针数 (uint64)
-	// 12-19: 用线量 mm (uint64)
-	// 20-27: 运行时间 ms (uint64)
-	// 28-35: 空闲时间 ms (uint64)
-	pieces := int(binary.BigEndian.Uint32(data[0:4]))
-	stitches := int64(binary.BigEndian.Uint64(data[4:12]))
-	threadLenMM := binary.BigEndian.Uint64(data[12:20])
-	runTimeMS := binary.BigEndian.Uint64(data[20:28])
-	idleTimeMS := binary.BigEndian.Uint64(data[28:36])
-
-	threadLenM := float64(threadLenMM) / 1000.0
-	runTimeH := float64(runTimeMS) / 3600000.0
-	idleTimeH := float64(idleTimeMS) / 3600000.0
+	pieces := 1
+	stitches := int64(0)
+	if production.EndNeedle >= production.StartNeedle {
+		stitches = int64(production.EndNeedle - production.StartNeedle)
+	}
+	runningHours := 0.0
+	if !production.StartTime.IsZero() && !production.EndTime.IsZero() && production.EndTime.After(production.StartTime) {
+		runningHours = production.EndTime.Sub(production.StartTime).Hours()
+	}
 
 	record := model.ProductionRecord{
 		DeviceID:     dc.deviceID,
 		Pieces:       pieces,
 		Stitches:     stitches,
-		ThreadLength: threadLenM,
-		RunningTime:  runTimeH,
-		IdleTime:     idleTimeH,
-		RecordDate:   time.Now(),
+		ThreadLength: 0,
+		RunningTime:  runningHours,
+		IdleTime:     0,
+		RecordDate:   recordTime,
 	}
 
 	if err := dc.db.Create(&record).Error; err != nil {
 		emitTCPLog(dc.db, "error", true, "[TCP] Failed to save production record for device %s: %v", dc.deviceCode, err)
 	} else {
-		emitTCPLog(dc.db, "info", false, "[TCP] Production record saved: device=%s pieces=%d stitches=%d", dc.deviceCode, pieces, stitches)
+		emitTCPLog(dc.db, "info", false, "[TCP] Production record saved: device=%s pieces=%d stitches=%d runningHours=%.3f", dc.deviceCode, pieces, stitches, runningHours)
 	}
 }
 
 // send 发送数据包
 func (dc *DeviceConnection) send(pkt *Packet) {
+	_ = dc.writePacket(pkt)
+}
+
+func (dc *DeviceConnection) writePacket(pkt *Packet) error {
 	data := BuildPacket(pkt)
 	if _, err := dc.conn.Write(data); err != nil {
 		emitTCPLog(dc.db, "error", true, "[TCP] Send error to device %s: %v", dc.deviceCode, err)
+		return err
 	}
+	return nil
 }
 
 // cleanup 连接关闭时清理
 func (dc *DeviceConnection) cleanup() {
 	dc.conn.Close()
 	if dc.deviceCode != "" {
-		dc.connMgr.Unregister(dc.deviceCode)
+		if dc.connMgr != nil && !dc.connMgr.Unregister(dc.deviceCode, dc) {
+			return
+		}
 		// 标记设备离线
 		dc.db.Model(&model.Device{}).Where("id = ? AND status != ?", dc.deviceID, "offline").
 			Update("status", "offline")
@@ -414,6 +494,17 @@ func packetDataPreview(data []byte, limit int) string {
 	return fmt.Sprintf("% X...", data[:limit])
 }
 
+func buildProtocolReply(pkt *Packet, data []byte) *Packet {
+	replyData := append([]byte(nil), data...)
+	return &Packet{
+		ParamType:   pkt.ParamType,
+		ParamNo:     pkt.ParamNo,
+		TotalFrames: 1,
+		FrameNo:     1,
+		Data:        replyData,
+	}
+}
+
 func trimNullBytes(data []byte) string {
 	for i, b := range data {
 		if b == 0 {
@@ -421,6 +512,10 @@ func trimNullBytes(data []byte) string {
 		}
 	}
 	return string(data)
+}
+
+func normalizeProtocolText(data []byte) string {
+	return strings.TrimSpace(trimNullBytes(data))
 }
 
 func extractIP(addr string) string {
@@ -435,18 +530,126 @@ func toBCD(v byte) byte {
 	return ((v / 10) << 4) | (v % 10)
 }
 
-func mapDeviceType(code uint16) (deviceType, modelName string) {
-	// 根据类型编号映射，具体映射关系可能需要根据实际协议文档调整
-	switch {
-	case code >= 0x0100 && code < 0x0200:
-		return "缝纫机", "BM-2000"
-	case code >= 0x0200 && code < 0x0300:
-		return "缝纫机", "BM-3000"
-	case code >= 0x0300 && code < 0x0400:
-		return "绣花机", "BM-5000"
-	default:
-		return "缝纫机", fmt.Sprintf("Unknown(%d)", code)
+func fromBCD(v byte) (byte, error) {
+	hi := (v >> 4) & 0x0F
+	lo := v & 0x0F
+	if hi > 9 || lo > 9 {
+		return 0, fmt.Errorf("invalid BCD byte 0x%02X", v)
 	}
+	return hi*10 + lo, nil
+}
+
+func encodeProtocolBCDDateTime(ts time.Time) []byte {
+	weekday := int(ts.Weekday())
+	if weekday == 0 {
+		weekday = 7
+	}
+	return []byte{
+		toBCD(byte(ts.Year() % 100)),
+		toBCD(byte(ts.Month())),
+		toBCD(byte(ts.Day())),
+		toBCD(byte(weekday)),
+		toBCD(byte(ts.Hour())),
+		toBCD(byte(ts.Minute())),
+		toBCD(byte(ts.Second())),
+		0x00,
+	}
+}
+
+func parseProtocolBCDDateTime(data []byte) (time.Time, error) {
+	if len(data) < 7 {
+		return time.Time{}, fmt.Errorf("payload too short: %d", len(data))
+	}
+
+	year, err := fromBCD(data[0])
+	if err != nil {
+		return time.Time{}, err
+	}
+	month, err := fromBCD(data[1])
+	if err != nil {
+		return time.Time{}, err
+	}
+	day, err := fromBCD(data[2])
+	if err != nil {
+		return time.Time{}, err
+	}
+	week, err := fromBCD(data[3])
+	if err != nil {
+		return time.Time{}, err
+	}
+	hour, err := fromBCD(data[4])
+	if err != nil {
+		return time.Time{}, err
+	}
+	minute, err := fromBCD(data[5])
+	if err != nil {
+		return time.Time{}, err
+	}
+	second, err := fromBCD(data[6])
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	if month < 1 || month > 12 {
+		return time.Time{}, fmt.Errorf("invalid month %d", month)
+	}
+	if day < 1 || day > 31 {
+		return time.Time{}, fmt.Errorf("invalid day %d", day)
+	}
+	if week < 1 || week > 7 {
+		return time.Time{}, fmt.Errorf("invalid weekday %d", week)
+	}
+	if hour > 23 || minute > 59 || second > 59 {
+		return time.Time{}, fmt.Errorf("invalid time %02d:%02d:%02d", hour, minute, second)
+	}
+
+	return time.Date(2000+int(year), time.Month(month), int(day), int(hour), int(minute), int(second), 0, time.Local), nil
+}
+
+func mapDeviceModel(code uint32) (deviceType, modelName string) {
+	if code == 0 {
+		return "模板机", "未知型号"
+	}
+	return "模板机", fmt.Sprintf("%d", code)
+}
+
+type productionDataNew struct {
+	DeviceCode  uint32
+	PatternID   uint16
+	PatternName string
+	StartTime   time.Time
+	StartNeedle uint32
+	EndTime     time.Time
+	EndNeedle   uint32
+	UserID      string
+	StopReason  uint16
+}
+
+func parseProductionDataNewPayload(data []byte) (*productionDataNew, error) {
+	if len(data) < 82 {
+		return nil, fmt.Errorf("payload too short: %d", len(data))
+	}
+
+	startTime, err := parseProtocolBCDDateTime(data[50:57])
+	if err != nil {
+		return nil, fmt.Errorf("invalid start time: %w", err)
+	}
+	endTime, err := parseProtocolBCDDateTime(data[61:68])
+	if err != nil {
+		return nil, fmt.Errorf("invalid end time: %w", err)
+	}
+
+	return &productionDataNew{
+		DeviceCode:  binary.BigEndian.Uint32(data[0:4]),
+		PatternID:   binary.BigEndian.Uint16(data[4:6]),
+		PatternName: normalizeProtocolText(data[6:50]),
+		StartTime:   startTime,
+		StartNeedle: binary.BigEndian.Uint32(data[57:61]),
+		EndTime:     endTime,
+		EndNeedle:   binary.BigEndian.Uint32(data[68:72]),
+		UserID:      normalizeProtocolText(data[72:80]),
+		StopReason:  binary.BigEndian.Uint16(data[80:82]),
+	}, nil
 }
 
 func classifyAlarm(code uint16) string {

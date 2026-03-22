@@ -1,11 +1,17 @@
 <template>
-  <div>
-    <div class="page-title">权限角色</div>
-    <el-card>
-      <el-form :inline="true" :model="searchForm" style="margin-bottom: 12px;">
+  <div class="page-shell">
+    <div class="page-header">
+      <div class="page-title-block">
+        <h2>权限角色</h2>
+        <p>维护角色权限范围和父子联动规则，分组管理已合并到账号管理页面中处理。</p>
+      </div>
+    </div>
+
+    <div class="filter-panel">
+      <el-form :inline="true" :model="searchForm">
         <el-form-item label="角色名称">
           <el-input
-            v-model="searchForm.keyword"
+            v-model.trim="searchForm.keyword"
             clearable
             placeholder="输入角色名称或备注"
             @keyup.enter.native="handleSearch"
@@ -26,43 +32,57 @@
           <el-button icon="el-icon-refresh" @click="handleReset">重置</el-button>
         </el-form-item>
       </el-form>
+    </div>
 
-      <div style="margin-bottom: 16px; display: flex; gap: 8px;">
-        <el-button type="primary" icon="el-icon-plus" @click="openCreateDialog">新增角色</el-button>
-        <el-button icon="el-icon-refresh" @click="loadData">刷新</el-button>
+    <div class="surface-card">
+      <div class="action-row">
+        <div class="soft-note">
+          <i class="el-icon-info"></i>
+          <span>角色权限用于约束客户端和服务端的功能可见范围，建议按工厂或业务场景拆分。</span>
+        </div>
+        <div class="action-group">
+          <el-button type="primary" icon="el-icon-plus" @click="openCreateDialog">新增角色</el-button>
+          <el-button icon="el-icon-refresh" @click="loadData">刷新</el-button>
+        </div>
       </div>
 
-      <el-table :data="roles" v-loading="loading" style="width: 100%;">
-        <el-table-column prop="name" label="角色名称" min-width="120" />
-        <el-table-column prop="remark" label="备注" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="createTime" label="创建时间" width="170" />
-        <el-table-column label="父子联动" width="100">
-          <template slot-scope="{ row }">
-            <el-tag :type="row.parentChildLink ? 'success' : 'info'" size="mini">
-              {{ row.parentChildLink ? '开启' : '关闭' }}
-            </el-tag>
+      <el-table :data="roles" v-loading="loading" border style="width: 100%; margin-top: 18px;">
+        <el-table-column label="序号" width="70" align="center">
+          <template slot-scope="{ $index }">
+            {{ $index + 1 }}
           </template>
         </el-table-column>
-        <el-table-column label="权限模块" min-width="260">
+        <el-table-column prop="name" label="角色名称" min-width="140" />
+        <el-table-column prop="createTime" label="创建时间" width="170" />
+        <el-table-column label="父子联动" width="110" align="center">
+          <template slot-scope="{ row }">
+            <span :class="['status-pill', row.parentChildLink ? 'success' : 'info']">
+              {{ row.parentChildLink ? '开启' : '关闭' }}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column label="权限模块" min-width="300">
           <template slot-scope="{ row }">
             <el-tag
               v-for="item in getPermissionTags(row.permissions)"
               :key="`${row.id}-${item}`"
               size="mini"
-              style="margin-right: 4px; margin-bottom: 4px;"
+              effect="plain"
+              style="margin-right: 6px; margin-bottom: 6px;"
             >
               {{ item }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="180">
+        <el-table-column label="操作" width="190" align="center">
           <template slot-scope="{ row }">
-            <el-button size="small" icon="el-icon-edit" @click="openEditDialog(row)">编辑</el-button>
-            <el-button size="small" type="danger" icon="el-icon-delete" @click="deleteRole(row)">删除</el-button>
+            <el-button size="small" @click="openEditDialog(row)">编辑</el-button>
+            <el-button size="small" type="danger" @click="deleteRole(row)">删除</el-button>
           </template>
         </el-table-column>
+        <el-table-column prop="remark" label="备注" min-width="200" show-overflow-tooltip />
       </el-table>
-    </el-card>
+    </div>
 
     <el-dialog
       :title="form.id ? '编辑角色' : '新增角色'"
@@ -72,7 +92,7 @@
     >
       <el-form ref="roleFormRef" :model="form" :rules="rules" label-width="110px">
         <el-form-item label="角色名称" prop="name">
-          <el-input v-model="form.name" maxlength="10" show-word-limit placeholder="不超过10个字" />
+          <el-input v-model="form.name" maxlength="10" show-word-limit placeholder="不超过 10 个字" />
         </el-form-item>
 
         <el-form-item label="备注">
@@ -89,15 +109,15 @@
         </el-form-item>
 
         <el-form-item label="菜单权限" required>
-          <div style="margin-bottom: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <div class="permission-toolbar">
             <el-checkbox v-model="form.showDetailPermissions" @change="handlePermissionModeChange">
               展开细分权限
             </el-checkbox>
             <el-button size="mini" @click="checkAllPermissions">全选</el-button>
             <el-button size="mini" @click="clearAllPermissions">清空</el-button>
           </div>
-          <div v-if="!form.showDetailPermissions" style="margin-bottom: 8px; color: #909399;">
-            当前仅展示 6 个一级菜单模块
+          <div v-if="!form.showDetailPermissions" class="dialog-tip">
+            当前仅展示一级菜单模块；若需要细分权限，可开启展开细分权限。
           </div>
           <div class="permission-tree-wrap">
             <el-tree
@@ -219,9 +239,6 @@ export default {
       }
     }
   },
-  mounted() {
-    this.loadData()
-  },
   computed: {
     currentPermissionTree() {
       if (this.form.showDetailPermissions) {
@@ -229,6 +246,9 @@ export default {
       }
       return this.permissionTree.map(item => ({ id: item.id, label: item.label }))
     }
+  },
+  mounted() {
+    this.loadData()
   },
   methods: {
     parsePermissionMap(raw) {
@@ -407,8 +427,12 @@ export default {
       this.clearAllPermissions()
     },
     async saveRole() {
+      const valid = await this.$refs.roleFormRef.validate().catch(() => false)
+      if (!valid) {
+        return
+      }
+
       try {
-        await this.$refs.roleFormRef.validate()
         const checkedKeys = this.getCheckedPermissionKeys()
         if (!checkedKeys.length) {
           this.$message.warning('请至少勾选一个权限')
@@ -447,7 +471,7 @@ export default {
     },
     async deleteRole(row) {
       try {
-        await this.$confirm(`确定删除角色「${row.name}」吗?`, '警告', { type: 'warning' })
+        await this.$confirm(`确定删除角色「${row.name}」吗？`, '警告', { type: 'warning' })
         const res = await this.$axios.delete(`/role/${row.id || row.ID}`)
         if (res.code === 0) {
           this.$message.success('删除成功')
@@ -464,17 +488,21 @@ export default {
 </script>
 
 <style scoped>
-.page-title {
-  font-size: 20px;
-  font-weight: bold;
-  margin-bottom: 20px;
+.permission-toolbar {
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .permission-tree-wrap {
-  border: 1px solid #e4e7ed;
-  border-radius: 4px;
-  padding: 10px;
-  max-height: 300px;
+  margin-top: 12px;
+  border: 1px solid rgba(219, 228, 240, 0.92);
+  border-radius: 18px;
+  padding: 12px;
+  max-height: 320px;
   overflow: auto;
+  background: #f9fbff;
 }
 </style>

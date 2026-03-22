@@ -13,16 +13,20 @@ import (
 // DownloadTaskWorker 驱动下发任务状态推进（waiting -> downloading -> completed）
 // 说明：当前版本不直接对接设备传输协议，先保证队列行为完整可观测。
 type DownloadTaskWorker struct {
-	db     *gorm.DB
-	stopCh chan struct{}
-	once   sync.Once
-	mu     sync.Mutex
+	db       *gorm.DB
+	transfer *PatternTransferService
+	stopCh   chan struct{}
+	once     sync.Once
+	mu       sync.Mutex
+	active   map[uint]uint
 }
 
-func NewDownloadTaskWorker(db *gorm.DB) *DownloadTaskWorker {
+func NewDownloadTaskWorker(db *gorm.DB, transfer *PatternTransferService) *DownloadTaskWorker {
 	return &DownloadTaskWorker{
-		db:     db,
-		stopCh: make(chan struct{}),
+		db:       db,
+		transfer: transfer,
+		stopCh:   make(chan struct{}),
+		active:   make(map[uint]uint),
 	}
 }
 
@@ -39,6 +43,14 @@ func (w *DownloadTaskWorker) Stop() {
 func (w *DownloadTaskWorker) loop() {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
+
+	_ = w.db.Model(&model.DownloadTask{}).
+		Where("status = ?", "downloading").
+		Updates(map[string]interface{}{
+			"status":   "waiting",
+			"progress": 0,
+			"message":  "等待下发",
+		}).Error
 
 	_ = w.processOnce()
 
@@ -58,16 +70,14 @@ func (w *DownloadTaskWorker) processOnce() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	if err := w.startWaitingTasks(); err != nil {
-		return err
-	}
-	if err := w.advanceDownloadingTasks(); err != nil {
-		return err
-	}
-	return nil
+	return w.startWaitingTasks()
 }
 
 func (w *DownloadTaskWorker) startWaitingTasks() error {
+	if w.transfer == nil {
+		return nil
+	}
+
 	var waitingTasks []model.DownloadTask
 	if err := w.db.
 		Where("status = ?", "waiting").
@@ -76,29 +86,19 @@ func (w *DownloadTaskWorker) startWaitingTasks() error {
 		return err
 	}
 
-	deviceHasDownloading := make(map[uint]bool)
 	for _, task := range waitingTasks {
-		hasDownloading, exists := deviceHasDownloading[task.DeviceID]
-		if !exists {
-			var count int64
-			if err := w.db.Model(&model.DownloadTask{}).
-				Where("device_id = ? AND status = ?", task.DeviceID, "downloading").
-				Count(&count).Error; err != nil {
-				return err
-			}
-			hasDownloading = count > 0
-			deviceHasDownloading[task.DeviceID] = hasDownloading
-		}
-		if hasDownloading {
+		if _, exists := w.active[task.DeviceID]; exists {
 			continue
 		}
 
 		var device model.Device
-		if err := w.db.Select("id", "status").First(&device, task.DeviceID).Error; err != nil {
+		if err := w.db.Select("id", "code", "status").First(&device, task.DeviceID).Error; err != nil {
 			continue
 		}
-		// 设备缝纫中或离线时，不启动新下发任务
 		if device.Status == "working" || device.Status == "offline" {
+			continue
+		}
+		if !w.transfer.IsDeviceConnected(device) {
 			continue
 		}
 
@@ -106,49 +106,34 @@ func (w *DownloadTaskWorker) startWaitingTasks() error {
 			Where("id = ? AND status = ?", task.ID, "waiting").
 			Updates(map[string]interface{}{
 				"status":   "downloading",
-				"progress": 5,
-				"message":  "正在下发",
+				"progress": 0,
+				"message":  "准备下发",
 			}).Error; err != nil {
 			return err
 		}
-		deviceHasDownloading[task.DeviceID] = true
+
+		w.active[task.DeviceID] = task.ID
+		go w.runTask(task.ID, task.DeviceID)
 	}
 	return nil
 }
 
-func (w *DownloadTaskWorker) advanceDownloadingTasks() error {
-	var downloadingTasks []model.DownloadTask
-	if err := w.db.
-		Where("status = ?", "downloading").
-		Order("updated_at ASC").
-		Find(&downloadingTasks).Error; err != nil {
-		return err
-	}
+func (w *DownloadTaskWorker) runTask(taskID, deviceID uint) {
+	defer func() {
+		w.mu.Lock()
+		delete(w.active, deviceID)
+		w.mu.Unlock()
+	}()
 
-	for _, task := range downloadingTasks {
-		next := task.Progress + 20
-		if next >= 100 {
-			next = 100
-			if err := w.db.Model(&model.DownloadTask{}).
-				Where("id = ? AND status = ?", task.ID, "downloading").
-				Updates(map[string]interface{}{
-					"status":   "completed",
-					"progress": next,
-					"message":  "下发完成",
-				}).Error; err != nil {
-				return err
-			}
-			continue
-		}
-
-		if err := w.db.Model(&model.DownloadTask{}).
-			Where("id = ? AND status = ?", task.ID, "downloading").
+	if err := w.transfer.ExecuteDownloadTask(taskID); err != nil {
+		log.Printf("download task %d failed: %v", taskID, err)
+		if updateErr := w.db.Model(&model.DownloadTask{}).
+			Where("id = ?", taskID).
 			Updates(map[string]interface{}{
-				"progress": next,
-				"message":  "正在下发",
-			}).Error; err != nil {
-			return err
+				"status":  "failed",
+				"message": err.Error(),
+			}).Error; updateErr != nil {
+			log.Printf("download task %d update failed status error: %v", taskID, updateErr)
 		}
 	}
-	return nil
 }

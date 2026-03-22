@@ -183,22 +183,24 @@ func main() {
 	// CORS middleware
 	r.Use(corsMiddleware())
 
+	// Start TCP server for device communication
+	tcpServer := service.NewTCPServer(db)
+	tcpServer.Start()
+	defer tcpServer.Stop()
+
+	patternTransfer := service.NewPatternTransferService(db, tcpServer.ConnectionManager())
+
 	// Setup routes
-	api.SetupRouter(r, db, config.JWT.Secret, config.JWT.Expire, config.Server.Port)
+	api.SetupRouter(r, db, config.JWT.Secret, config.JWT.Expire, config.Server.Port, patternTransfer)
 
 	// Start background workers
-	downloadWorker := service.NewDownloadTaskWorker(db)
+	downloadWorker := service.NewDownloadTaskWorker(db, patternTransfer)
 	downloadWorker.Start()
 	defer downloadWorker.Stop()
 
 	externalDBSyncWorker := service.NewExternalDBSyncService(db)
 	externalDBSyncWorker.Start()
 	defer externalDBSyncWorker.Stop()
-
-	// Start TCP server for device communication
-	tcpServer := service.NewTCPServer(db)
-	tcpServer.Start()
-	defer tcpServer.Stop()
 
 	// Start server
 	addr := fmt.Sprintf(":%d", config.Server.Port)

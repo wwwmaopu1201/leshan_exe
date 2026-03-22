@@ -24,6 +24,33 @@ func NewStatisticsHandler(db *gorm.DB) *StatisticsHandler {
 	return &StatisticsHandler{db: db}
 }
 
+func (h *StatisticsHandler) isSQLite() bool {
+	return strings.EqualFold(h.db.Dialector.Name(), "sqlite")
+}
+
+func (h *StatisticsHandler) deviceNameExpr(deviceIDExpr, alias string) string {
+	expr := fmt.Sprintf("COALESCE(d.name, CONCAT('设备-', %s))", deviceIDExpr)
+	if h.isSQLite() {
+		expr = fmt.Sprintf("COALESCE(d.name, '设备-' || %s)", deviceIDExpr)
+	}
+	if alias != "" {
+		expr = fmt.Sprintf("%s as %s", expr, alias)
+	}
+	return expr
+}
+
+func (h *StatisticsHandler) alarmInfoAggregateExpr(alias string) string {
+	baseExpr := "COALESCE(NULLIF(ar.alarm_type, ''), NULLIF(ar.description, ''), '报警')"
+	expr := fmt.Sprintf("COALESCE(GROUP_CONCAT(DISTINCT %s ORDER BY ar.start_time SEPARATOR '、'), '-')", baseExpr)
+	if h.isSQLite() {
+		expr = fmt.Sprintf("COALESCE(REPLACE(GROUP_CONCAT(DISTINCT %s), ',', '、'), '-')", baseExpr)
+	}
+	if alias != "" {
+		expr = fmt.Sprintf("%s as %s", expr, alias)
+	}
+	return expr
+}
+
 func (h *StatisticsHandler) GetHomeStats(c *gin.Context) {
 	_, scopedDeviceIDs := h.scopeDeviceFilter(c, "", nil)
 
@@ -172,13 +199,14 @@ func (h *StatisticsHandler) getModelRatio(deviceIDs []uint) []gin.H {
 		Count int
 	}
 
+	modelExpr := "COALESCE(NULLIF(model_name, ''), '未设置型号')"
 	query := h.db.Model(&model.Device{})
 	if len(deviceIDs) > 0 {
 		query = query.Where("id IN ?", deviceIDs)
 	}
 	query.
-		Select("model, COUNT(*) as count").
-		Group("model").
+		Select(modelExpr + " as model, COUNT(*) as count").
+		Group(modelExpr).
 		Order("count DESC").
 		Scan(&results)
 
@@ -792,7 +820,7 @@ func (h *StatisticsHandler) GetSalaryDetail(c *gin.Context) {
 		UnitPrice       float64
 	}
 	query.Session(&gorm.Session{}).
-		Select("pr.*, COALESCE(d.name, CONCAT('设备-', pr.device_id)) as device_name, COALESCE(p.name, '未命名花型') as pattern_name, COALESCE(NULLIF(p.stitches, 0), pr.stitches, 0) as pattern_stitches, COALESCE(sr.unit_price, 0) as unit_price").
+		Select(fmt.Sprintf("pr.*, %s, COALESCE(p.name, '未命名花型') as pattern_name, COALESCE(NULLIF(p.stitches, 0), pr.stitches, 0) as pattern_stitches, COALESCE(sr.unit_price, 0) as unit_price", h.deviceNameExpr("pr.device_id", "device_name"))).
 		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
 		Joins("LEFT JOIN patterns p ON pr.pattern_id = p.id").
 		Joins("LEFT JOIN (SELECT employee_id, device_id, DATE(record_date) as record_date, MAX(unit_price) as unit_price FROM salary_records GROUP BY employee_id, device_id, DATE(record_date)) sr ON sr.employee_id = pr.employee_id AND sr.device_id = pr.device_id AND sr.record_date = DATE(pr.record_date)").
@@ -872,7 +900,7 @@ func (h *StatisticsHandler) GetProcessOverview(c *gin.Context) {
 	}
 	offset := (page - 1) * pageSize
 	baseQuery.Session(&gorm.Session{}).
-		Select("pr.*, COALESCE(d.name, CONCAT('设备-', pr.device_id)) as device_name, COALESCE(e.code, '-') as employee_code, COALESCE(e.name, '-') as employee_name, COALESCE(p.name, '未命名花型') as pattern_name, COALESCE(NULLIF(p.stitches, 0), pr.stitches, 0) as pattern_stitches").
+		Select(fmt.Sprintf("pr.*, %s, COALESCE(e.code, '-') as employee_code, COALESCE(e.name, '-') as employee_name, COALESCE(p.name, '未命名花型') as pattern_name, COALESCE(NULLIF(p.stitches, 0), pr.stitches, 0) as pattern_stitches", h.deviceNameExpr("pr.device_id", "device_name"))).
 		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
 		Joins("LEFT JOIN employees e ON pr.employee_id = e.id").
 		Joins("LEFT JOIN patterns p ON pr.pattern_id = p.id").
@@ -966,7 +994,7 @@ func (h *StatisticsHandler) GetProcessOverview(c *gin.Context) {
 		Value int64
 	}
 	baseQuery.Session(&gorm.Session{}).
-		Select("COALESCE(d.name, CONCAT('设备-', pr.device_id)) as name, COALESCE(SUM(pr.pieces), 0) as value").
+		Select(fmt.Sprintf("%s, COALESCE(SUM(pr.pieces), 0) as value", h.deviceNameExpr("pr.device_id", "name"))).
 		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
 		Group("pr.device_id, d.name").
 		Order("value DESC").
@@ -1055,7 +1083,7 @@ func (h *StatisticsHandler) GetDurationStats(c *gin.Context) {
 	}
 	offset := (page - 1) * pageSize
 	baseProdQuery.Session(&gorm.Session{}).
-		Select("pr.*, COALESCE(d.name, CONCAT('设备-', pr.device_id)) as device_name, COALESCE(e.code, '-') as employee_code, COALESCE(e.name, '-') as employee_name, COALESCE(p.name, '未命名花型') as pattern_name").
+		Select(fmt.Sprintf("pr.*, %s, COALESCE(e.code, '-') as employee_code, COALESCE(e.name, '-') as employee_name, COALESCE(p.name, '未命名花型') as pattern_name", h.deviceNameExpr("pr.device_id", "device_name"))).
 		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
 		Joins("LEFT JOIN employees e ON pr.employee_id = e.id").
 		Joins("LEFT JOIN patterns p ON pr.pattern_id = p.id").
@@ -1161,7 +1189,7 @@ func (h *StatisticsHandler) GetDurationStats(c *gin.Context) {
 		IdleTime    float64
 	}
 	baseProdQuery.Session(&gorm.Session{}).
-		Select("COALESCE(d.name, CONCAT('设备-', pr.device_id)) as name, COALESCE(SUM(pr.running_time), 0) as running_time, COALESCE(SUM(pr.idle_time), 0) as idle_time").
+		Select(fmt.Sprintf("%s, COALESCE(SUM(pr.running_time), 0) as running_time, COALESCE(SUM(pr.idle_time), 0) as idle_time", h.deviceNameExpr("pr.device_id", "name"))).
 		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
 		Group("pr.device_id, d.name").
 		Order("running_time DESC").
@@ -1489,7 +1517,7 @@ func (h *StatisticsHandler) exportProcessCSV(c *gin.Context) {
 		PatternStitches int64
 	}
 	baseQuery.Session(&gorm.Session{}).
-		Select("pr.*, COALESCE(d.name, CONCAT('设备-', pr.device_id)) as device_name, COALESCE(e.code, '-') as employee_code, COALESCE(e.name, '-') as employee_name, COALESCE(p.name, '未命名花型') as pattern_name, COALESCE(NULLIF(p.stitches, 0), pr.stitches, 0) as pattern_stitches").
+		Select(fmt.Sprintf("pr.*, %s, COALESCE(e.code, '-') as employee_code, COALESCE(e.name, '-') as employee_name, COALESCE(p.name, '未命名花型') as pattern_name, COALESCE(NULLIF(p.stitches, 0), pr.stitches, 0) as pattern_stitches", h.deviceNameExpr("pr.device_id", "device_name"))).
 		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
 		Joins("LEFT JOIN employees e ON pr.employee_id = e.id").
 		Joins("LEFT JOIN patterns p ON pr.pattern_id = p.id").
@@ -1563,7 +1591,7 @@ func (h *StatisticsHandler) exportDurationCSV(c *gin.Context) {
 		PatternName  string
 	}
 	baseProdQuery.Session(&gorm.Session{}).
-		Select("pr.*, COALESCE(d.name, CONCAT('设备-', pr.device_id)) as device_name, COALESCE(e.code, '-') as employee_code, COALESCE(e.name, '-') as employee_name, COALESCE(p.name, '未命名花型') as pattern_name").
+		Select(fmt.Sprintf("pr.*, %s, COALESCE(e.code, '-') as employee_code, COALESCE(e.name, '-') as employee_name, COALESCE(p.name, '未命名花型') as pattern_name", h.deviceNameExpr("pr.device_id", "device_name"))).
 		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
 		Joins("LEFT JOIN employees e ON pr.employee_id = e.id").
 		Joins("LEFT JOIN patterns p ON pr.pattern_id = p.id").
@@ -1733,7 +1761,7 @@ func (h *StatisticsHandler) loadAlarmInfoByDeviceDate(startDate, endDate, device
 		AlarmTime  time.Time
 	}
 	baseQuery.Session(&gorm.Session{}).
-		Select("ar.device_id, DATE(ar.start_time) as record_date, COALESCE(GROUP_CONCAT(DISTINCT COALESCE(NULLIF(ar.alarm_type, ''), NULLIF(ar.description, ''), '报警') ORDER BY ar.start_time SEPARATOR '、'), '-') as alarm_info, MIN(ar.start_time) as alarm_time").
+		Select(fmt.Sprintf("ar.device_id, DATE(ar.start_time) as record_date, %s, MIN(ar.start_time) as alarm_time", h.alarmInfoAggregateExpr("alarm_info"))).
 		Group("ar.device_id, DATE(ar.start_time)").
 		Scan(&rows)
 

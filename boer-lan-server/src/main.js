@@ -1,6 +1,7 @@
 import Vue from 'vue'
 import ElementUI from 'element-ui'
 import 'element-ui/lib/theme-chalk/index.css'
+import './assets/styles/global.scss'
 import App from './App.vue'
 import router from './router'
 import request, { getRequestBaseURL, initRequestBaseURL } from './utils/request'
@@ -69,7 +70,8 @@ function renderBootMessage(message) {
 }
 
 // 等待后端就绪
-async function waitForBackend(retries = 30) {
+async function waitForBackend(retries = 30, options = {}) {
+  const { showAlert = true } = options
   for (let i = 0; i < retries; i++) {
     try {
       await request.get('/healthz', { timeout: 1000, suppressErrorMessage: true })
@@ -83,7 +85,9 @@ async function waitForBackend(retries = 30) {
   }
 
   renderBootMessage('服务端启动失败，请检查应用配置')
-  alert('后端服务启动失败，请检查应用配置')
+  if (showAlert) {
+    alert('后端服务启动失败，请检查应用配置')
+  }
   return false
 }
 
@@ -97,9 +101,11 @@ async function initApp() {
   renderBootMessage('正在准备服务端...')
   await initRequestBaseURL()
 
-  // 生产环境下等待后端启动
-  if (import.meta.env.PROD) {
-    await waitForBackend()
+  const backendReady = await waitForBackend(import.meta.env.PROD ? 30 : 10, {
+    showAlert: import.meta.env.PROD
+  })
+  if (!backendReady) {
+    return
   }
 
   new Vue({

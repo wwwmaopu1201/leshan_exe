@@ -11,13 +11,15 @@ import (
 	"time"
 
 	"boer-lan-server/internal/model"
+	"boer-lan-server/internal/service"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 type PatternHandler struct {
-	db *gorm.DB
+	db       *gorm.DB
+	transfer *service.PatternTransferService
 }
 
 var (
@@ -38,8 +40,11 @@ type PatternBatchUpdateRequest struct {
 	PatternUpdateRequest
 }
 
-func NewPatternHandler(db *gorm.DB) *PatternHandler {
-	return &PatternHandler{db: db}
+func NewPatternHandler(db *gorm.DB, transfer *service.PatternTransferService) *PatternHandler {
+	return &PatternHandler{
+		db:       db,
+		transfer: transfer,
+	}
 }
 
 func (h *PatternHandler) getCurrentUserScope(c *gin.Context) userGroupScope {
@@ -976,7 +981,7 @@ func (h *PatternHandler) GetDownloadQueue(c *gin.Context) {
 	if status != "" {
 		query = query.Where("status = ?", status)
 	} else {
-		query = query.Where("status IN ?", []string{"waiting", "downloading", "paused", "failed"})
+		query = query.Where("status IN ?", []string{"waiting", "downloading", "paused", "completed", "failed"})
 	}
 
 	patternIDs, err := h.queryPatternIDs(

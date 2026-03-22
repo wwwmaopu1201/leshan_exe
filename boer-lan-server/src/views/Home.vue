@@ -1,53 +1,108 @@
 <template>
-  <div>
-    <div class="page-title">服务器概览</div>
-
-    <!-- 统计卡片 -->
-    <el-row :gutter="20" class="stats-grid">
-      <el-col :span="4">
-        <el-card class="stat-card">
-          <div class="stat-card-title">设备总数</div>
-          <div class="stat-card-value">{{ stats.deviceCount }}</div>
-        </el-card>
-      </el-col>
-      <el-col :span="4">
-        <el-card class="stat-card">
-          <div class="stat-card-title">在线设备</div>
-          <div class="stat-card-value" style="color: #67C23A;">{{ stats.onlineDeviceCount }}</div>
-        </el-card>
-      </el-col>
-      <el-col :span="4">
-        <el-card class="stat-card">
-          <div class="stat-card-title">客户端账号数</div>
-          <div class="stat-card-value">{{ stats.userCount }}</div>
-        </el-card>
-      </el-col>
-      <el-col :span="4">
-        <el-card class="stat-card">
-          <div class="stat-card-title">员工数量</div>
-          <div class="stat-card-value">{{ typeof stats.employeeCount === 'number' ? stats.employeeCount : stats.operatorCount }}</div>
-        </el-card>
-      </el-col>
-      <el-col :span="4">
-        <el-card class="stat-card">
-          <div class="stat-card-title">分组数量</div>
-          <div class="stat-card-value">{{ stats.groupCount }}</div>
-        </el-card>
-      </el-col>
-    </el-row>
-
-    <!-- 调试日志 -->
-    <el-card class="debug-log">
-      <div slot="header" style="display: flex; justify-content: space-between; align-items: center;">
-        <span>调试信息</span>
-        <el-button size="small" @click="clearDebugLogs">清空日志</el-button>
+  <div class="page-shell">
+    <div class="page-header">
+      <div class="page-title-block">
+        <h2>服务器概览</h2>
+        <p>查看设备接入数量、账号规模和服务端最近的调试信息，页面每 5 秒自动刷新。</p>
       </div>
-      <div class="debug-log-item" v-for="log in debugLogs" :key="log.id">
-        <span class="debug-log-time">{{ formatTime(log.createdAt) }}</span>
-        <span :class="'debug-log-level-' + log.level">[{{ log.level.toUpperCase() }}]</span>
-        <span>{{ log.message }}</span>
+      <div class="action-group">
+        <div class="soft-note">
+          <i class="el-icon-time"></i>
+          <span>最近刷新：{{ lastUpdatedAt || '--' }}</span>
+        </div>
       </div>
-    </el-card>
+    </div>
+
+    <div class="summary-grid">
+      <div class="summary-card primary">
+        <div class="summary-card__icon">
+          <i class="el-icon-monitor"></i>
+        </div>
+        <div class="summary-card__label">设备总数</div>
+        <div class="summary-card__value">{{ stats.deviceCount }}</div>
+        <div class="summary-card__hint">当前已接入后台的全部设备数量。</div>
+      </div>
+
+      <div class="summary-card success">
+        <div class="summary-card__icon">
+          <i class="el-icon-circle-check"></i>
+        </div>
+        <div class="summary-card__label">在线设备</div>
+        <div class="summary-card__value">{{ stats.onlineDeviceCount }}</div>
+        <div class="summary-card__hint">包含在线、缝纫中和空闲状态设备。</div>
+      </div>
+
+      <div class="summary-card indigo">
+        <div class="summary-card__icon">
+          <i class="el-icon-user"></i>
+        </div>
+        <div class="summary-card__label">客户端账号数</div>
+        <div class="summary-card__value">{{ stats.userCount }}</div>
+        <div class="summary-card__hint">服务端已创建的客户端登录账号数量。</div>
+      </div>
+
+      <div class="summary-card warning">
+        <div class="summary-card__icon">
+          <i class="el-icon-s-custom"></i>
+        </div>
+        <div class="summary-card__label">员工数</div>
+        <div class="summary-card__value">{{ employeeCount }}</div>
+        <div class="summary-card__hint">来源于客户端侧员工/操作员相关数据。</div>
+      </div>
+
+      <div class="summary-card info">
+        <div class="summary-card__icon">
+          <i class="el-icon-folder-opened"></i>
+        </div>
+        <div class="summary-card__label">分组数</div>
+        <div class="summary-card__value">{{ stats.groupCount }}</div>
+        <div class="summary-card__hint">用于按工厂或区域管理账号和设备。</div>
+      </div>
+    </div>
+
+    <div class="surface-card home-log-card">
+      <div class="section-title">
+        <div>
+          <h3>调试信息</h3>
+          <p>按时间倒序显示最近调试日志，可用于核对设备接入、协议通信和系统异常。</p>
+        </div>
+        <div class="action-group">
+          <el-select v-model="logLevel" clearable size="small" placeholder="全部级别" @change="loadDebugLogs">
+            <el-option label="INFO" value="info" />
+            <el-option label="WARN" value="warn" />
+            <el-option label="ERROR" value="error" />
+          </el-select>
+          <el-button size="small" icon="el-icon-refresh" @click="reloadAll">
+            刷新
+          </el-button>
+          <el-button size="small" type="danger" icon="el-icon-delete" @click="clearDebugLogs">
+            清空日志
+          </el-button>
+        </div>
+      </div>
+
+      <div v-if="logLoading && !debugLogs.length" class="ghost-empty">
+        <i class="el-icon-loading"></i>
+        <span>正在加载调试日志...</span>
+      </div>
+
+      <template v-else>
+        <div v-if="debugLogs.length" class="debug-list">
+          <div v-for="log in debugLogs" :key="log.id" class="debug-item">
+            <div class="debug-item__meta">
+              <span class="debug-time">{{ formatTime(log.createdAt) }}</span>
+              <span :class="['status-pill', levelClass(log.level)]">{{ levelText(log.level) }}</span>
+              <span v-if="log.source" class="debug-source">{{ log.source }}</span>
+            </div>
+            <div class="debug-item__message">{{ log.message || '-' }}</div>
+          </div>
+        </div>
+        <div v-else class="ghost-empty">
+          <i class="el-icon-document-remove"></i>
+          <span>暂无调试数据</span>
+        </div>
+      </template>
+    </div>
   </div>
 </template>
 
@@ -65,16 +120,23 @@ export default {
         groupCount: 0
       },
       debugLogs: [],
-      timer: null
+      timer: null,
+      logLoading: false,
+      logLevel: '',
+      lastUpdatedAt: ''
+    }
+  },
+  computed: {
+    employeeCount() {
+      return typeof this.stats.employeeCount === 'number'
+        ? this.stats.employeeCount
+        : this.stats.operatorCount
     }
   },
   mounted() {
-    this.loadStats()
-    this.loadDebugLogs()
-    // 定时刷新
+    this.reloadAll()
     this.timer = setInterval(() => {
-      this.loadStats()
-      this.loadDebugLogs()
+      this.reloadAll({ silent: true })
     }, 5000)
   },
   beforeDestroy() {
@@ -83,31 +145,51 @@ export default {
     }
   },
   methods: {
+    async reloadAll(options = {}) {
+      await Promise.all([
+        this.loadStats(),
+        this.loadDebugLogs(options)
+      ])
+      this.lastUpdatedAt = this.formatClock(new Date())
+    },
     async loadStats() {
       try {
         const res = await this.$axios.get('/system/stats')
         if (res.code === 0) {
-          this.stats = res.data
+          this.stats = {
+            ...this.stats,
+            ...res.data
+          }
         }
       } catch (error) {
         console.error('加载统计信息失败', error)
       }
     },
-    async loadDebugLogs() {
+    async loadDebugLogs(options = {}) {
+      if (!options.silent) {
+        this.logLoading = true
+      }
       try {
         const res = await this.$axios.get('/system/logs', {
-          params: { limit: 50 }
+          params: {
+            limit: 80,
+            level: this.logLevel || undefined
+          }
         })
         if (res.code === 0) {
-          this.debugLogs = res.data
+          this.debugLogs = Array.isArray(res.data) ? res.data : []
         }
       } catch (error) {
         console.error('加载调试日志失败', error)
+      } finally {
+        if (!options.silent) {
+          this.logLoading = false
+        }
       }
     },
     async clearDebugLogs() {
       try {
-        await this.$confirm('确定要清空所有调试日志吗?', '警告', {
+        await this.$confirm('确定要清空所有调试日志吗？', '警告', {
           type: 'warning'
         })
         await this.$axios.delete('/system/logs')
@@ -119,67 +201,80 @@ export default {
         }
       }
     },
+    levelClass(level) {
+      const normalized = String(level || '').toLowerCase()
+      const map = {
+        info: 'info',
+        warn: 'warning',
+        error: 'danger'
+      }
+      return map[normalized] || 'info'
+    },
+    levelText(level) {
+      return String(level || 'info').toUpperCase()
+    },
+    formatClock(time) {
+      const date = time instanceof Date ? time : new Date(time)
+      const pad = value => String(value).padStart(2, '0')
+      return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+    },
     formatTime(time) {
-      if (!time) return ''
+      if (!time) return '--'
       const date = new Date(time)
-      return `${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}:${String(date.getSeconds()).padStart(2, '0')}`
+      if (Number.isNaN(date.getTime())) return '--'
+      const pad = value => String(value).padStart(2, '0')
+      return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
     }
   }
 }
 </script>
 
 <style scoped>
-.page-title {
-  font-size: 20px;
-  font-weight: bold;
-  margin-bottom: 20px;
+.home-log-card {
+  min-height: 520px;
 }
 
-.stats-grid {
-  margin-bottom: 20px;
+.debug-list {
+  display: grid;
+  gap: 12px;
 }
 
-.stat-card {
-  text-align: center;
+.debug-item {
+  padding: 16px 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(219, 228, 240, 0.92);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
 }
 
-.stat-card-title {
-  color: #909399;
-  font-size: 14px;
-  margin-bottom: 10px;
+.debug-item__meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
-.stat-card-value {
-  font-size: 28px;
-  font-weight: bold;
-  color: #303133;
-}
-
-.debug-log {
-  max-height: 400px;
-  overflow-y: auto;
-}
-
-.debug-log-item {
-  padding: 8px 0;
-  border-bottom: 1px solid #f0f0f0;
+.debug-time {
+  color: #73849a;
+  font-family: Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
 }
 
-.debug-log-time {
-  color: #909399;
-  margin-right: 10px;
+.debug-source {
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(47, 109, 246, 0.08);
+  color: #2f6df6;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
 }
 
-.debug-log-level-info {
-  color: #409EFF;
-}
-
-.debug-log-level-warn {
-  color: #E6A23C;
-}
-
-.debug-log-level-error {
-  color: #F56C6C;
+.debug-item__message {
+  margin-top: 10px;
+  color: #22324d;
+  line-height: 1.8;
+  word-break: break-word;
 }
 </style>

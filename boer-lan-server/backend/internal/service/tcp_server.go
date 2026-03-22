@@ -29,18 +29,25 @@ func NewConnectionManager() *ConnectionManager {
 
 func (cm *ConnectionManager) Register(code string, dc *DeviceConnection) {
 	cm.mu.Lock()
-	defer cm.mu.Unlock()
-	// 如果已有旧连接，关闭它
-	if old, ok := cm.conns[code]; ok {
+	old := cm.conns[code]
+	cm.conns[code] = dc
+	cm.mu.Unlock()
+
+	// 如果已有旧连接，关闭它。跳过当前连接本身，避免误伤。
+	if old != nil && old != dc {
 		old.conn.Close()
 	}
-	cm.conns[code] = dc
 }
 
-func (cm *ConnectionManager) Unregister(code string) {
+func (cm *ConnectionManager) Unregister(code string, dc *DeviceConnection) bool {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
+	current, ok := cm.conns[code]
+	if !ok || current != dc {
+		return false
+	}
 	delete(cm.conns, code)
+	return true
 }
 
 func (cm *ConnectionManager) GetAll() []*DeviceConnection {
@@ -51,6 +58,16 @@ func (cm *ConnectionManager) GetAll() []*DeviceConnection {
 		list = append(list, dc)
 	}
 	return list
+}
+
+func (cm *ConnectionManager) Get(code string) *DeviceConnection {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	return cm.conns[code]
+}
+
+func (s *TCPServer) ConnectionManager() *ConnectionManager {
+	return s.connMgr
 }
 
 // TCPServer TCP协议服务器

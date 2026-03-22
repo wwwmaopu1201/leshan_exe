@@ -1,9 +1,7 @@
 package api
 
 import (
-	"fmt"
 	"net/http"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -16,75 +14,6 @@ import (
 type UploadDeviceFilesRequest struct {
 	DeviceID uint   `json:"deviceId" binding:"required"`
 	FileIDs  []uint `json:"fileIds" binding:"required"`
-}
-
-func (h *PatternHandler) seedDevicePatternFiles(device model.Device) error {
-	var count int64
-	if err := h.db.Model(&model.DevicePatternFile{}).Where("device_id = ?", device.ID).Count(&count).Error; err != nil {
-		return err
-	}
-	if count > 0 {
-		return nil
-	}
-
-	records := make([]model.DevicePatternFile, 0)
-
-	var sourcePatterns []model.Pattern
-	_ = h.db.Order("created_at DESC").Limit(8).Find(&sourcePatterns).Error
-	for i, p := range sourcePatterns {
-		fileName := strings.TrimSpace(p.Name)
-		if fileName == "" {
-			fileName = strings.TrimSpace(p.FileName)
-		}
-		if fileName == "" {
-			fileName = fmt.Sprintf("device_%d_%03d.dst", device.ID, i+1)
-		}
-
-		fileSize := p.FileSize
-		if fileSize <= 0 {
-			fileSize = int64(120*1024 + i*8*1024)
-		}
-
-		records = append(records, model.DevicePatternFile{
-			DeviceID:    device.ID,
-			FileName:    fileName,
-			PatternType: p.PatternType,
-			FileSize:    fileSize,
-			Stitches:    p.Stitches,
-			UnitPrice:   roundTo3(p.UnitPrice),
-			OrderNo:     p.OrderNo,
-			FilePath:    filepath.Join("/device", strconv.Itoa(int(device.ID)), fileName),
-		})
-		if len(records) >= 6 {
-			break
-		}
-	}
-
-	if len(records) == 0 {
-		base := strings.TrimSpace(device.Code)
-		if base == "" {
-			base = strings.TrimSpace(device.Name)
-		}
-		if base == "" {
-			base = fmt.Sprintf("D%03d", device.ID)
-		}
-
-		for i := 1; i <= 4; i++ {
-			fileName := fmt.Sprintf("%s_样版_%02d.dst", base, i)
-			records = append(records, model.DevicePatternFile{
-				DeviceID:    device.ID,
-				FileName:    fileName,
-				PatternType: "默认",
-				FileSize:    int64(96*1024 + i*12*1024),
-				Stitches:    10000 + i*850,
-				UnitPrice:   roundTo3(1.000 + float64(i)*0.125),
-				OrderNo:     fmt.Sprintf("ORD-%s-%02d", base, i),
-				FilePath:    filepath.Join("/device", strconv.Itoa(int(device.ID)), fileName),
-			})
-		}
-	}
-
-	return h.db.Create(&records).Error
 }
 
 func (h *PatternHandler) GetDevicePatternFiles(c *gin.Context) {
@@ -131,12 +60,14 @@ func (h *PatternHandler) GetDevicePatternFiles(c *gin.Context) {
 		return
 	}
 
-	if err := h.seedDevicePatternFiles(device); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "初始化设备文件失败",
-		})
-		return
+	if h.transfer != nil && h.transfer.IsDeviceConnected(device) {
+		if _, err := h.transfer.RefreshDevicePatternFiles(device); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "读取设备文件列表失败: " + err.Error(),
+			})
+			return
+		}
 	}
 
 	query := h.db.Model(&model.DevicePatternFile{}).Where("device_id = ?", device.ID)
@@ -173,6 +104,7 @@ func (h *PatternHandler) GetDevicePatternFiles(c *gin.Context) {
 		list = append(list, gin.H{
 			"id":          item.ID,
 			"deviceId":    item.DeviceID,
+			"patternNo":   item.PatternNo,
 			"fileName":    item.FileName,
 			"patternType": item.PatternType,
 			"fileSize":    item.FileSize,
@@ -223,6 +155,25 @@ func (h *PatternHandler) DeleteDevicePatternFile(c *gin.Context) {
 			"message": "无权删除该设备文件",
 		})
 		return
+	}
+
+	var device model.Device
+	if err := h.db.First(&device, record.DeviceID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": "设备不存在",
+		})
+		return
+	}
+
+	if h.transfer != nil && h.transfer.IsDeviceConnected(device) {
+		if err := h.transfer.DeleteDevicePatternFile(device, record); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "删除设备文件失败: " + err.Error(),
+			})
+			return
+		}
 	}
 
 	if err := h.db.Delete(&record).Error; err != nil {
@@ -288,6 +239,20 @@ func (h *PatternHandler) UploadDeviceFilesToServer(c *gin.Context) {
 		})
 		return
 	}
+	if h.transfer == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"code":    503,
+			"message": "设备传输服务未初始化",
+		})
+		return
+	}
+	if !h.transfer.IsDeviceConnected(device) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "设备未在线连接，无法回传文件",
+		})
+		return
+	}
 
 	var files []model.DevicePatternFile
 	if err := h.db.Where("device_id = ? AND id IN ?", req.DeviceID, req.FileIDs).Find(&files).Error; err != nil {
@@ -321,8 +286,8 @@ func (h *PatternHandler) UploadDeviceFilesToServer(c *gin.Context) {
 			DeviceFileID: file.ID,
 			DeviceID:     req.DeviceID,
 			Status:       "uploading",
-			Progress:     20,
-			Message:      "正在回传到服务器",
+			Progress:     5,
+			Message:      "正在从设备回传",
 			OperatorID:   userID,
 		}
 		if err := h.db.Create(&task).Error; err != nil {
@@ -330,27 +295,8 @@ func (h *PatternHandler) UploadDeviceFilesToServer(c *gin.Context) {
 			continue
 		}
 
-		patternName := strings.TrimSpace(strings.TrimSuffix(file.FileName, filepath.Ext(file.FileName)))
-		if patternName == "" {
-			patternName = strings.TrimSpace(file.FileName)
-		}
-		if patternName == "" {
-			patternName = fmt.Sprintf("device_file_%d", file.ID)
-		}
-
-		pattern := model.Pattern{
-			Name:        patternName,
-			PatternType: file.PatternType,
-			FileName:    file.FileName,
-			FilePath:    "device://" + strconv.Itoa(int(req.DeviceID)) + "/" + file.FileName,
-			FileSize:    file.FileSize,
-			Stitches:    file.Stitches,
-			UnitPrice:   roundTo3(file.UnitPrice),
-			OrderNo:     file.OrderNo,
-			UploadedBy:  userID,
-		}
-
-		if err := h.db.Create(&pattern).Error; err != nil {
+		pattern, err := h.transfer.UploadPatternFromDevice(device, file, userID)
+		if err != nil {
 			_ = h.db.Model(&task).Updates(map[string]interface{}{
 				"status":   "failed",
 				"progress": 0,

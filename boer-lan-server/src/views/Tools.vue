@@ -1,28 +1,38 @@
 <template>
-  <div>
-    <div class="page-title">辅助工具</div>
+  <div class="page-shell">
+    <div class="page-header">
+      <div class="page-title-block">
+        <h2>辅助工具</h2>
+        <p>用于网络诊断、端口占用检查、防火墙处理以及服务端配置维护。</p>
+      </div>
+    </div>
 
-    <el-row :gutter="20">
-      <el-col :span="14">
-        <el-card class="tool-card">
-          <div slot="header">
-            <i class="el-icon-connection"></i>
-            <span>网络诊断工具</span>
+    <div class="tool-layout">
+      <div class="tool-main">
+        <div class="surface-card">
+          <div class="section-title">
+            <div>
+              <h3>网络诊断工具</h3>
+              <p>快速查看本机 IP、主机名、ARP 缓存以及目标设备连通性。</p>
+            </div>
           </div>
-          <div class="button-group">
-            <el-button @click="showNetworkInfo" icon="el-icon-view">查看本机IP信息</el-button>
-            <el-button @click="showPingDialog" icon="el-icon-refresh">Ping设备</el-button>
-            <el-button :loading="commandLoading" @click="showArpCache" icon="el-icon-share">查看ARP缓存</el-button>
-            <el-button :loading="commandLoading" @click="showHostname" icon="el-icon-monitor">查看主机名</el-button>
+          <div class="tool-button-grid">
+            <el-button icon="el-icon-view" @click="showNetworkInfo">查看本机 IP 信息</el-button>
+            <el-button icon="el-icon-refresh" @click="showPingDialog">Ping 设备</el-button>
+            <el-button :loading="commandLoading" icon="el-icon-share" @click="showArpCache">查看 ARP 缓存</el-button>
+            <el-button :loading="commandLoading" icon="el-icon-monitor" @click="showHostname">查看主机名</el-button>
           </div>
-        </el-card>
+        </div>
 
-        <el-card class="tool-card">
-          <div slot="header">
-            <i class="el-icon-cpu"></i>
-            <span>端口占用诊断</span>
+        <div class="surface-card">
+          <div class="section-title">
+            <div>
+              <h3>端口占用诊断</h3>
+              <p>用于排查服务端口是否被其他程序占用，也可查看整机端口监听概况。</p>
+            </div>
           </div>
-          <div class="port-row">
+
+          <div class="tool-port-row">
             <el-input-number
               v-model="portToCheck"
               :min="1"
@@ -30,31 +40,37 @@
               controls-position="right"
               placeholder="输入端口号"
             />
-            <el-button type="primary" :loading="commandLoading" @click="checkPortUsage">
-              查看端口占用
-            </el-button>
-            <el-button :loading="commandLoading" @click="showNetstatOverview">
-              查看全部端口
-            </el-button>
-            <el-button :loading="commandLoading" @click="checkServerPortUsage">
-              查看当前服务端口进程
-            </el-button>
+            <div class="action-group">
+              <el-button type="primary" :loading="commandLoading" @click="checkPortUsage">
+                查看端口占用
+              </el-button>
+              <el-button :loading="commandLoading" @click="showNetstatOverview">
+                查看全部端口
+              </el-button>
+              <el-button :loading="commandLoading" @click="checkServerPortUsage">
+                查看当前服务端口进程
+              </el-button>
+            </div>
           </div>
-          <div class="hint-text">
-            端口修改后需重启服务器程序生效；端口占用基于 `netstat`，Windows 下会自动联查 `tasklist` 进程信息。
-          </div>
-        </el-card>
 
-        <el-card class="tool-card">
-          <div slot="header">
-            <i class="el-icon-lock"></i>
-            <span>防火墙快捷操作</span>
+          <div class="soft-note">
+            <i class="el-icon-warning-outline"></i>
+            <span>端口修改后需要重启服务器程序生效；Windows 下会自动补充 tasklist 进程信息。</span>
           </div>
-          <div class="button-group">
-            <el-button :loading="commandLoading" @click="openFirewallConfig" icon="el-icon-setting">
+        </div>
+
+        <div class="surface-card">
+          <div class="section-title">
+            <div>
+              <h3>防火墙快捷操作</h3>
+              <p>常用于首次部署和局域网无法接入时的快速检查。</p>
+            </div>
+          </div>
+          <div class="tool-button-grid">
+            <el-button :loading="commandLoading" icon="el-icon-setting" @click="openFirewallConfig">
               打开防火墙配置
             </el-button>
-            <el-button :loading="commandLoading" @click="showFirewallStatus" icon="el-icon-view">
+            <el-button :loading="commandLoading" icon="el-icon-view" @click="showFirewallStatus">
               查看防火墙状态
             </el-button>
             <el-button type="success" plain :loading="commandLoading" @click="setFirewallState(true)">
@@ -64,26 +80,25 @@
               关闭防火墙
             </el-button>
           </div>
-          <div class="hint-text">
-            当前通过系统命令执行防火墙检查与开关，适用于 Windows（`netsh advfirewall`）。
-          </div>
-        </el-card>
-      </el-col>
+        </div>
+      </div>
 
-      <el-col :span="10">
-        <el-card class="tool-card">
-          <div slot="header">
-            <i class="el-icon-setting"></i>
-            <span>服务器配置</span>
+      <div class="tool-side">
+        <div class="surface-card">
+          <div class="section-title">
+            <div>
+              <h3>服务器配置</h3>
+              <p>统一维护管理端口、共享目录和调试输出开关。</p>
+            </div>
           </div>
-          <el-form label-width="120px">
+
+          <el-form label-width="110px" class="tool-form">
             <el-form-item label="服务器端口">
               <el-input-number
                 v-model="settings.serverPort"
                 :min="1"
                 :max="65535"
                 controls-position="right"
-                style="width: 100%;"
               />
             </el-form-item>
             <el-form-item label="共享文件夹目录">
@@ -101,50 +116,60 @@
               />
             </el-form-item>
           </el-form>
-          <div class="button-group">
+
+          <div class="action-group">
             <el-button type="primary" :loading="settingsLoading" @click="saveSettings">保存配置</el-button>
             <el-button type="warning" plain @click="clearDebugLogs">清空调试日志</el-button>
           </div>
-        </el-card>
+        </div>
 
-        <el-card class="tool-card">
-          <div slot="header">
-            <i class="el-icon-document"></i>
-            <span>运行环境信息</span>
+        <div class="surface-card">
+          <div class="section-title">
+            <div>
+              <h3>运行环境信息</h3>
+              <p>显示当前服务端程序的端口、工作目录和系统环境。</p>
+            </div>
           </div>
-          <div class="meta-row">
-            <span>系统</span>
-            <strong>{{ serverInfo.os || '-' }} / {{ serverInfo.arch || '-' }}</strong>
+
+          <div class="info-grid">
+            <div class="info-item">
+              <span class="info-item__label">系统环境</span>
+              <strong class="info-item__value">{{ serverInfo.os || '-' }} / {{ serverInfo.arch || '-' }}</strong>
+            </div>
+            <div class="info-item">
+              <span class="info-item__label">管理端口</span>
+              <strong class="info-item__value">{{ serverInfo.port || '-' }}</strong>
+            </div>
+            <div class="info-item">
+              <span class="info-item__label">设备 TCP 端口</span>
+              <strong class="info-item__value">{{ serverInfo.tcpPort || '-' }}</strong>
+            </div>
+            <div class="info-item">
+              <span class="info-item__label">共享目录</span>
+              <strong class="info-item__value">{{ settings.sharedFolder || '-' }}</strong>
+            </div>
+            <div class="info-item full-width">
+              <span class="info-item__label">工作目录</span>
+              <span class="info-item__value">{{ serverInfo.workDir || '-' }}</span>
+              <el-button type="text" size="mini" @click="copyText(serverInfo.workDir)">复制</el-button>
+            </div>
+            <div class="info-item full-width">
+              <span class="info-item__label">数据目录</span>
+              <span class="info-item__value">{{ serverInfo.dataDir || '-' }}</span>
+              <el-button type="text" size="mini" @click="copyText(serverInfo.dataDir)">复制</el-button>
+            </div>
           </div>
-          <div class="meta-row">
-            <span>当前端口</span>
-            <strong>{{ serverInfo.port || '-' }}</strong>
-          </div>
-          <div class="meta-row">
-            <span>工作目录</span>
-            <el-tooltip :content="serverInfo.workDir || '-'" placement="top">
-              <span class="path-text">{{ serverInfo.workDir || '-' }}</span>
-            </el-tooltip>
-            <el-button type="text" size="mini" @click="copyText(serverInfo.workDir)">复制</el-button>
-          </div>
-          <div class="meta-row">
-            <span>数据目录</span>
-            <el-tooltip :content="serverInfo.dataDir || '-'" placement="top">
-              <span class="path-text">{{ serverInfo.dataDir || '-' }}</span>
-            </el-tooltip>
-            <el-button type="text" size="mini" @click="copyText(serverInfo.dataDir)">复制</el-button>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+        </div>
+      </div>
+    </div>
 
     <el-dialog
       :title="outputDialog.title"
       :visible.sync="outputDialog.visible"
-      width="780px"
+      width="820px"
       append-to-body
     >
-      <div class="output-box">{{ outputDialog.content }}</div>
+      <div class="mono-output">{{ outputDialog.content }}</div>
     </el-dialog>
   </div>
 </template>
@@ -162,7 +187,8 @@ export default {
         dataDir: '',
         os: '',
         arch: '',
-        port: 0
+        port: 0,
+        tcpPort: 0
       },
       settings: {
         serverPort: 8088,
@@ -188,7 +214,10 @@ export default {
       try {
         const res = await this.$axios.get('/system/info')
         if (res.code === 0) {
-          this.serverInfo = res.data
+          this.serverInfo = {
+            ...this.serverInfo,
+            ...res.data
+          }
           if (!this.settings.serverPort) {
             this.settings.serverPort = Number(res.data?.port || 8088)
           }
@@ -441,25 +470,21 @@ export default {
           params: { ip }
         })
         if (res.code === 0) {
-          this.$alert(
-            `<pre>${res.data.output}</pre>`,
-            'Ping结果',
-            {
-              dangerouslyUseHTMLString: true,
-              confirmButtonText: '确定'
-            }
-          )
+          this.$alert(`<pre>${res.data.output}</pre>`, 'Ping结果', {
+            dangerouslyUseHTMLString: true,
+            confirmButtonText: '确定'
+          })
         }
       } catch (error) {
         console.error('Ping失败', error)
       }
     },
     showPingDialog() {
-      this.$prompt('请输入要Ping的IP地址', 'Ping设备', {
+      this.$prompt('请输入要 Ping 的 IP 地址', 'Ping 设备', {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
         inputPattern: /^(\d{1,3}\.){3}\d{1,3}$/,
-        inputErrorMessage: 'IP地址格式不正确'
+        inputErrorMessage: 'IP 地址格式不正确'
       }).then(({ value }) => {
         this.pingDevice(value)
       }).catch(() => {})
@@ -513,63 +538,40 @@ export default {
 </script>
 
 <style scoped>
-.page-title {
-  font-size: 20px;
-  font-weight: bold;
-  margin-bottom: 20px;
+.tool-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.18fr) minmax(320px, 0.82fr);
+  gap: 18px;
 }
 
-.tool-card {
-  margin-bottom: 20px;
+.tool-main,
+.tool-side {
+  display: grid;
+  gap: 18px;
 }
 
-.button-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+.tool-button-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
 }
 
-.port-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
+.tool-port-row {
+  display: grid;
+  gap: 14px;
 }
 
-.hint-text {
-  color: #909399;
-  font-size: 12px;
+.tool-form ::v-deep .el-form-item {
+  margin-bottom: 18px;
 }
 
-.meta-row {
-  display: flex;
-  align-items: center;
-  margin-bottom: 10px;
-  gap: 8px;
+.full-width {
+  grid-column: 1 / -1;
 }
 
-.meta-row > span:first-child {
-  min-width: 76px;
-  color: #909399;
-}
-
-.path-text {
-  flex: 1;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.output-box {
-  max-height: 460px;
-  overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-all;
-  background: #0f172a;
-  color: #e2e8f0;
-  border-radius: 6px;
-  padding: 12px;
-  font-family: Menlo, Monaco, Consolas, monospace;
-  font-size: 12px;
+@media (max-width: 1180px) {
+  .tool-layout {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

@@ -1,86 +1,139 @@
 <template>
-  <div>
-    <div class="page-title">连接数据库</div>
+  <div class="page-shell">
+    <div class="page-header">
+      <div class="page-title-block">
+        <h2>连接数据库</h2>
+        <p>配置外部数据库连接、同步周期和手动同步动作，不连接时系统仍可使用本地数据。</p>
+      </div>
+    </div>
 
-    <el-row :gutter="20" style="margin-bottom: 20px;">
-      <el-col :span="12">
-        <el-card>
-          <div slot="header"><span>服务器基础信息</span></div>
-          <p><strong>服务器端口:</strong> {{ serverInfo.port }}</p>
-          <p><strong>服务器IP:</strong> {{ (serverInfo.ips || []).join(', ') || '-' }}</p>
-          <p><strong>工作目录:</strong> {{ serverInfo.workDir || '-' }}</p>
-        </el-card>
-      </el-col>
-      <el-col :span="12">
-        <el-card>
-          <div slot="header"><span>连接说明</span></div>
-          <p>1. 连接外部数据库为可选功能，不连接时系统仍可使用本地数据。</p>
-          <p>2. 当前支持 MySQL、MSSQL 完整连接测试。</p>
-          <p>3. 可配置同步间隔（分钟），用于定时同步设备上传数据（默认30分钟）。</p>
-          <p>4. 最后更新时间：{{ formatTimestamp(form.updatedAt) }}</p>
-          <p>5. 最近同步时间：{{ formatTimestamp(syncStatus.lastSyncAt) }}</p>
-          <p>6. 下次同步时间：{{ formatTimestamp(syncStatus.nextSyncAt) }}</p>
-          <p>7. 同步状态：{{ syncStatusText(syncStatus.status) }}</p>
-        </el-card>
-      </el-col>
-    </el-row>
+    <div class="summary-grid">
+      <div class="summary-card primary">
+        <div class="summary-card__icon">
+          <i class="el-icon-office-building"></i>
+        </div>
+        <div class="summary-card__label">服务器地址</div>
+        <div class="summary-card__value summary-card__value--small">{{ serverIpText }}</div>
+        <div class="summary-card__hint">管理端口 {{ serverInfo.port || '-' }}，当前本机工作目录可在下方查看。</div>
+      </div>
+      <div class="summary-card success">
+        <div class="summary-card__icon">
+          <i class="el-icon-connection"></i>
+        </div>
+        <div class="summary-card__label">同步状态</div>
+        <div class="summary-card__value summary-card__value--small">{{ syncStatusText(syncStatus.status) }}</div>
+        <div class="summary-card__hint">最近同步：{{ formatTimestamp(syncStatus.lastSyncAt) }}</div>
+      </div>
+      <div class="summary-card info">
+        <div class="summary-card__icon">
+          <i class="el-icon-timer"></i>
+        </div>
+        <div class="summary-card__label">下次同步</div>
+        <div class="summary-card__value summary-card__value--small">{{ formatTimestamp(syncStatus.nextSyncAt) }}</div>
+        <div class="summary-card__hint">配置保存成功后会自动按周期调度。</div>
+      </div>
+    </div>
 
-    <el-card>
-      <div slot="header" style="display: flex; justify-content: space-between; align-items: center;">
-        <span>外部数据库连接配置</span>
-        <div>
-          <el-button icon="el-icon-refresh" @click="loadConfig">重新加载</el-button>
-          <el-button type="warning" :loading="testing" @click="testConnection">测试连接</el-button>
-          <el-button type="success" :loading="syncing" @click="syncNow">立即同步</el-button>
-          <el-button type="primary" :loading="saving" @click="saveConfig">保存配置</el-button>
+    <div class="database-layout">
+      <div class="surface-card">
+        <div class="section-title">
+          <div>
+            <h3>连接说明</h3>
+            <p>当前支持 MySQL、MSSQL 连接测试，可单独配置同步间隔并手动触发同步。</p>
+          </div>
+        </div>
+
+        <div class="info-grid">
+          <div class="info-item">
+            <span class="info-item__label">是否启用</span>
+            <strong class="info-item__value">{{ form.enabled ? '已启用' : '未启用' }}</strong>
+          </div>
+          <div class="info-item">
+            <span class="info-item__label">数据库类型</span>
+            <strong class="info-item__value">{{ String(form.dbType || '-').toUpperCase() }}</strong>
+          </div>
+          <div class="info-item">
+            <span class="info-item__label">最近更新时间</span>
+            <span class="info-item__value">{{ formatTimestamp(form.updatedAt) }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-item__label">同步间隔</span>
+            <span class="info-item__value">{{ form.syncIntervalMinutes || '-' }} 分钟</span>
+          </div>
+          <div class="info-item full-width">
+            <span class="info-item__label">工作目录</span>
+            <span class="info-item__value">{{ serverInfo.workDir || '-' }}</span>
+          </div>
         </div>
       </div>
 
-      <el-form ref="dbFormRef" :model="form" :rules="rules" label-width="120px" style="max-width: 820px;">
-        <el-form-item label="启用外部连接">
-          <el-switch
-            v-model="form.enabled"
-            active-text="启用"
-            inactive-text="关闭"
-          />
-        </el-form-item>
+      <div class="surface-card">
+        <div class="section-title">
+          <div>
+            <h3>外部数据库连接配置</h3>
+            <p>配置完成后可先测试连接，再保存并根据需要立即同步一次。</p>
+          </div>
+          <div class="action-group">
+            <el-button icon="el-icon-refresh" @click="loadConfig">重新加载</el-button>
+            <el-button type="warning" :loading="testing" @click="testConnection">测试连接</el-button>
+            <el-button type="success" :loading="syncing" @click="syncNow">立即同步</el-button>
+            <el-button type="primary" :loading="saving" @click="saveConfig">保存配置</el-button>
+          </div>
+        </div>
 
-        <el-form-item label="数据库类型" prop="dbType">
-          <el-select v-model="form.dbType" style="width: 220px;" @change="handleDBTypeChange">
-            <el-option label="MySQL" value="mysql" />
-            <el-option label="MSSQL" value="mssql" />
-          </el-select>
-        </el-form-item>
+        <el-form ref="dbFormRef" :model="form" :rules="rules" label-width="110px" class="database-form">
+          <div class="database-form-grid">
+            <el-form-item label="启用外部连接" class="full-row">
+              <el-switch
+                v-model="form.enabled"
+                active-text="启用"
+                inactive-text="关闭"
+              />
+            </el-form-item>
 
-        <el-form-item label="服务器地址" prop="host">
-          <el-input v-model="form.host" placeholder="例如 127.0.0.1" />
-        </el-form-item>
+            <el-form-item label="数据库类型" prop="dbType">
+              <el-select v-model="form.dbType" @change="handleDBTypeChange">
+                <el-option label="MySQL" value="mysql" />
+                <el-option label="MSSQL" value="mssql" />
+              </el-select>
+            </el-form-item>
 
-        <el-form-item label="端口" prop="port">
-          <el-input-number v-model="form.port" :min="1" :max="65535" />
-        </el-form-item>
+            <el-form-item label="服务器地址" prop="host">
+              <el-input v-model.trim="form.host" placeholder="例如 127.0.0.1" />
+            </el-form-item>
 
-        <el-form-item label="登录名" prop="username">
-          <el-input v-model="form.username" />
-        </el-form-item>
+            <el-form-item label="端口" prop="port">
+              <el-input-number v-model="form.port" :min="1" :max="65535" />
+            </el-form-item>
 
-        <el-form-item label="密码" prop="password">
-          <el-input v-model="form.password" show-password type="password" />
-        </el-form-item>
+            <el-form-item label="登录名" prop="username">
+              <el-input v-model.trim="form.username" />
+            </el-form-item>
 
-        <el-form-item label="数据库名" prop="database">
-          <el-input v-model="form.database" />
-        </el-form-item>
+            <el-form-item label="密码" prop="password">
+              <el-input v-model="form.password" show-password type="password" />
+            </el-form-item>
 
-        <el-form-item label="字符集" prop="charset" v-if="form.dbType === 'mysql'">
-          <el-input v-model="form.charset" placeholder="utf8mb4" />
-        </el-form-item>
+            <el-form-item label="数据库名" prop="database">
+              <el-input v-model.trim="form.database" />
+            </el-form-item>
 
-        <el-form-item label="同步间隔(分钟)" prop="syncIntervalMinutes">
-          <el-input-number v-model="form.syncIntervalMinutes" :min="5" :max="720" />
-        </el-form-item>
-      </el-form>
-    </el-card>
+            <el-form-item v-if="form.dbType === 'mysql'" label="字符集" prop="charset">
+              <el-input v-model.trim="form.charset" placeholder="utf8mb4" />
+            </el-form-item>
+
+            <el-form-item label="同步间隔(分钟)" prop="syncIntervalMinutes">
+              <el-input-number v-model="form.syncIntervalMinutes" :min="5" :max="720" />
+            </el-form-item>
+          </div>
+        </el-form>
+
+        <div class="soft-note">
+          <i class="el-icon-info"></i>
+          <span>同步时间显示为空时，说明当前尚未执行过同步或外部数据库连接尚未启用。</span>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -125,6 +178,12 @@ export default {
       }
     }
   },
+  computed: {
+    serverIpText() {
+      const ips = Array.isArray(this.serverInfo.ips) ? this.serverInfo.ips.filter(Boolean) : []
+      return ips.length ? ips.join(', ') : '-'
+    }
+  },
   mounted() {
     this.loadServerInfo()
     this.loadConfig()
@@ -150,7 +209,10 @@ export default {
       try {
         const res = await this.$axios.get('/system/info')
         if (res.code === 0) {
-          this.serverInfo = res.data
+          this.serverInfo = {
+            ...this.serverInfo,
+            ...res.data
+          }
         }
       } catch (error) {
         console.error('加载服务器信息失败', error)
@@ -200,8 +262,12 @@ export default {
       }
     },
     async testConnection() {
+      const valid = await this.$refs.dbFormRef.validate().catch(() => false)
+      if (!valid) {
+        return
+      }
+
       try {
-        await this.$refs.dbFormRef.validate()
         this.testing = true
         const res = await this.$axios.post('/system/database/test', this.form)
         if (res.code === 0) {
@@ -216,8 +282,12 @@ export default {
       }
     },
     async saveConfig() {
+      const valid = await this.$refs.dbFormRef.validate().catch(() => false)
+      if (!valid) {
+        return
+      }
+
       try {
-        await this.$refs.dbFormRef.validate()
         this.saving = true
         const res = await this.$axios.post('/system/database/config', this.form)
         if (res.code === 0) {
@@ -254,13 +324,37 @@ export default {
 </script>
 
 <style scoped>
-.page-title {
-  font-size: 20px;
-  font-weight: bold;
-  margin-bottom: 20px;
+.database-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.82fr) minmax(0, 1.18fr);
+  gap: 18px;
 }
 
-.el-card p {
-  margin: 8px 0;
+.database-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 18px;
+}
+
+.summary-card__value--small {
+  font-size: 24px;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.full-row {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 1180px) {
+  .database-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .database-form-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

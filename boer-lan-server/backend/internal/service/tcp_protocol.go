@@ -54,7 +54,11 @@ type Packet struct {
 	Data        []byte
 }
 
-// ParsePacket 从reader中读取并解析一个完整的协议包
+// ParsePacket 从reader中读取并解析一个完整的协议包。
+// 协议规则与 xieyi_test 保持一致：
+// 1. 多字节字段使用大端。
+// 2. length 字段表示 payload + CRC16 的总长度，而不是纯 payload 长度。
+// 3. CRC16 使用 Modbus，对 header + payload 计算，CRC 自身不参与计算。
 func ParsePacket(reader io.Reader) (*Packet, error) {
 	// 寻找包头
 	if err := findHeader(reader); err != nil {
@@ -75,28 +79,32 @@ func ParsePacket(reader io.Reader) (*Packet, error) {
 	p.ParamNo = binary.BigEndian.Uint16(hdr[13:15])
 	p.TotalFrames = hdr[15]
 	p.FrameNo = hdr[16]
-	dataLen := binary.BigEndian.Uint32(hdr[17:21])
+	lengthField := binary.BigEndian.Uint32(hdr[17:21])
 
-	if dataLen > 65536 {
-		return nil, fmt.Errorf("data length too large: %d", dataLen)
+	if lengthField < CRC16Size {
+		return nil, fmt.Errorf("invalid length field %d: smaller than CRC size", lengthField)
+	}
+	if lengthField > 65538 {
+		return nil, fmt.Errorf("data length too large: %d", lengthField)
 	}
 
-	// 读取数据 + CRC16
-	payload := make([]byte, dataLen+CRC16Size)
-	if _, err := io.ReadFull(reader, payload); err != nil {
-		return nil, fmt.Errorf("read data+crc: %w", err)
+	// 读取 payload + CRC16。
+	tail := make([]byte, lengthField)
+	if _, err := io.ReadFull(reader, tail); err != nil {
+		return nil, fmt.Errorf("read payload+crc: %w", err)
 	}
 
-	p.Data = payload[:dataLen]
+	payloadLen := int(lengthField) - CRC16Size
+	p.Data = tail[:payloadLen]
 
-	// 校验CRC16：对 header(2) + hdr(21) + data(dataLen) 整体计算
-	rawForCRC := make([]byte, 2+len(hdr)+int(dataLen))
+	// 校验CRC16：对 header(2) + hdr(21) + payload 整体计算
+	rawForCRC := make([]byte, 2+len(hdr)+payloadLen)
 	rawForCRC[0] = HeaderByte1
 	rawForCRC[1] = HeaderByte2
 	copy(rawForCRC[2:], hdr)
 	copy(rawForCRC[2+len(hdr):], p.Data)
 
-	expectedCRC := binary.BigEndian.Uint16(payload[dataLen:])
+	expectedCRC := binary.BigEndian.Uint16(tail[payloadLen:])
 	actualCRC := CRC16Modbus(rawForCRC)
 	if expectedCRC != actualCRC {
 		return nil, fmt.Errorf("CRC mismatch: expected 0x%04X, got 0x%04X", expectedCRC, actualCRC)
@@ -108,6 +116,15 @@ func ParsePacket(reader io.Reader) (*Packet, error) {
 // BuildPacket 将Packet序列化为字节流（含CRC16）
 func BuildPacket(p *Packet) []byte {
 	dataLen := len(p.Data)
+	lengthField := dataLen + CRC16Size
+	totalFrames := p.TotalFrames
+	if totalFrames == 0 {
+		totalFrames = 1
+	}
+	frameNo := p.FrameNo
+	if frameNo == 0 {
+		frameNo = 1
+	}
 	buf := make([]byte, HeaderSize+dataLen+CRC16Size)
 
 	buf[0] = HeaderByte1
@@ -117,9 +134,9 @@ func BuildPacket(p *Packet) []byte {
 	copy(buf[10:13], p.Reserved[:])
 	binary.BigEndian.PutUint16(buf[13:15], p.ParamType)
 	binary.BigEndian.PutUint16(buf[15:17], p.ParamNo)
-	buf[17] = p.TotalFrames
-	buf[18] = p.FrameNo
-	binary.BigEndian.PutUint32(buf[19:23], uint32(dataLen))
+	buf[17] = totalFrames
+	buf[18] = frameNo
+	binary.BigEndian.PutUint32(buf[19:23], uint32(lengthField))
 	copy(buf[23:23+dataLen], p.Data)
 
 	crc := CRC16Modbus(buf[:HeaderSize+dataLen])

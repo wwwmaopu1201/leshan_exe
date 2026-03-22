@@ -1,11 +1,13 @@
 package api
 
 import (
+	"boer-lan-server/internal/service"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, serverPort int) {
+func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, serverPort int, patternTransfer *service.PatternTransferService) {
 	// API group
 	api := r.Group("/api")
 
@@ -68,7 +70,7 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, se
 		protected.DELETE("/device/group/:id", permDevice, deviceHandler.DeleteDeviceGroup)
 
 		// Pattern
-		patternHandler := NewPatternHandler(db)
+		patternHandler := NewPatternHandler(db, patternTransfer)
 		protected.GET("/pattern/list", permPatternFiles, patternHandler.GetPatternList)
 		protected.GET("/pattern/types", permPatternFiles, patternHandler.GetPatternTypes)
 		protected.POST("/pattern/upload", permPatternFiles, patternHandler.UploadPattern)

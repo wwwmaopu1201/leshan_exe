@@ -108,6 +108,7 @@ type DownloadTask struct {
 type DevicePatternFile struct {
 	gorm.Model
 	DeviceID    uint    `gorm:"index;not null" json:"deviceId"`
+	PatternNo   uint    `gorm:"index;default:0" json:"patternNo"`
 	FileName    string  `gorm:"size:255;not null" json:"fileName"`
 	PatternType string  `gorm:"size:100;index" json:"patternType"`
 	FileSize    int64   `json:"fileSize"`
