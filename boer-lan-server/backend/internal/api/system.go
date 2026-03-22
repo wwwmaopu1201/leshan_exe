@@ -76,7 +76,7 @@ func (h *SystemHandler) GetServerInfo(c *gin.Context) {
 			"dataDir": dataDir,
 			"os":      runtime.GOOS,
 			"arch":    runtime.GOARCH,
-			"version": "1.0.1",
+			"version": "1.0.7",
 			"uptime":  time.Now().Unix(),
 		},
 	})

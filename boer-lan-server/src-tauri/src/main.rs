@@ -40,9 +40,9 @@ struct TrialStatus {
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
-const TRIAL_DURATION_SECONDS: u64 = 3 * 24 * 60 * 60;
+const TRIAL_DURATION_SECONDS: u64 = 20 * 60;
 const ROLLBACK_LEEWAY_SECONDS: u64 = 10 * 60;
-const TRIAL_POLICY_VERSION: u32 = 2;
+const TRIAL_POLICY_VERSION: u32 = 3;
 
 fn backend_binary_name() -> &'static str {
     #[cfg(target_os = "windows")]
@@ -301,7 +301,7 @@ fn main() {
             #[cfg(debug_assertions)]
             {
                 println!(
-                    "Development mode: Backend should be started manually via 'npm run dev:all'"
+                    "Development mode: backend is expected to be started by beforeDevCommand (npm run dev:stack)"
                 );
             }
 
