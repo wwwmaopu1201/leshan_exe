@@ -6,7 +6,9 @@ use std::fs;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
-use std::process::{Child, Command};
+use std::process::Child;
+#[cfg(not(debug_assertions))]
+use std::process::Command;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Manager;
@@ -28,6 +30,8 @@ struct TrialState {
     launch_count: u64,
     #[serde(rename = "policyVersion", default)]
     policy_version: u32,
+    #[serde(rename = "appVersion", default)]
+    app_version: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -40,10 +44,50 @@ struct TrialStatus {
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
-const TRIAL_DURATION_SECONDS: u64 = 2 * 24 * 60 * 60;
+const TRIAL_DURATION_SECONDS: u64 = 3 * 24 * 60 * 60;
 const ROLLBACK_LEEWAY_SECONDS: u64 = 10 * 60;
 const TRIAL_POLICY_VERSION: u32 = 4;
 
+fn normalize_version(raw: &str) -> String {
+    raw.trim()
+        .trim_start_matches(|ch| ch == 'v' || ch == 'V')
+        .to_string()
+}
+
+fn current_app_version(app: &tauri::AppHandle) -> String {
+    normalize_version(&app.package_info().version.to_string())
+}
+
+fn trial_reset_reason(state: &TrialState, current_version: &str) -> Option<String> {
+    if state.policy_version < TRIAL_POLICY_VERSION {
+        return Some(format!(
+            "policy version changed {} -> {}",
+            state.policy_version, TRIAL_POLICY_VERSION
+        ));
+    }
+
+    let stored_version = normalize_version(&state.app_version);
+    if stored_version == current_version {
+        return None;
+    }
+    if stored_version.is_empty() {
+        return Some(format!("missing app version, current={current_version}"));
+    }
+    Some(format!(
+        "app version changed {} -> {}",
+        stored_version, current_version
+    ))
+}
+
+fn reset_trial_state(state: &mut TrialState, current_version: &str, now: u64) {
+    state.first_seen_at = now;
+    state.last_seen_at = now;
+    state.launch_count = 0;
+    state.policy_version = TRIAL_POLICY_VERSION;
+    state.app_version = current_version.to_string();
+}
+
+#[cfg(not(debug_assertions))]
 fn backend_binary_name() -> &'static str {
     #[cfg(target_os = "windows")]
     {
@@ -69,6 +113,7 @@ fn parse_backend_port(raw: &str) -> Result<u16, String> {
         })
 }
 
+#[cfg(not(debug_assertions))]
 fn resolve_resource_dir(resource_dir: Option<PathBuf>) -> Result<PathBuf, String> {
     let backend_name = backend_binary_name();
     let mut candidates = Vec::new();
@@ -163,6 +208,7 @@ fn inspect_trial_status(app: &tauri::AppHandle) -> TrialStatus {
             }
         }
     };
+    let current_version = current_app_version(app);
 
     if !state_path.exists() {
         return TrialStatus {
@@ -190,12 +236,9 @@ fn inspect_trial_status(app: &tauri::AppHandle) -> TrialStatus {
         }
     };
 
-    if state.policy_version < TRIAL_POLICY_VERSION {
-        state.first_seen_at = now;
-        state.last_seen_at = now;
-        state.launch_count = 0;
-        state.policy_version = TRIAL_POLICY_VERSION;
-
+    if let Some(reason) = trial_reset_reason(&state, &current_version) {
+        println!("Resetting trial state: {reason}");
+        reset_trial_state(&mut state, &current_version, now);
         if let Err(err) = write_trial_state(&state_path, &state) {
             return TrialStatus {
                 valid: false,
@@ -264,6 +307,7 @@ fn main() {
 
             #[cfg(not(debug_assertions))]
             {
+                let app_version = app.package_info().version.to_string();
                 let trial_status = inspect_trial_status(&app.handle());
                 if trial_status.valid {
                     let resource_dir = resolve_resource_dir(app.path().resource_dir().ok())
@@ -274,6 +318,7 @@ fn main() {
 
                     let mut cmd = Command::new(&backend_path);
                     cmd.current_dir(&resource_dir)
+                        .env("APP_VERSION", &app_version)
                         .env("DATA_DIR", &data_dir)
                         .env("PORT_FILE", &port_file);
 

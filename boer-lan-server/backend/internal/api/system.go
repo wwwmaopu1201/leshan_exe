@@ -3,6 +3,7 @@ package api
 import (
 	"boer-lan-server/internal/model"
 	"boer-lan-server/internal/service"
+	appversion "boer-lan-server/pkg/version"
 	"context"
 	"encoding/json"
 	"errors"
@@ -76,7 +77,7 @@ func (h *SystemHandler) GetServerInfo(c *gin.Context) {
 			"dataDir": dataDir,
 			"os":      runtime.GOOS,
 			"arch":    runtime.GOARCH,
-			"version": "1.0.8",
+			"version": appversion.Resolve(),
 			"uptime":  time.Now().Unix(),
 		},
 	})

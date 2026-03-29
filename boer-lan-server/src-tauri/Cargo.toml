@@ -1,6 +1,6 @@
 [package]
 name = "boer-lan-server"
-version = "1.0.8"
+version = "1.0.9"
 description = "博尔局域网服务器管理后台"
 authors = ["Boer"]
 edition = "2021"

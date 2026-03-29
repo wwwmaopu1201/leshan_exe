@@ -27,7 +27,7 @@
 
       <div class="sidebar-footer">
         <div class="sidebar-footer__title">运行版本</div>
-        <div class="sidebar-footer__value">{{ serverInfo.version || '1.0.6' }}</div>
+        <div class="sidebar-footer__value">{{ serverInfo.version || '1.0.9' }}</div>
       </div>
     </aside>
 

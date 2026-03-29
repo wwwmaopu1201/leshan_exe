@@ -12,10 +12,12 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	appversion "boer-lan-server/pkg/version"
 )
 
 const (
-	trialDuration      = 48 * time.Hour
+	trialDuration      = 72 * time.Hour
 	rollbackLeeway     = 10 * time.Minute
 	trialPolicyVersion = 4
 	stateFolderName    = "BoerLAN"
@@ -28,6 +30,7 @@ type State struct {
 	LastSeenAt    int64  `json:"lastSeenAt"`
 	LaunchCount   int64  `json:"launchCount"`
 	PolicyVersion int    `json:"policyVersion,omitempty"`
+	AppVersion    string `json:"appVersion,omitempty"`
 }
 
 type Status struct {
@@ -53,6 +56,7 @@ func Ensure() (*Status, error) {
 		return nil, fmt.Errorf("failed to resolve machine hash: %w", err)
 	}
 
+	currentVersion := appversion.Resolve()
 	now := time.Now()
 	state, exists, err := readState(statePath)
 	if err != nil {
@@ -66,6 +70,7 @@ func Ensure() (*Status, error) {
 			LastSeenAt:    now.Unix(),
 			LaunchCount:   1,
 			PolicyVersion: trialPolicyVersion,
+			AppVersion:    currentVersion,
 		}
 		if err := writeState(statePath, state); err != nil {
 			return nil, err
@@ -73,18 +78,16 @@ func Ensure() (*Status, error) {
 		return buildStatus(statePath, state, now, false), nil
 	}
 
+	if reason := trialResetReason(state, currentVersion); reason != "" {
+		log.Printf("Resetting trial state: %s", reason)
+		resetState(state, machineHash, currentVersion, now)
+	}
+
 	if state.MachineHash != machineHash {
 		status := buildStatus(statePath, state, now, false)
 		status.Valid = false
 		status.Message = "试用授权已绑定到其他设备，无法继续使用"
 		return status, errors.New(status.Message)
-	}
-
-	if state.PolicyVersion < trialPolicyVersion {
-		state.FirstSeenAt = now.Unix()
-		state.LastSeenAt = now.Unix()
-		state.LaunchCount = 0
-		state.PolicyVersion = trialPolicyVersion
 	}
 
 	lastSeen := time.Unix(state.LastSeenAt, 0)
@@ -110,6 +113,30 @@ func Ensure() (*Status, error) {
 
 	status = buildStatus(statePath, state, now, false)
 	return status, nil
+}
+
+func trialResetReason(state *State, currentVersion string) string {
+	if state.PolicyVersion < trialPolicyVersion {
+		return fmt.Sprintf("policy version changed %d -> %d", state.PolicyVersion, trialPolicyVersion)
+	}
+
+	storedVersion := appversion.Normalize(state.AppVersion)
+	if storedVersion == currentVersion {
+		return ""
+	}
+	if storedVersion == "" {
+		return fmt.Sprintf("missing app version, current=%s", currentVersion)
+	}
+	return fmt.Sprintf("app version changed %s -> %s", storedVersion, currentVersion)
+}
+
+func resetState(state *State, machineHash, currentVersion string, now time.Time) {
+	state.MachineHash = machineHash
+	state.FirstSeenAt = now.Unix()
+	state.LastSeenAt = now.Unix()
+	state.LaunchCount = 0
+	state.PolicyVersion = trialPolicyVersion
+	state.AppVersion = currentVersion
 }
 
 func StartExpiryWatcher(status *Status) {
