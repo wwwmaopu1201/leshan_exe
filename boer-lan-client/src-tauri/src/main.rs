@@ -17,6 +17,8 @@ const TRIAL_POLICY_VERSION: u32 = 2;
 struct TrialState {
     #[serde(rename = "machineHash")]
     machine_hash: String,
+    #[serde(rename = "appVersion", default)]
+    app_version: Option<String>,
     #[serde(rename = "firstSeenAt")]
     first_seen_at: u64,
     #[serde(rename = "lastSeenAt")]
@@ -84,11 +86,24 @@ fn machine_hash() -> String {
     format!("{:016x}", hasher.finish())
 }
 
+fn current_app_version(app: &tauri::AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
 fn trial_state_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_data_dir()
         .map(|dir| dir.join("client-trial-state.json"))
         .map_err(|err| format!("failed to resolve client trial path: {err}"))
+}
+
+fn reset_trial_state(state: &mut TrialState, machine_hash: &str, app_version: &str, now: u64) {
+    state.machine_hash = machine_hash.to_string();
+    state.app_version = Some(app_version.to_string());
+    state.first_seen_at = now;
+    state.last_seen_at = now;
+    state.launch_count = 0;
+    state.policy_version = TRIAL_POLICY_VERSION;
 }
 
 fn write_state(path: &PathBuf, state: &TrialState) -> Result<(), String> {
@@ -136,6 +151,7 @@ fn inspect_trial_status(app: &tauri::AppHandle) -> TrialStatus {
     };
 
     let current_machine_hash = machine_hash();
+    let current_app_version = current_app_version(app);
 
     let mut state = if state_path.exists() {
         match fs::read_to_string(&state_path)
@@ -157,6 +173,7 @@ fn inspect_trial_status(app: &tauri::AppHandle) -> TrialStatus {
     } else {
         TrialState {
             machine_hash: current_machine_hash.clone(),
+            app_version: Some(current_app_version.clone()),
             first_seen_at: now,
             last_seen_at: now,
             launch_count: 0,
@@ -173,11 +190,10 @@ fn inspect_trial_status(app: &tauri::AppHandle) -> TrialStatus {
         };
     }
 
-    if state.policy_version < TRIAL_POLICY_VERSION {
-        state.first_seen_at = now;
-        state.last_seen_at = now;
-        state.launch_count = 0;
-        state.policy_version = TRIAL_POLICY_VERSION;
+    if state.policy_version < TRIAL_POLICY_VERSION
+        || state.app_version.as_deref() != Some(current_app_version.as_str())
+    {
+        reset_trial_state(&mut state, &current_machine_hash, &current_app_version, now);
     }
 
     if now + ROLLBACK_LEEWAY_SECONDS < state.last_seen_at {
