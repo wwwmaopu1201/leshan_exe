@@ -55,7 +55,7 @@ const routes = [
       {
         path: 'device/group',
         name: 'DeviceGroup',
-        component: () => import('@/views/device/DeviceGroup.vue'),
+        redirect: '/device/list',
         meta: {
           title: 'menu.deviceGroup',
           parent: 'menu.device',
@@ -171,7 +171,7 @@ const routes = [
       {
         path: 'profile/language',
         name: 'LanguageSwitch',
-        component: () => import('@/views/profile/LanguageSwitch.vue'),
+        redirect: '/profile/info',
         meta: { title: 'menu.languageSwitch', parent: 'menu.profile' }
       },
       // 服务支持

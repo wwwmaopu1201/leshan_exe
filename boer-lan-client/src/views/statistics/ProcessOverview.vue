@@ -1,124 +1,144 @@
 <template>
-  <div class="stats-layout">
-    <div class="stats-side">
-      <device-tree-panel v-model="searchForm.deviceFilter" />
-    </div>
-    <div class="stats-main page-container">
-      <!-- 搜索栏 -->
-      <div class="search-bar">
-        <el-form :inline="true" :model="searchForm">
-          <el-form-item :label="$t('statistics.dateRange')">
-            <el-date-picker
-              v-model="searchForm.dateRange"
-              type="daterange"
-              range-separator="至"
-              start-placeholder="开始日期"
-              end-placeholder="结束日期"
-              value-format="yyyy-MM-dd"
-            />
-          </el-form-item>
-          <el-form-item>
-            <el-button type="primary" icon="el-icon-search" @click="handleSearch">
-              {{ $t('common.search') }}
-            </el-button>
-            <el-button icon="el-icon-refresh" @click="handleReset">
-              {{ $t('common.reset') }}
-            </el-button>
-          </el-form-item>
-        </el-form>
-      </div>
-
-      <!-- 统计卡片 -->
-      <el-row :gutter="20" class="stat-row">
-        <el-col :span="6">
-          <div class="stat-card">
-            <div class="stat-icon blue"><i class="el-icon-s-goods"></i></div>
-            <div class="stat-info">
-              <div class="stat-value">{{ overview.totalPieces.toLocaleString() }}</div>
-              <div class="stat-label">加工总件数</div>
-            </div>
-          </div>
-        </el-col>
-        <el-col :span="6">
-          <div class="stat-card">
-            <div class="stat-icon green"><i class="el-icon-sort"></i></div>
-            <div class="stat-info">
-              <div class="stat-value">{{ overview.totalThread.toLocaleString() }}</div>
-              <div class="stat-label">总用线量(m)</div>
-            </div>
-          </div>
-        </el-col>
-        <el-col :span="6">
-          <div class="stat-card">
-            <div class="stat-icon orange"><i class="el-icon-time"></i></div>
-            <div class="stat-info">
-              <div class="stat-value">{{ overview.totalHours }}</div>
-              <div class="stat-label">总运行时长(h)</div>
-            </div>
-          </div>
-        </el-col>
-        <el-col :span="6">
-          <div class="stat-card">
-            <div class="stat-icon purple"><i class="el-icon-data-line"></i></div>
-            <div class="stat-info">
-              <div class="stat-value">{{ overview.avgEfficiency }}%</div>
-              <div class="stat-label">平均效率</div>
-            </div>
-          </div>
-        </el-col>
-      </el-row>
-
-      <!-- 图表 -->
-      <el-row :gutter="20" class="chart-row">
-        <el-col :span="16">
-          <div class="chart-card">
-            <div class="chart-title">日产量趋势</div>
-            <div ref="productionChart" class="chart-container"></div>
-          </div>
-        </el-col>
-        <el-col :span="8">
-          <div class="chart-card">
-            <div class="chart-title">设备产量分布</div>
-            <div ref="devicePieChart" class="chart-container"></div>
-          </div>
-        </el-col>
-      </el-row>
-
-      <!-- 设备加工明细 -->
-      <div class="card">
-        <div class="card-header flex-between">
-          <span>设备加工明细</span>
-          <el-button type="primary" size="small" icon="el-icon-download" @click="handleExport">
-            {{ $t('statistics.exportExcel') }}
-          </el-button>
-        </div>
-        <el-table :data="tableData" border v-loading="loading">
-          <el-table-column type="index" label="序号" width="60" align="center" />
-          <el-table-column prop="deviceName" label="设备名称" min-width="120" />
-          <el-table-column prop="employeeCode" label="员工工号" width="100" />
-          <el-table-column prop="employeeName" label="员工姓名" width="110" />
-          <el-table-column prop="date" label="日期" width="110" />
-          <el-table-column prop="patternName" label="花型名称" min-width="150" />
-          <el-table-column prop="patternStitches" label="花型针数" width="100" align="right" />
-          <el-table-column prop="sewSpeed" label="缝纫速度(针/分钟)" width="140" align="right" />
-          <el-table-column prop="startTime" label="开始时间" width="160" />
-          <el-table-column prop="processCount" label="加工次数" width="90" align="right" />
-          <el-table-column prop="avgProcessDuration" label="平均加工时长(min/次)" width="160" align="right" />
-          <el-table-column prop="patternSewCount" label="花型缝纫次数" width="120" align="right" />
-          <el-table-column prop="alarmInfo" label="报警信息" min-width="140" />
-          <el-table-column prop="alarmTime" label="报警时间" width="160" />
-          <el-table-column prop="cumulativeUpTime" label="累计开机时长(h)" width="130" align="right" />
-        </el-table>
-
-        <el-pagination
-          :current-page="pagination.page"
-          :page-size="pagination.pageSize"
-          :total="pagination.total"
-          layout="total, sizes, prev, pager, next, jumper"
-          @size-change="handleSizeChange"
-          @current-change="handlePageChange"
+  <div class="page-container">
+    <div class="stats-layout">
+      <aside class="stats-side">
+        <device-tree-panel
+          v-model="searchForm.deviceFilter"
+          title="设备树筛选"
+          :min-height="620"
+          @change="handleSearch"
         />
-      </div>
+      </aside>
+
+      <section class="stats-main">
+        <div class="search-bar">
+          <el-form :inline="true" :model="searchForm">
+            <el-form-item :label="$t('statistics.dateRange')">
+              <el-date-picker
+                v-model="searchForm.dateRange"
+                type="daterange"
+                range-separator="至"
+                start-placeholder="开始日期"
+                end-placeholder="结束日期"
+                value-format="yyyy-MM-dd"
+              />
+            </el-form-item>
+            <el-form-item label="设备名称">
+              <el-input
+                v-model.trim="searchForm.deviceKeyword"
+                placeholder="按设备名称搜索明细"
+                clearable
+                @keyup.enter.native="handleSearch"
+              />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" icon="el-icon-search" @click="handleSearch">
+                {{ $t('common.search') }}
+              </el-button>
+              <el-button icon="el-icon-refresh" @click="handleReset">
+                {{ $t('common.reset') }}
+              </el-button>
+            </el-form-item>
+          </el-form>
+        </div>
+
+        <el-row :gutter="20" class="stat-row">
+          <el-col :span="6">
+            <div class="stat-card blue">
+              <div class="stat-icon"><i class="el-icon-s-goods"></i></div>
+              <div class="stat-info">
+                <div class="stat-value">{{ overview.totalPieces.toLocaleString() }}</div>
+                <div class="stat-label">加工总件数</div>
+              </div>
+            </div>
+          </el-col>
+          <el-col :span="6">
+            <div class="stat-card green">
+              <div class="stat-icon"><i class="el-icon-sort"></i></div>
+              <div class="stat-info">
+                <div class="stat-value">{{ overview.totalThread.toLocaleString() }}</div>
+                <div class="stat-label">总用线量(m)</div>
+              </div>
+            </div>
+          </el-col>
+          <el-col :span="6">
+            <div class="stat-card orange">
+              <div class="stat-icon"><i class="el-icon-time"></i></div>
+              <div class="stat-info">
+                <div class="stat-value">{{ overview.totalHours }}</div>
+                <div class="stat-label">总运行时长(h)</div>
+              </div>
+            </div>
+          </el-col>
+          <el-col :span="6">
+            <div class="stat-card">
+              <div class="stat-icon"><i class="el-icon-data-analysis"></i></div>
+              <div class="stat-info">
+                <div class="stat-value">{{ overview.avgEfficiency }}%</div>
+                <div class="stat-label">平均效率</div>
+              </div>
+            </div>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="20" class="chart-row">
+          <el-col :span="15">
+            <div class="chart-card">
+              <div class="chart-title">日产量趋势</div>
+              <div class="chart-subtitle">按日查看产量与效率变化</div>
+              <div ref="productionChart" class="chart-container"></div>
+            </div>
+          </el-col>
+          <el-col :span="9">
+            <div class="chart-card">
+              <div class="chart-title">设备产量分布</div>
+              <div class="chart-subtitle">按设备查看当前范围内产量占比</div>
+              <div ref="devicePieChart" class="chart-container"></div>
+            </div>
+          </el-col>
+        </el-row>
+
+        <div class="card">
+          <div class="card-header flex-between">
+            <span>设备加工明细</span>
+            <el-button type="primary" size="small" icon="el-icon-download" @click="handleExport">
+              {{ $t('statistics.exportExcel') }}
+            </el-button>
+          </div>
+          <el-table
+            :data="pagedTableData"
+            border
+            v-loading="loading"
+            :max-height="tableMaxHeight"
+            empty-text="暂无数据"
+          >
+            <el-table-column type="index" label="序号" width="60" align="center" />
+            <el-table-column prop="deviceName" label="设备名称" min-width="120" />
+            <el-table-column prop="employeeCode" label="员工工号" width="100" />
+            <el-table-column prop="employeeName" label="员工姓名" width="110" />
+            <el-table-column prop="date" label="日期" width="110" />
+            <el-table-column prop="patternName" label="花型名称" min-width="150" />
+            <el-table-column prop="patternStitches" label="花型针数" width="100" align="right" />
+            <el-table-column prop="sewSpeed" label="缝纫速度(针/分钟)" width="140" align="right" />
+            <el-table-column prop="startTime" label="开始时间" width="160" />
+            <el-table-column prop="processCount" label="加工次数" width="90" align="right" />
+            <el-table-column prop="avgProcessDuration" label="平均加工时长(min/次)" width="160" align="right" />
+            <el-table-column prop="patternSewCount" label="花型缝纫次数" width="120" align="right" />
+            <el-table-column prop="alarmInfo" label="报警信息" min-width="140" />
+            <el-table-column prop="alarmTime" label="报警时间" width="160" />
+            <el-table-column prop="cumulativeUpTime" label="累计开机时长(h)" width="130" align="right" />
+          </el-table>
+
+          <el-pagination
+            :current-page="pagination.page"
+            :page-size="pagination.pageSize"
+            :total="pagination.total"
+            layout="total, sizes, prev, pager, next, jumper"
+            @size-change="handleSizeChange"
+            @current-change="handlePageChange"
+          />
+        </div>
+      </section>
     </div>
   </div>
 </template>
@@ -128,14 +148,26 @@ import * as echarts from 'echarts'
 import { getProcessOverview, exportStatistics } from '@/api/statistics'
 import DeviceTreePanel from '@/components/DeviceTreePanel.vue'
 
-const getTodayRange = () => {
-  const now = new Date()
-  const year = now.getFullYear()
-  const month = String(now.getMonth() + 1).padStart(2, '0')
-  const day = String(now.getDate()).padStart(2, '0')
-  const today = `${year}-${month}-${day}`
-  return [today, today]
+const getDefaultRange = () => {
+  const end = new Date()
+  const start = new Date()
+  start.setDate(end.getDate() - 6)
+  const format = (date) => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+  return [format(start), format(end)]
 }
+
+const defaultDeviceFilter = () => ({
+  label: '',
+  nodeType: '',
+  groupId: '',
+  deviceId: '',
+  deviceIds: []
+})
 
 export default {
   name: 'ProcessOverview',
@@ -146,13 +178,9 @@ export default {
     return {
       loading: false,
       searchForm: {
-        dateRange: getTodayRange(),
-        deviceFilter: {
-          label: '',
-          nodeType: '',
-          deviceId: '',
-          deviceIds: []
-        }
+        dateRange: getDefaultRange(),
+        deviceKeyword: '',
+        deviceFilter: defaultDeviceFilter()
       },
       overview: {
         totalPieces: 0,
@@ -173,6 +201,15 @@ export default {
       charts: {}
     }
   },
+  computed: {
+    tableMaxHeight() {
+      return 'calc(100vh - 390px)'
+    },
+    pagedTableData() {
+      const start = (this.pagination.page - 1) * this.pagination.pageSize
+      return this.tableData.slice(start, start + this.pagination.pageSize)
+    }
+  },
   mounted() {
     this.fetchData()
     window.addEventListener('resize', this.handleResize)
@@ -190,13 +227,14 @@ export default {
           endDate: this.searchForm.dateRange?.[1],
           deviceId: this.searchForm.deviceFilter.deviceId,
           deviceIds: this.searchForm.deviceFilter.deviceIds.join(','),
-          page: this.pagination.page,
-          pageSize: this.pagination.pageSize
+          page: 1,
+          pageSize: 2000
         })
         if (res.code === 0) {
           this.overview = res.data.overview || { totalPieces: 0, totalThread: 0, totalHours: 0, avgEfficiency: 0 }
-          this.tableData = res.data.list || []
-          this.pagination.total = res.data.total || 0
+          const rawList = res.data.list || []
+          this.tableData = this.applyLocalFilters(rawList)
+          this.pagination.total = this.tableData.length
           this.chartData = {
             productionTrend: res.data.productionTrend || [],
             deviceDistribution: res.data.deviceDistribution || []
@@ -211,29 +249,28 @@ export default {
         this.loading = false
       }
     },
+    applyLocalFilters(list) {
+      const keyword = String(this.searchForm.deviceKeyword || '').trim().toLowerCase()
+      if (!keyword) return list
+      return list.filter(item => String(item.deviceName || '').toLowerCase().includes(keyword))
+    },
     handleSearch() {
       this.pagination.page = 1
       this.fetchData()
     },
     handleReset() {
       this.searchForm = {
-        dateRange: getTodayRange(),
-        deviceFilter: {
-          label: '',
-          nodeType: '',
-          deviceId: '',
-          deviceIds: []
-        }
+        dateRange: getDefaultRange(),
+        deviceKeyword: '',
+        deviceFilter: defaultDeviceFilter()
       }
       this.handleSearch()
     },
     handleSizeChange(size) {
       this.pagination.pageSize = size
-      this.fetchData()
     },
     handlePageChange(page) {
       this.pagination.page = page
-      this.fetchData()
     },
     async handleExport() {
       try {
@@ -280,11 +317,6 @@ export default {
       document.body.removeChild(link)
       window.URL.revokeObjectURL(url)
     },
-    getEfficiencyClass(value) {
-      if (value >= 80) return 'text-success'
-      if (value >= 60) return 'text-warning'
-      return 'text-danger'
-    },
     initCharts() {
       this.initProductionChart()
       this.initDevicePieChart()
@@ -294,31 +326,37 @@ export default {
       const trendData = this.chartData.productionTrend || []
       chart.setOption({
         tooltip: { trigger: 'axis' },
-        legend: { data: ['产量', '效率'] },
-        grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+        legend: {
+          top: 0,
+          data: ['产量', '效率'],
+          textStyle: { color: '#6a7f9d' }
+        },
+        grid: { left: '4%', right: '4%', bottom: '4%', top: 40, containLabel: true },
         xAxis: {
           type: 'category',
+          axisLabel: { color: '#6a7f9d' },
+          axisLine: { lineStyle: { color: '#dbe4f0' } },
           data: trendData.map(item => item.date)
         },
         yAxis: [
-          { type: 'value', name: '产量(件)' },
-          { type: 'value', name: '效率(%)', max: 100 }
+          { type: 'value', name: '产量(件)', axisLabel: { color: '#6a7f9d' }, splitLine: { lineStyle: { color: '#edf2f8' } } },
+          { type: 'value', name: '效率(%)', max: 100, axisLabel: { color: '#6a7f9d' } }
         ],
         series: [
           {
             name: '产量',
             type: 'bar',
             data: trendData.map(item => item.pieces ?? item.value ?? 0),
-            itemStyle: { color: '#409EFF', borderRadius: [4, 4, 0, 0] }
+            itemStyle: { color: '#2f6df6', borderRadius: [10, 10, 0, 0] }
           },
           {
             name: '效率',
             type: 'line',
             yAxisIndex: 1,
-            data: trendData.map(item => item.efficiency ?? 0),
             smooth: true,
-            lineStyle: { color: '#67C23A', width: 3 },
-            itemStyle: { color: '#67C23A' }
+            data: trendData.map(item => item.efficiency ?? 0),
+            lineStyle: { color: '#2fb46e', width: 3 },
+            itemStyle: { color: '#2fb46e' }
           }
         ]
       }, true)
@@ -328,13 +366,18 @@ export default {
       const pieData = this.chartData.deviceDistribution || []
       chart.setOption({
         tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
-        legend: { orient: 'vertical', right: 10, top: 'center' },
+        legend: {
+          orient: 'vertical',
+          left: 0,
+          top: 'middle',
+          textStyle: { color: '#6a7f9d' }
+        },
         series: [{
           type: 'pie',
-          radius: ['40%', '70%'],
-          center: ['40%', '50%'],
+          radius: ['46%', '68%'],
+          center: ['68%', '50%'],
           data: pieData,
-          color: ['#409EFF', '#67C23A', '#E6A23C', '#F56C6C']
+          color: ['#2f6df6', '#4aa7ff', '#2fb46e', '#f0b037', '#ef5a5a']
         }]
       }, true)
     },
@@ -344,95 +387,3 @@ export default {
   }
 }
 </script>
-
-<style lang="scss" scoped>
-.stats-layout {
-  display: flex;
-  gap: 16px;
-}
-
-.stats-side {
-  width: 260px;
-  flex-shrink: 0;
-}
-
-.stats-main {
-  flex: 1;
-  min-width: 0;
-}
-
-@media (max-width: 1200px) {
-  .stats-layout {
-    flex-direction: column;
-  }
-
-  .stats-side {
-    width: 100%;
-  }
-}
-
-.stat-row {
-  margin-bottom: 20px;
-}
-
-.stat-card {
-  display: flex;
-  align-items: center;
-  padding: 20px;
-  background: #fff;
-  border-radius: 8px;
-
-  .stat-icon {
-    width: 50px;
-    height: 50px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-right: 15px;
-
-    i { font-size: 24px; color: #fff; }
-
-    &.blue { background: linear-gradient(135deg, #409EFF, #2d8cf0); }
-    &.green { background: linear-gradient(135deg, #67C23A, #5daf34); }
-    &.orange { background: linear-gradient(135deg, #E6A23C, #d69330); }
-    &.purple { background: linear-gradient(135deg, #9b59b6, #8e44ad); }
-  }
-
-  .stat-info {
-    .stat-value {
-      font-size: 24px;
-      font-weight: bold;
-      color: #303133;
-    }
-    .stat-label {
-      font-size: 14px;
-      color: #909399;
-    }
-  }
-}
-
-.chart-row {
-  margin-bottom: 20px;
-}
-
-.chart-card {
-  background: #fff;
-  border-radius: 8px;
-  padding: 20px;
-
-  .chart-title {
-    font-size: 16px;
-    font-weight: 600;
-    margin-bottom: 15px;
-  }
-
-  .chart-container {
-    height: 300px;
-  }
-}
-
-.text-success { color: #67C23A; font-weight: bold; }
-.text-warning { color: #E6A23C; font-weight: bold; }
-.text-danger { color: #F56C6C; font-weight: bold; }
-</style>

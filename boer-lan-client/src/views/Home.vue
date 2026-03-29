@@ -1,98 +1,103 @@
 <template>
-  <div class="home-page">
-    <!-- 设备状态统计卡片 -->
-    <el-row :gutter="20" class="stat-cards">
-      <el-col :span="6">
-        <div class="stat-card">
-          <div class="stat-icon">
-            <i class="el-icon-monitor"></i>
-          </div>
-          <div class="stat-content">
-            <div class="stat-value">{{ stats.totalDevices }}</div>
-            <div class="stat-label">{{ $t('home.totalDevices') }}</div>
-          </div>
+  <div class="page-container home-page">
+    <div class="hero-card card">
+      <div class="hero-actions">
+        <div class="hero-pill danger">
+          <span>报警设备</span>
+          <strong>{{ stats.alarmDevices }}</strong>
         </div>
-      </el-col>
-      <el-col :span="6">
-        <div class="stat-card success">
-          <div class="stat-icon">
-            <i class="el-icon-circle-check"></i>
-          </div>
-          <div class="stat-content">
-            <div class="stat-value">{{ stats.onlineDevices }}</div>
-            <div class="stat-label">{{ $t('home.onlineDevices') }}</div>
-          </div>
+        <div class="hero-filter">
+          <span>产量统计范围</span>
+          <el-radio-group v-model="productionRange" size="mini" @change="handleProductionRangeChange">
+            <el-radio-button label="week">近一周</el-radio-button>
+            <el-radio-button label="month">近一月</el-radio-button>
+            <el-radio-button label="custom">自定义</el-radio-button>
+          </el-radio-group>
         </div>
-      </el-col>
-      <el-col :span="6">
-        <div class="stat-card warning">
-          <div class="stat-icon">
-            <i class="el-icon-remove-outline"></i>
-          </div>
-          <div class="stat-content">
-            <div class="stat-value">{{ stats.offlineDevices }}</div>
-            <div class="stat-label">{{ $t('home.offlineDevices') }}</div>
-          </div>
-        </div>
-      </el-col>
-      <el-col :span="6">
-        <div class="stat-card danger">
-          <div class="stat-icon">
-            <i class="el-icon-loading"></i>
-          </div>
-          <div class="stat-content">
-            <div class="stat-value">{{ stats.workingDevices }}</div>
-            <div class="stat-label">{{ $t('home.workingDevices') }}</div>
-          </div>
-        </div>
-      </el-col>
-    </el-row>
+      </div>
+    </div>
 
-    <!-- 图表区域 -->
-    <el-row :gutter="20" class="chart-row">
-      <el-col :span="16">
-        <div class="chart-card">
-          <div class="chart-title">{{ $t('home.weeklyEfficiency') }}</div>
-          <div ref="efficiencyChart" class="chart-container"></div>
-        </div>
-      </el-col>
-      <el-col :span="8">
-        <div class="chart-card">
-          <div class="chart-title">{{ $t('home.patternUsage') }}</div>
-          <div ref="patternChart" class="chart-container"></div>
-        </div>
-      </el-col>
-    </el-row>
+    <div v-if="productionRange === 'custom'" class="search-bar compact-bar">
+      <el-form :inline="true">
+        <el-form-item label="自定义时间">
+          <el-date-picker
+            v-model="customRange"
+            type="daterange"
+            value-format="yyyy-MM-dd"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            @change="refreshCharts"
+          />
+        </el-form-item>
+      </el-form>
+    </div>
 
-    <el-row :gutter="20" class="chart-row">
-      <el-col :span="12">
-        <div class="chart-card">
-          <div class="chart-title">{{ $t('home.modelRatio') }}</div>
-          <div ref="modelChart" class="chart-container"></div>
-        </div>
-      </el-col>
-      <el-col :span="12">
-        <div class="chart-card">
-          <div class="chart-title">{{ $t('home.topProduction') }}</div>
-          <div ref="topChart" class="chart-container"></div>
-        </div>
-      </el-col>
-    </el-row>
+    <div v-if="rangeNotice" class="range-notice">
+      <i class="el-icon-info"></i>
+      <span>{{ rangeNotice }}</span>
+    </div>
 
-    <el-row :gutter="20" class="chart-row">
-      <el-col :span="12">
-        <div class="chart-card">
-          <div class="chart-title">{{ $t('home.currentStatus') }}</div>
-          <div ref="currentStatusChart" class="chart-container"></div>
-        </div>
-      </el-col>
-      <el-col :span="12">
-        <div class="chart-card">
-          <div class="chart-title">{{ $t('home.productionStats') }}</div>
-          <div ref="productionChart" class="chart-container"></div>
-        </div>
-      </el-col>
-    </el-row>
+    <div class="status-grid">
+      <div class="status-card total">
+        <span class="status-label">{{ $t('home.totalDevices') }}</span>
+        <strong class="status-value">{{ stats.totalDevices }}</strong>
+      </div>
+      <div class="status-card online">
+        <span class="status-label">{{ $t('home.onlineDevices') }}</span>
+        <strong class="status-value">{{ stats.onlineDevices }}</strong>
+      </div>
+      <div class="status-card working">
+        <span class="status-label">{{ $t('home.workingDevices') }}</span>
+        <strong class="status-value">{{ stats.workingDevices }}</strong>
+      </div>
+      <div class="status-card offline">
+        <span class="status-label">{{ $t('home.offlineDevices') }}</span>
+        <strong class="status-value">{{ stats.offlineDevices }}</strong>
+      </div>
+      <div class="status-card alarm">
+        <span class="status-label">{{ $t('home.alarmDevices') }}</span>
+        <strong class="status-value">{{ stats.alarmDevices }}</strong>
+      </div>
+    </div>
+
+    <div class="home-grid">
+      <div class="chart-card chart-wide">
+        <div class="chart-title">{{ $t('home.weeklyEfficiency') }}</div>
+        <div class="chart-subtitle">按近 7 日设备平均运行效率统计</div>
+        <div ref="efficiencyChart" class="chart-container"></div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-title">{{ $t('home.currentStatus') }}</div>
+        <div class="chart-subtitle">按在线、运行、离线和报警状态分布</div>
+        <div ref="currentStatusChart" class="chart-container compact"></div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-title">{{ $t('home.patternUsage') }}</div>
+        <div class="chart-subtitle">圆环粗细与机型占比保持一致</div>
+        <div ref="patternChart" class="chart-container compact"></div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-title">{{ $t('home.modelRatio') }}</div>
+        <div class="chart-subtitle">图例统一放在左侧，便于快速阅读</div>
+        <div ref="modelChart" class="chart-container compact"></div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-title">{{ $t('home.topProduction') }}</div>
+        <div class="chart-subtitle">按近 7 天前三设备产量占比展示</div>
+        <div ref="topChart" class="chart-container compact"></div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-title">{{ productionChartTitle }}</div>
+        <div class="chart-subtitle">{{ productionChartSubtitle }}</div>
+        <div ref="productionChart" class="chart-container compact"></div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -118,7 +123,31 @@ export default {
         productionByDay: []
       },
       refreshTimer: null,
-      charts: {}
+      charts: {},
+      productionRange: 'week',
+      customRange: []
+    }
+  },
+  computed: {
+    productionChartTitle() {
+      const map = {
+        week: '产量统计（近一周）',
+        month: '产量统计（近一月）',
+        custom: '产量统计（自定义）'
+      }
+      return map[this.productionRange]
+    },
+    productionChartSubtitle() {
+      if (this.productionRange === 'custom' && this.customRange?.length === 2) {
+        return `${this.customRange[0]} 至 ${this.customRange[1]}`
+      }
+      return '当前基于服务端返回数据绘制'
+    },
+    rangeNotice() {
+      if (this.productionRange === 'week') {
+        return ''
+      }
+      return '当前接口仍以近 7 日数据为基础，月度和自定义范围待服务端补充更长周期统计后可完全生效。'
     }
   },
   mounted() {
@@ -149,9 +178,7 @@ export default {
             runningStatusByHour: res.data.runningStatusByHour || [],
             productionByDay: res.data.productionByDay || res.data.productionByHour || []
           }
-          this.$nextTick(() => {
-            this.initCharts()
-          })
+          this.refreshCharts()
         }
       } catch (error) {
         console.error('Failed to fetch home stats:', error)
@@ -169,245 +196,242 @@ export default {
         this.refreshTimer = null
       }
     },
-    initCharts() {
-      this.initEfficiencyChart()
-      this.initPatternChart()
-      this.initModelChart()
-      this.initTopChart()
-      this.initCurrentStatusChart()
-      this.initProductionChart()
+    handleProductionRangeChange() {
+      if (this.productionRange !== 'custom') {
+        this.customRange = []
+      }
+      this.refreshCharts()
+    },
+    refreshCharts() {
+      this.$nextTick(() => {
+        this.initEfficiencyChart()
+        this.initCurrentStatusChart()
+        this.initPatternChart()
+        this.initModelChart()
+        this.initTopChart()
+        this.initProductionChart()
+      })
+    },
+    getOrCreateChart(key, refName) {
+      if (this.charts[key]) {
+        return this.charts[key]
+      }
+      if (!this.$refs[refName]) {
+        return null
+      }
+      const chart = echarts.init(this.$refs[refName])
+      this.charts[key] = chart
+      return chart
+    },
+    getDonutSeries(data, colors) {
+      return [{
+        type: 'pie',
+        radius: ['48%', '68%'],
+        center: ['67%', '54%'],
+        label: { show: false },
+        labelLine: { show: false },
+        data,
+        color: colors
+      }]
     },
     initEfficiencyChart() {
-      if (!this.$refs.efficiencyChart) return
-      const chart = echarts.init(this.$refs.efficiencyChart)
-      this.charts.efficiency = chart
+      const chart = this.getOrCreateChart('efficiency', 'efficiencyChart')
+      if (!chart) return
+
+      const seriesData = this.stats.weeklyEfficiency || []
       chart.setOption({
         tooltip: {
           trigger: 'axis',
           formatter: '{b}: {c}%'
         },
         grid: {
-          left: '3%',
+          left: '4%',
           right: '4%',
-          bottom: '3%',
+          top: 20,
+          bottom: 24,
           containLabel: true
         },
         xAxis: {
           type: 'category',
-          data: this.stats.weeklyEfficiency.map(d => d.date),
-          axisLine: { lineStyle: { color: '#ddd' } },
-          axisLabel: { color: '#666' }
+          data: seriesData.map(item => item.date),
+          axisLine: { lineStyle: { color: '#dbe4f0' } },
+          axisLabel: { color: '#69809f' }
         },
         yAxis: {
           type: 'value',
           max: 100,
-          axisLabel: { formatter: '{value}%', color: '#666' },
-          splitLine: { lineStyle: { color: '#eee' } }
+          axisLabel: { formatter: '{value}%', color: '#69809f' },
+          splitLine: { lineStyle: { color: '#edf2f8' } }
         },
         series: [{
-          data: this.stats.weeklyEfficiency.map(d => d.value),
           type: 'line',
           smooth: true,
           symbol: 'circle',
-          symbolSize: 8,
-          lineStyle: { color: '#409EFF', width: 3 },
-          itemStyle: { color: '#409EFF' },
+          symbolSize: 9,
+          data: seriesData.map(item => item.value),
+          lineStyle: { width: 3, color: '#2f6df6' },
+          itemStyle: { color: '#2f6df6' },
           areaStyle: {
             color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: 'rgba(64, 158, 255, 0.3)' },
-              { offset: 1, color: 'rgba(64, 158, 255, 0.05)' }
+              { offset: 0, color: 'rgba(47, 109, 246, 0.26)' },
+              { offset: 1, color: 'rgba(47, 109, 246, 0.04)' }
             ])
           }
         }]
-      })
-    },
-    initPatternChart() {
-      if (!this.$refs.patternChart) return
-      const chart = echarts.init(this.$refs.patternChart)
-      this.charts.pattern = chart
-      chart.setOption({
-        tooltip: {
-          trigger: 'item',
-          formatter: '{b}: {c} ({d}%)'
-        },
-        legend: {
-          orient: 'vertical',
-          right: 10,
-          top: 'center'
-        },
-        series: [{
-          type: 'pie',
-          radius: ['40%', '70%'],
-          center: ['40%', '50%'],
-          avoidLabelOverlap: false,
-          label: { show: false },
-          emphasis: {
-            label: { show: true, fontSize: 14, fontWeight: 'bold' }
-          },
-          labelLine: { show: false },
-          data: this.stats.patternUsage.map(d => ({
-            name: d.name,
-            value: d.value
-          })),
-          color: ['#409EFF', '#67C23A', '#E6A23C', '#909399']
-        }]
-      })
-    },
-    initModelChart() {
-      if (!this.$refs.modelChart) return
-      const chart = echarts.init(this.$refs.modelChart)
-      this.charts.model = chart
-      chart.setOption({
-        tooltip: {
-          trigger: 'item',
-          formatter: '{b}: {c} ({d}%)'
-        },
-        legend: {
-          orient: 'vertical',
-          right: 10,
-          top: 'center'
-        },
-        series: [{
-          type: 'pie',
-          radius: ['50%', '70%'],
-          center: ['40%', '50%'],
-          label: { show: false },
-          data: this.stats.modelRatio.map(d => ({
-            name: d.name,
-            value: d.value
-          })),
-          color: ['#409EFF', '#67C23A', '#E6A23C']
-        }]
-      })
-    },
-    initTopChart() {
-      if (!this.$refs.topChart) return
-      const chart = echarts.init(this.$refs.topChart)
-      this.charts.top = chart
-      chart.setOption({
-        tooltip: {
-          trigger: 'axis',
-          axisPointer: { type: 'shadow' }
-        },
-        grid: {
-          left: '3%',
-          right: '4%',
-          bottom: '3%',
-          containLabel: true
-        },
-        xAxis: {
-          type: 'value',
-          axisLabel: { color: '#666' },
-          splitLine: { lineStyle: { color: '#eee' } }
-        },
-        yAxis: {
-          type: 'category',
-          data: this.stats.topProduction.map(d => d.name).reverse(),
-          axisLine: { lineStyle: { color: '#ddd' } },
-          axisLabel: { color: '#666' }
-        },
-        series: [{
-          type: 'bar',
-          data: this.stats.topProduction.map(d => d.value).reverse(),
-          barWidth: 20,
-          itemStyle: {
-            color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-              { offset: 0, color: '#409EFF' },
-              { offset: 1, color: '#67C23A' }
-            ]),
-            borderRadius: [0, 4, 4, 0]
-          }
-        }]
-      })
-    },
-    initProductionChart() {
-      if (!this.$refs.productionChart) return
-      const chart = echarts.init(this.$refs.productionChart)
-      this.charts.production = chart
-      chart.setOption({
-        tooltip: {
-          trigger: 'axis',
-          axisPointer: { type: 'shadow' }
-        },
-        grid: {
-          left: '3%',
-          right: '4%',
-          bottom: '3%',
-          containLabel: true
-        },
-        xAxis: {
-          type: 'category',
-          data: this.stats.productionByDay.map(d => d.date),
-          axisLine: { lineStyle: { color: '#ddd' } },
-          axisLabel: { color: '#666' }
-        },
-        yAxis: {
-          type: 'value',
-          axisLabel: { color: '#666' },
-          splitLine: { lineStyle: { color: '#eee' } }
-        },
-        series: [{
-          type: 'bar',
-          data: this.stats.productionByDay.map(d => d.value),
-          barWidth: 20,
-          itemStyle: {
-            color: '#409EFF',
-            borderRadius: [4, 4, 0, 0]
-          }
-        }]
-      })
+      }, true)
     },
     initCurrentStatusChart() {
-      if (!this.$refs.currentStatusChart) return
-      const chart = echarts.init(this.$refs.currentStatusChart)
-      this.charts.currentStatus = chart
+      const chart = this.getOrCreateChart('currentStatus', 'currentStatusChart')
+      if (!chart) return
+
+      const data = [
+        { name: '在线', value: this.stats.onlineDevices || 0 },
+        { name: '运行中', value: this.stats.workingDevices || 0 },
+        { name: '离线', value: this.stats.offlineDevices || 0 },
+        { name: '报警', value: this.stats.alarmDevices || 0 }
+      ]
+
       chart.setOption({
-        tooltip: {
-          trigger: 'axis'
-        },
+        tooltip: { trigger: 'item', formatter: '{b}: {c} 台 ({d}%)' },
         legend: {
-          data: ['开机设备', '关机设备']
+          orient: 'vertical',
+          left: 8,
+          top: 'middle',
+          itemWidth: 10,
+          itemHeight: 10,
+          textStyle: { color: '#5f7392' }
         },
+        series: this.getDonutSeries(data, ['#2fb46e', '#2f6df6', '#8a98ad', '#ef5a5a'])
+      }, true)
+    },
+    initPatternChart() {
+      const chart = this.getOrCreateChart('pattern', 'patternChart')
+      if (!chart) return
+
+      const data = (this.stats.patternUsage || []).map(item => ({
+        name: item.name,
+        value: item.value
+      }))
+
+      chart.setOption({
+        tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+        legend: {
+          orient: 'vertical',
+          left: 8,
+          top: 'middle',
+          itemWidth: 10,
+          itemHeight: 10,
+          textStyle: { color: '#5f7392' }
+        },
+        series: this.getDonutSeries(data, ['#2f6df6', '#4aa7ff', '#28b5c8', '#2fb46e', '#f0b037', '#ef5a5a'])
+      }, true)
+    },
+    initModelChart() {
+      const chart = this.getOrCreateChart('model', 'modelChart')
+      if (!chart) return
+
+      const data = (this.stats.modelRatio || []).map(item => ({
+        name: item.name,
+        value: item.value
+      }))
+
+      chart.setOption({
+        tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+        legend: {
+          orient: 'vertical',
+          left: 8,
+          top: 'middle',
+          itemWidth: 10,
+          itemHeight: 10,
+          textStyle: { color: '#5f7392' }
+        },
+        series: this.getDonutSeries(data, ['#173f97', '#2f6df6', '#4aa7ff', '#28b5c8', '#2fb46e'])
+      }, true)
+    },
+    initTopChart() {
+      const chart = this.getOrCreateChart('top', 'topChart')
+      if (!chart) return
+
+      const data = (this.stats.topProduction || []).map(item => ({
+        name: item.name,
+        value: item.value
+      }))
+
+      chart.setOption({
+        tooltip: { trigger: 'item', formatter: '{b}: {c} 件 ({d}%)' },
+        legend: {
+          bottom: 0,
+          textStyle: { color: '#5f7392' }
+        },
+        series: [{
+          type: 'pie',
+          radius: ['26%', '72%'],
+          roseType: 'radius',
+          center: ['50%', '46%'],
+          data,
+          label: { color: '#587090' },
+          color: ['#173f97', '#2f6df6', '#4aa7ff']
+        }]
+      }, true)
+    },
+    getProductionSeries() {
+      const source = (this.stats.productionByDay || []).map((item, index) => ({
+        label: item.date || item.hour || `第${index + 1}天`,
+        rawDate: item.fullDate || item.date || '',
+        value: Number(item.value ?? item.pieces ?? item.count ?? 0)
+      }))
+
+      if (this.productionRange === 'custom' && this.customRange?.length === 2) {
+        const [start, end] = this.customRange
+        const filtered = source.filter(item => {
+          if (!item.rawDate || item.rawDate.length !== 10) {
+            return false
+          }
+          return item.rawDate >= start && item.rawDate <= end
+        })
+        return filtered.length ? filtered : source
+      }
+
+      return source
+    },
+    initProductionChart() {
+      const chart = this.getOrCreateChart('production', 'productionChart')
+      if (!chart) return
+
+      const seriesData = this.getProductionSeries()
+      chart.setOption({
+        tooltip: { trigger: 'axis' },
         grid: {
-          left: '3%',
+          left: '4%',
           right: '4%',
-          bottom: '3%',
+          top: 20,
+          bottom: 24,
           containLabel: true
         },
         xAxis: {
           type: 'category',
-          data: this.stats.runningStatusByHour.map(d => d.hour),
-          axisLine: { lineStyle: { color: '#ddd' } },
-          axisLabel: { color: '#666', interval: 1, rotate: 45 }
+          data: seriesData.map(item => item.label),
+          axisLine: { lineStyle: { color: '#dbe4f0' } },
+          axisLabel: { color: '#69809f' }
         },
         yAxis: {
           type: 'value',
-          axisLabel: { color: '#666' },
-          splitLine: { lineStyle: { color: '#eee' } }
+          axisLabel: { color: '#69809f' },
+          splitLine: { lineStyle: { color: '#edf2f8' } }
         },
-        series: [
-          {
-            name: '开机设备',
-            type: 'line',
-            smooth: true,
-            symbol: 'circle',
-            symbolSize: 6,
-            lineStyle: { color: '#67C23A', width: 2 },
-            itemStyle: { color: '#67C23A' },
-            data: this.stats.runningStatusByHour.map(d => d.online)
-          },
-          {
-            name: '关机设备',
-            type: 'line',
-            smooth: true,
-            symbol: 'circle',
-            symbolSize: 6,
-            lineStyle: { color: '#909399', width: 2 },
-            itemStyle: { color: '#909399' },
-            data: this.stats.runningStatusByHour.map(d => d.offline)
+        series: [{
+          type: 'bar',
+          barWidth: 18,
+          data: seriesData.map(item => item.value),
+          itemStyle: {
+            borderRadius: [10, 10, 0, 0],
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: '#4aa7ff' },
+              { offset: 1, color: '#2f6df6' }
+            ])
           }
-        ]
-      })
+        }]
+      }, true)
     },
     handleResize() {
       Object.values(this.charts).forEach(chart => chart && chart.resize())
@@ -417,92 +441,143 @@ export default {
 </script>
 
 <style lang="scss" scoped>
-.home-page {
-  padding: 20px;
-  background-color: #f5f7fa;
-  min-height: 100%;
-}
-
-.stat-cards {
-  margin-bottom: 20px;
-}
-
-.stat-card {
+.hero-card {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  gap: 20px;
+  margin-bottom: 18px;
+}
+
+.hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.hero-pill {
+  min-width: 120px;
+  padding: 12px 16px;
+  border-radius: 18px;
+  background: #f5f8fd;
+
+  span {
+    display: block;
+    color: #7e8ea6;
+    font-size: 12px;
+    margin-bottom: 6px;
+  }
+
+  strong {
+    font-size: 24px;
+    color: #243654;
+  }
+
+  &.danger strong {
+    color: #ef5a5a;
+  }
+}
+
+.hero-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: #667b99;
+  font-size: 12px;
+}
+
+.compact-bar {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.range-notice {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: #edf4ff;
+  color: #2f6df6;
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.status-card {
+  min-height: 112px;
   padding: 20px;
-  background: linear-gradient(135deg, #409EFF 0%, #2d8cf0 100%);
-  border-radius: 8px;
+  border-radius: 22px;
   color: #fff;
-  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.3);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-shadow: 0 18px 30px rgba(47, 109, 246, 0.16);
 
-  &.success {
-    background: linear-gradient(135deg, #67C23A 0%, #5daf34 100%);
-    box-shadow: 0 4px 12px rgba(103, 194, 58, 0.3);
+  &.total { background: linear-gradient(135deg, #173f97, #2f6df6); }
+  &.online { background: linear-gradient(135deg, #2fb46e, #1f935e); }
+  &.working { background: linear-gradient(135deg, #3476ff, #1d4ecc); }
+  &.offline { background: linear-gradient(135deg, #95a4ba, #71839e); }
+  &.alarm { background: linear-gradient(135deg, #ef5a5a, #d94156); }
+}
+
+.status-label {
+  font-size: 13px;
+  opacity: 0.86;
+}
+
+.status-value {
+  font-size: 30px;
+  line-height: 1;
+}
+
+.home-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.chart-wide {
+  grid-column: span 2;
+}
+
+.compact {
+  height: 290px;
+}
+
+@media (max-width: 1200px) {
+  .status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  &.warning {
-    background: linear-gradient(135deg, #E6A23C 0%, #d69330 100%);
-    box-shadow: 0 4px 12px rgba(230, 162, 60, 0.3);
+  .home-grid {
+    grid-template-columns: 1fr 1fr;
   }
 
-  &.danger {
-    background: linear-gradient(135deg, #F56C6C 0%, #e85656 100%);
-    box-shadow: 0 4px 12px rgba(245, 108, 108, 0.3);
-  }
-
-  .stat-icon {
-    width: 60px;
-    height: 60px;
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-right: 15px;
-
-    i {
-      font-size: 28px;
-    }
-  }
-
-  .stat-content {
-    .stat-value {
-      font-size: 32px;
-      font-weight: bold;
-      line-height: 1.2;
-    }
-
-    .stat-label {
-      font-size: 14px;
-      opacity: 0.9;
-      margin-top: 5px;
-    }
+  .chart-wide {
+    grid-column: span 2;
   }
 }
 
-.chart-row {
-  margin-bottom: 20px;
-}
-
-.chart-card {
-  background: #fff;
-  border-radius: 8px;
-  padding: 20px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
-
-  .chart-title {
-    font-size: 16px;
-    font-weight: 600;
-    color: #303133;
-    margin-bottom: 15px;
-    padding-bottom: 10px;
-    border-bottom: 1px solid #eee;
+@media (max-width: 768px) {
+  .hero-card {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
-  .chart-container {
-    width: 100%;
-    height: 280px;
+  .status-grid,
+  .home-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .chart-wide {
+    grid-column: span 1;
   }
 }
 </style>

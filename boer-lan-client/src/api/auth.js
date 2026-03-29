@@ -1,13 +1,6 @@
 import request from './request'
-import { mockLogin } from './mock'
-
-// 是否使用Mock数据（开发阶段可设为true，生产环境设为false）
-const USE_MOCK = false
 
 export function login(data) {
-  if (USE_MOCK) {
-    return mockLogin(data.username, data.password)
-  }
   return request({
     url: '/auth/login',
     method: 'post',
@@ -17,9 +10,6 @@ export function login(data) {
 }
 
 export function logout() {
-  if (USE_MOCK) {
-    return Promise.resolve({ code: 0, message: 'success' })
-  }
   return request({
     url: '/auth/logout',
     method: 'post'
@@ -27,28 +17,6 @@ export function logout() {
 }
 
 export function getUserInfo() {
-  if (USE_MOCK) {
-    return Promise.resolve({
-      code: 0,
-      data: {
-        id: 1,
-        username: 'admin',
-        nickname: '管理员',
-        role: 'admin',
-        disabled: false,
-        permissions: {
-          home: true,
-          dashboard: true,
-          employeeManagement: true,
-          fileManagement: true,
-          remoteMonitoring: true,
-          statistics: true,
-          deviceManagement: true
-        }
-      },
-      message: 'success'
-    })
-  }
   return request({
     url: '/auth/userinfo',
     method: 'get'

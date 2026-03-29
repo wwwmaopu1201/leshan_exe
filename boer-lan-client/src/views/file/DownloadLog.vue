@@ -70,8 +70,15 @@
     </div>
 
     <div class="card">
-      <div class="table-actions flex-between">
+      <div class="section-title">
         <div>
+          <h3>下发日志</h3>
+          <p>按花型、订单号、设备和时间追踪每一次下发结果。</p>
+        </div>
+      </div>
+
+      <div class="table-actions flex-between">
+        <div class="action-group">
           <el-button icon="el-icon-download" @click="handleExport">
             {{ $t('common.export') }}
           </el-button>
@@ -81,7 +88,7 @@
         </div>
       </div>
 
-      <el-table :data="logList" border v-loading="loading">
+      <el-table :data="logList" border v-loading="loading" empty-text="暂无数据">
         <el-table-column type="index" label="序号" width="60" align="center" />
         <el-table-column prop="patternName" label="花型文件" min-width="160">
           <template slot-scope="scope">
@@ -269,6 +276,11 @@ export default {
 </script>
 
 <style lang="scss" scoped>
+.action-group {
+  display: flex;
+  gap: 10px;
+}
+
 .text-danger {
   color: #F56C6C;
 }

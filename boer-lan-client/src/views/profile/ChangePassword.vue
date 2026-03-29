@@ -1,50 +1,41 @@
 <template>
   <div class="page-container">
-    <div class="password-card">
-      <h3>{{ $t('menu.changePassword') }}</h3>
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
-        <el-form-item :label="$t('profile.oldPassword')" prop="oldPassword">
-          <el-input
-            v-model="form.oldPassword"
-            type="password"
-            show-password
-            placeholder="请输入原密码"
-          />
-        </el-form-item>
-        <el-form-item :label="$t('profile.newPassword')" prop="newPassword">
-          <el-input
-            v-model="form.newPassword"
-            type="password"
-            show-password
-            placeholder="请输入新密码"
-          />
-        </el-form-item>
-        <el-form-item :label="$t('profile.confirmPassword')" prop="confirmPassword">
-          <el-input
-            v-model="form.confirmPassword"
-            type="password"
-            show-password
-            placeholder="请再次输入新密码"
-          />
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="handleSubmit">
-            {{ $t('common.confirm') }}
-          </el-button>
-          <el-button @click="handleReset">
-            {{ $t('common.reset') }}
-          </el-button>
-        </el-form-item>
-      </el-form>
-
-      <div class="password-tips">
-        <h4>密码要求:</h4>
-        <ul>
-          <li>密码长度为6-32位</li>
-          <li>支持数字、字母、常见符号组合</li>
-          <li>新密码不能与原密码相同</li>
-          <li>保存后会自动退出，请使用新密码重新登录</li>
-        </ul>
+    <div class="password-layout card">
+      <div class="password-form-wrap">
+        <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
+          <el-form-item :label="$t('profile.oldPassword')" prop="oldPassword">
+            <el-input
+              v-model="form.oldPassword"
+              type="password"
+              show-password
+              placeholder="请输入原密码"
+            />
+          </el-form-item>
+          <el-form-item :label="$t('profile.newPassword')" prop="newPassword">
+            <el-input
+              v-model="form.newPassword"
+              type="password"
+              show-password
+              placeholder="请输入新密码"
+            />
+          </el-form-item>
+          <el-form-item :label="$t('profile.confirmPassword')" prop="confirmPassword">
+            <el-input
+              v-model="form.confirmPassword"
+              type="password"
+              show-password
+              placeholder="请再次输入新密码"
+            />
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" @click="handleSubmit">
+              {{ $t('common.confirm') }}
+            </el-button>
+            <el-button @click="handleReset">
+              {{ $t('common.reset') }}
+            </el-button>
+          </el-form-item>
+        </el-form>
       </div>
     </div>
   </div>
@@ -126,39 +117,21 @@ export default {
 </script>
 
 <style lang="scss" scoped>
-.password-card {
-  background: #fff;
-  border-radius: 8px;
-  padding: 30px;
-  max-width: 500px;
-
-  h3 {
-    margin-bottom: 30px;
-    color: #303133;
-  }
+.password-layout {
+  min-height: 520px;
 }
 
-.password-tips {
-  margin-top: 30px;
-  padding: 20px;
-  background: #f5f7fa;
-  border-radius: 8px;
+.password-form-wrap {
+  max-width: 520px;
+}
 
-  h4 {
-    margin: 0 0 10px;
-    color: #606266;
-    font-size: 14px;
+@media (max-width: 980px) {
+  .password-layout {
+    min-height: auto;
   }
 
-  ul {
-    margin: 0;
-    padding-left: 20px;
-    color: #909399;
-    font-size: 13px;
-
-    li {
-      margin-bottom: 5px;
-    }
+  .password-form-wrap {
+    max-width: 100%;
   }
 }
 </style>

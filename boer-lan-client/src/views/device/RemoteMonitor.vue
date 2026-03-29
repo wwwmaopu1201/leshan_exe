@@ -1,145 +1,159 @@
 <template>
-  <div class="page-container">
+  <div class="page-container remote-page">
     <div class="monitor-layout">
-      <div class="monitor-columns">
-        <aside class="device-tree-panel">
-          <div class="panel-header">
-            <span>设备树</span>
-            <el-button type="text" size="mini" @click="resetTreeFilter">重置</el-button>
+      <aside class="device-tree-panel panel-shell">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">设备树</div>
           </div>
+          <el-button type="text" size="mini" @click="resetTreeFilter">重置</el-button>
+        </div>
 
-          <el-input
-            v-model="treeKeyword"
-            size="small"
-            clearable
-            placeholder="搜索树节点"
-          />
+        <el-input
+          v-model="treeKeyword"
+          size="small"
+          clearable
+          placeholder="搜索树节点"
+          prefix-icon="el-icon-search"
+        />
 
-          <el-input
-            v-model="deviceKeyword"
-            class="mt-10"
-            clearable
-            placeholder="按设备名称搜索"
-            @keyup.enter.native="handleDeviceFilter"
-            @clear="handleDeviceFilter"
-          />
+        <el-input
+          v-model="deviceKeyword"
+          class="mt-10"
+          clearable
+          placeholder="按设备名称搜索"
+          @keyup.enter.native="handleDeviceFilter"
+          @clear="handleDeviceFilter"
+        />
 
-          <el-date-picker
-            v-model="deviceDateRange"
-            class="mt-10"
-            type="daterange"
-            value-format="yyyy-MM-dd"
-            range-separator="至"
-            start-placeholder="开始日期"
-            end-placeholder="结束日期"
-            clearable
-            @change="handleDeviceFilter"
-          />
+        <el-date-picker
+          v-model="deviceDateRange"
+          class="mt-10"
+          type="daterange"
+          value-format="yyyy-MM-dd"
+          range-separator="至"
+          start-placeholder="开始日期"
+          end-placeholder="结束日期"
+          clearable
+          @change="handleDeviceFilter"
+        />
 
-          <el-button class="mt-10" plain icon="el-icon-search" @click="handleDeviceFilter">筛选设备</el-button>
+        <el-button class="mt-10" plain icon="el-icon-search" @click="handleDeviceFilter">筛选设备</el-button>
 
-          <div class="tree-wrapper mt-10">
-            <el-tree
-              ref="deviceTree"
-              :data="deviceTree"
-              :props="treeProps"
-              node-key="_nodeKey"
-              default-expand-all
-              highlight-current
-              :filter-node-method="filterTreeNode"
-              @node-click="handleTreeNodeClick"
-            >
-              <span slot-scope="{ node, data }" class="tree-node">
-                <i :class="getNodeIcon(data)"></i>
-                <span>{{ node.label }}</span>
-                <span v-if="data.type === 'device'" :class="['status-dot', data.status]"></span>
-              </span>
-            </el-tree>
-          </div>
-        </aside>
+        <div class="tree-wrapper mt-10">
+          <el-tree
+            ref="deviceTree"
+            :data="deviceTree"
+            :props="treeProps"
+            node-key="_nodeKey"
+            default-expand-all
+            highlight-current
+            :filter-node-method="filterTreeNode"
+            @node-click="handleTreeNodeClick"
+          >
+            <span slot-scope="{ node, data }" class="tree-node">
+              <i :class="getNodeIcon(data)"></i>
+              <span>{{ node.label }}</span>
+              <span v-if="data.type === 'device'" :class="['status-dot', data.status]"></span>
+            </span>
+          </el-tree>
+        </div>
+      </aside>
 
-        <section class="monitor-content">
-          <div class="device-selector">
-            <div class="selected-device-label">
-              当前设备：{{ selectedDevice ? selectedDevice.name : '未选择' }}
-              <span v-if="selectedDevice" :class="['status-dot', selectedDevice.status]"></span>
+      <section class="monitor-content">
+        <div class="hero-card card">
+          <div class="hero-meta">
+            <div class="hero-badge" :class="selectedDevice?.status || 'offline'">
+              {{ selectedDevice ? getStatusText(selectedDevice.status) : '未选择设备' }}
             </div>
-
-            <el-input-number
-              v-model="vnc.port"
-              :min="1"
-              :max="65535"
-              controls-position="right"
-              placeholder="VNC端口"
-            />
-
-            <el-input
-              v-model="vnc.password"
-              placeholder="VNC密码(可选)"
-              show-password
-              clearable
-            />
-
-            <el-radio-group v-model="vnc.mode" @change="handleModeChange">
-              <el-radio-button label="monitor">远程监控</el-radio-button>
-              <el-radio-button label="control">远程控制</el-radio-button>
-            </el-radio-group>
-
-            <el-button
-              type="primary"
-              :loading="vnc.connecting"
-              :disabled="!selectedDevice || vnc.connected"
-              @click="connectVNC"
-            >
-              连接
-            </el-button>
-            <el-button
-              type="danger"
-              plain
-              :disabled="!vnc.connected && !vnc.connecting"
-              @click="disconnectVNC()"
-            >
-              关闭监控
-            </el-button>
-            <el-button icon="el-icon-refresh" @click="refreshData">刷新数据</el-button>
+            <strong class="hero-device-name">{{ selectedDevice ? selectedDevice.name : '请选择设备' }}</strong>
+            <span v-if="selectedDevice" class="hero-device-ip">设备 IP：{{ selectedDevice.ip || '-' }}</span>
           </div>
 
-          <template v-if="selectedDevice">
-        <el-row :gutter="20" class="status-row">
-          <el-col :span="6">
-            <div class="status-card">
-              <div class="status-label">运行状态</div>
-              <div :class="['status-value', selectedDevice.status]">
-                {{ getStatusText(selectedDevice.status) }}
+          <div class="hero-actions">
+            <div class="toolbar-field">
+              <span>VNC 端口</span>
+              <el-input-number
+                v-model="vnc.port"
+                :min="1"
+                :max="65535"
+                controls-position="right"
+                placeholder="VNC端口"
+              />
+            </div>
+            <div class="toolbar-field password-field">
+              <span>VNC 密码</span>
+              <el-input
+                v-model="vnc.password"
+                placeholder="VNC密码(可选)"
+                show-password
+                clearable
+              />
+            </div>
+            <div class="toolbar-field">
+              <span>连接模式</span>
+              <el-radio-group v-model="vnc.mode" @change="handleModeChange">
+                <el-radio-button label="monitor">远程监控</el-radio-button>
+                <el-radio-button label="control">远程控制</el-radio-button>
+              </el-radio-group>
+            </div>
+            <div class="hero-buttons">
+              <el-button
+                type="primary"
+                :loading="vnc.connecting"
+                :disabled="!selectedDevice || vnc.connected"
+                @click="connectVNC"
+              >
+                连接
+              </el-button>
+              <el-button
+                type="danger"
+                plain
+                :disabled="!vnc.connected && !vnc.connecting"
+                @click="disconnectVNC()"
+              >
+                关闭监控
+              </el-button>
+              <el-button icon="el-icon-refresh" @click="refreshData">刷新数据</el-button>
+            </div>
+          </div>
+        </div>
+
+        <template v-if="selectedDevice">
+          <el-row :gutter="20" class="status-row">
+            <el-col :span="6">
+              <div class="status-card">
+                <div class="status-label">运行状态</div>
+                <div :class="['status-value', selectedDevice.status]">
+                  {{ getStatusText(selectedDevice.status) }}
+                </div>
               </div>
-            </div>
-          </el-col>
-          <el-col :span="6">
-            <div class="status-card">
-              <div class="status-label">主轴转速</div>
-              <div class="status-value">{{ realtimeData.spindleSpeed }} <small>RPM</small></div>
-            </div>
-          </el-col>
-          <el-col :span="6">
-            <div class="status-card">
-              <div class="status-label">累计针数</div>
-              <div class="status-value">{{ realtimeData.currentStitches }}</div>
-            </div>
-          </el-col>
-          <el-col :span="6">
-            <div class="status-card">
-              <div class="status-label">当前花型</div>
-              <div class="status-value pattern">{{ realtimeData.currentPattern }}</div>
-            </div>
-          </el-col>
-        </el-row>
+            </el-col>
+            <el-col :span="6">
+              <div class="status-card">
+                <div class="status-label">主轴转速</div>
+                <div class="status-value">{{ realtimeData.spindleSpeed }} <small>RPM</small></div>
+              </div>
+            </el-col>
+            <el-col :span="6">
+              <div class="status-card">
+                <div class="status-label">累计针数</div>
+                <div class="status-value">{{ realtimeData.currentStitches }}</div>
+              </div>
+            </el-col>
+            <el-col :span="6">
+              <div class="status-card">
+                <div class="status-label">当前花型</div>
+                <div class="status-value pattern">{{ realtimeData.currentPattern }}</div>
+              </div>
+            </el-col>
+          </el-row>
 
-        <el-row :gutter="20">
-          <el-col :span="16">
-            <div class="card">
+          <div class="monitor-grid">
+            <div class="card monitor-screen-card">
               <div class="card-header flex-between">
                 <span>设备监控画面（VNC）</span>
-                <el-tag :type="vnc.connected ? 'success' : (vnc.connecting ? 'warning' : 'info')" size="small">
+                <el-tag :type="getConnectionTagType()" size="small">
                   {{ vnc.connecting ? '连接中' : (vnc.connected ? (vnc.mode === 'control' ? '控制模式' : '监控模式') : '未连接') }}
                 </el-tag>
               </div>
@@ -147,82 +161,81 @@
                 <div ref="vncCanvas" class="vnc-canvas"></div>
                 <div v-if="!vnc.connected" class="screen-placeholder">
                   <i class="el-icon-video-camera"></i>
-                  <p>{{ vnc.connecting ? '正在连接VNC...' : '请点击“连接”开始监控' }}</p>
+                  <p>{{ vnc.connecting ? '正在连接 VNC...' : '请点击“连接”开始监控' }}</p>
                   <p class="hint">{{ vnc.status }}</p>
                 </div>
               </div>
             </div>
-          </el-col>
-          <el-col :span="8">
-            <div class="card">
-              <div class="card-header">连接信息</div>
-              <div class="connection-meta">
-                <div class="meta-row">
-                  <span>设备名称</span>
-                  <strong>{{ selectedDevice.name }}</strong>
-                </div>
-                <div class="meta-row">
-                  <span>设备IP</span>
-                  <strong>{{ selectedDevice.ip || '-' }}</strong>
-                </div>
-                <div class="meta-row">
-                  <span>VNC端口</span>
-                  <strong>{{ vnc.port }}</strong>
-                </div>
-                <div class="meta-row">
-                  <span>连接状态</span>
-                  <strong>{{ vnc.status }}</strong>
-                </div>
-              </div>
-              <el-alert
-                v-if="vnc.mode === 'monitor'"
-                title="当前为远程监控模式，只读不可操作设备。"
-                type="info"
-                show-icon
-                :closable="false"
-              />
-              <el-alert
-                v-else
-                title="当前为远程控制模式，可操作鼠标键盘。"
-                type="warning"
-                show-icon
-                :closable="false"
-              />
-            </div>
 
-            <div class="card mt-20">
-              <div class="card-header">报警信息</div>
-              <div class="alarm-list">
-                <div v-if="alarms.length === 0" class="no-alarm">
-                  <i class="el-icon-circle-check"></i>
-                  <span>无报警</span>
+            <div class="side-stack">
+              <div class="card">
+                <div class="card-header">连接信息</div>
+                <div class="connection-meta">
+                  <div class="meta-row">
+                    <span>设备名称</span>
+                    <strong>{{ selectedDevice.name }}</strong>
+                  </div>
+                  <div class="meta-row">
+                    <span>设备 IP</span>
+                    <strong>{{ selectedDevice.ip || '-' }}</strong>
+                  </div>
+                  <div class="meta-row">
+                    <span>VNC 端口</span>
+                    <strong>{{ vnc.port }}</strong>
+                  </div>
+                  <div class="meta-row">
+                    <span>连接状态</span>
+                    <strong>{{ vnc.status }}</strong>
+                  </div>
                 </div>
-                <div v-for="alarm in alarms" :key="alarm.id" class="alarm-item">
-                  <i class="el-icon-warning"></i>
-                  <div class="alarm-content">
-                    <div class="alarm-msg">{{ alarm.message }}</div>
-                    <div class="alarm-time">{{ alarm.time }}</div>
+                <el-alert
+                  v-if="vnc.mode === 'monitor'"
+                  title="当前为远程监控模式，只读不可操作设备。"
+                  type="info"
+                  show-icon
+                  :closable="false"
+                />
+                <el-alert
+                  v-else
+                  title="当前为远程控制模式，可操作鼠标键盘。"
+                  type="warning"
+                  show-icon
+                  :closable="false"
+                />
+              </div>
+
+              <div class="card">
+                <div class="card-header">报警信息</div>
+                <div class="alarm-list">
+                  <div v-if="alarms.length === 0" class="no-alarm">
+                    <i class="el-icon-circle-check"></i>
+                    <span>无报警</span>
+                  </div>
+                  <div v-for="alarm in alarms" :key="alarm.id" class="alarm-item">
+                    <i class="el-icon-warning"></i>
+                    <div class="alarm-content">
+                      <div class="alarm-msg">{{ alarm.message }}</div>
+                      <div class="alarm-time">{{ alarm.time }}</div>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </el-col>
-        </el-row>
+          </div>
 
-        <div class="card mt-20">
-          <div class="card-header">实时数据趋势</div>
-          <div ref="realtimeChart" class="chart-container"></div>
-        </div>
-          </template>
+          <div class="card mt-20">
+            <div class="card-header">实时数据趋势</div>
+            <div ref="realtimeChart" class="chart-container"></div>
+          </div>
+        </template>
 
-          <template v-else>
-            <div class="empty-state">
-              <i class="el-icon-monitor"></i>
-              <p>请选择要监控的设备</p>
-            </div>
-          </template>
-        </section>
-      </div>
+        <template v-else>
+          <div class="empty-state panel-shell">
+            <i class="el-icon-monitor"></i>
+            <p>请选择要监控的设备</p>
+          </div>
+        </template>
+      </section>
     </div>
 
     <el-dialog
@@ -527,6 +540,15 @@ export default {
         alarm: '报警'
       }
       return map[status] || status
+    },
+    getConnectionTagType() {
+      if (this.vnc.connected) {
+        return this.vnc.mode === 'control' ? 'warning' : 'success'
+      }
+      if (this.vnc.connecting) {
+        return 'warning'
+      }
+      return 'info'
     },
     buildVncWsUrl() {
       if (!this.selectedDevice) return ''
@@ -846,13 +868,10 @@ export default {
 
 <style lang="scss" scoped>
 .monitor-layout {
-  min-height: calc(100vh - 120px);
-}
-
-.monitor-columns {
   display: flex;
   gap: 16px;
   align-items: flex-start;
+  min-height: calc(100vh - 132px);
 }
 
 .control-confirm-tip {
@@ -864,27 +883,36 @@ export default {
 .device-tree-panel {
   width: 320px;
   flex: 0 0 320px;
-  background: #fff;
-  border-radius: 8px;
-  padding: 12px;
+  padding: 18px;
 }
 
 .panel-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   margin-bottom: 8px;
-  font-weight: 600;
-  color: #303133;
+}
+
+.panel-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #243654;
+}
+
+.panel-subtitle {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #8494ab;
 }
 
 .tree-wrapper {
   max-height: calc(100vh - 280px);
   min-height: 360px;
   overflow: auto;
-  border: 1px solid #ebeef5;
-  border-radius: 6px;
+  border: 1px solid #e6edf7;
+  border-radius: 18px;
   padding: 8px;
+  background: #fbfdff;
 }
 
 .tree-node {
@@ -898,30 +926,99 @@ export default {
   min-width: 0;
 }
 
-.device-selector {
+.hero-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-bottom: 20px;
+}
+
+.hero-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 88px;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: rgba(138, 152, 173, 0.14);
+  color: #8a98ad;
+  font-size: 12px;
+  font-weight: 700;
+
+  &.online,
+  &.idle {
+    background: rgba(47, 180, 110, 0.12);
+    color: #2fb46e;
+  }
+
+  &.working {
+    background: rgba(47, 109, 246, 0.12);
+    color: #2f6df6;
+  }
+
+  &.alarm {
+    background: rgba(239, 90, 90, 0.12);
+    color: #ef5a5a;
+  }
+}
+
+.hero-device-name {
+  color: #22324d;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.hero-device-ip {
+  color: #7b8da6;
+  font-size: 13px;
+}
+
+.hero-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  margin-bottom: 20px;
-  align-items: center;
+  align-items: flex-end;
+}
 
-  .selected-device-label {
-    min-width: 220px;
-    font-weight: 500;
-    color: #303133;
+.toolbar-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  span {
+    color: #7b8da6;
+    font-size: 12px;
+    font-weight: 600;
   }
 
   .el-input-number {
-    width: 140px;
+    width: 150px;
   }
 
   .el-input {
     width: 220px;
   }
+}
 
-  .el-date-editor {
-    width: 260px;
-  }
+.password-field {
+  min-width: 220px;
+}
+
+.hero-buttons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .status-dot {
@@ -950,9 +1047,11 @@ export default {
 
 .status-card {
   background: #fff;
-  border-radius: 8px;
+  border-radius: 22px;
   padding: 20px;
   text-align: center;
+  border: 1px solid rgba(221, 229, 240, 0.92);
+  box-shadow: 0 18px 30px rgba(59, 87, 132, 0.08);
 
   .status-label {
     color: #909399;
@@ -989,10 +1088,25 @@ export default {
   }
 }
 
+.monitor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.75fr);
+  gap: 18px;
+}
+
+.side-stack {
+  display: grid;
+  gap: 18px;
+}
+
+.monitor-screen-card {
+  min-height: 100%;
+}
+
 .monitor-screen {
   position: relative;
   background: #0f172a;
-  border-radius: 8px;
+  border-radius: 18px;
   height: 460px;
   overflow: hidden;
 }
@@ -1041,19 +1155,20 @@ export default {
   .meta-row {
     display: flex;
     justify-content: space-between;
+    gap: 16px;
     margin-bottom: 10px;
     color: #606266;
 
     strong {
       color: #303133;
-      margin-left: 16px;
       word-break: break-all;
+      text-align: right;
     }
   }
 }
 
 .alarm-list {
-  max-height: 220px;
+  max-height: 268px;
   overflow-y: auto;
 
   .no-alarm {
@@ -1072,8 +1187,8 @@ export default {
   .alarm-item {
     display: flex;
     align-items: flex-start;
-    padding: 10px;
-    border-bottom: 1px solid #eee;
+    padding: 12px 0;
+    border-bottom: 1px solid #edf2f8;
 
     i {
       color: #F56C6C;
@@ -1103,12 +1218,7 @@ export default {
 }
 
 .empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 400px;
-  color: #909399;
+  min-height: 400px;
 
   i {
     font-size: 80px;
@@ -1117,13 +1227,17 @@ export default {
 }
 
 @media (max-width: 1280px) {
-  .monitor-columns {
+  .monitor-layout {
     flex-direction: column;
   }
 
   .device-tree-panel {
     width: 100%;
     flex: none;
+  }
+
+  .monitor-grid {
+    grid-template-columns: 1fr;
   }
 
   .tree-wrapper {
@@ -1133,6 +1247,19 @@ export default {
 
   .monitor-screen {
     height: 380px;
+  }
+}
+
+@media (max-width: 768px) {
+  .hero-actions,
+  .hero-buttons {
+    width: 100%;
+  }
+
+  .toolbar-field,
+  .toolbar-field .el-input,
+  .toolbar-field .el-input-number {
+    width: 100%;
   }
 }
 </style>

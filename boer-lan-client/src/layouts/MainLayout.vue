@@ -1,44 +1,50 @@
 <template>
   <div class="main-layout">
-    <!-- 侧边栏 -->
-    <div class="sidebar" :class="{ collapsed: isCollapsed }">
+    <aside class="sidebar" :class="{ collapsed: isCollapsed }">
       <div class="logo">
-        <img src="@/assets/images/logo.png" alt="Logo" class="logo-img" v-if="!isCollapsed" />
-        <span class="logo-text" v-if="!isCollapsed">博尔管理系统</span>
+        <img src="@/assets/images/logo.png" alt="Logo" class="logo-img" />
+        <div v-if="!isCollapsed" class="logo-copy">
+          <span class="logo-title">博尔管理系统</span>
+          <span class="logo-subtitle">Boer LAN Client</span>
+        </div>
       </div>
+
       <el-menu
         :default-active="activeMenu"
         class="sidebar-menu"
         background-color="transparent"
-        text-color="#fff"
-        active-text-color="#fff"
+        text-color="#d8e4ff"
+        active-text-color="#ffffff"
         :collapse="isCollapsed"
         :unique-opened="true"
         router
       >
         <el-menu-item v-if="canAccess.home" index="/home">
-          <i class="el-icon-s-home"></i>
+          <span class="menu-icon"><i class="el-icon-s-home"></i></span>
           <span slot="title">{{ $t('menu.home') }}</span>
         </el-menu-item>
 
         <el-menu-item v-if="canAccess.dashboard" index="/dashboard">
-          <i class="el-icon-data-board"></i>
+          <span class="menu-icon"><i class="el-icon-data-board"></i></span>
           <span slot="title">{{ $t('menu.dashboard') }}</span>
         </el-menu-item>
 
-        <el-submenu v-if="canAccess.deviceGroup" index="/device">
+        <el-submenu v-if="canAccess.deviceSection" index="/device">
           <template slot="title">
-            <i class="el-icon-monitor"></i>
+            <span class="menu-icon"><i class="el-icon-monitor"></i></span>
             <span>{{ $t('menu.device') }}</span>
           </template>
-          <el-menu-item v-if="canAccess.deviceManagement" index="/device/list">{{ $t('menu.deviceList') }}</el-menu-item>
-          <el-menu-item v-if="canAccess.deviceManagement" index="/device/group">{{ $t('menu.deviceGroup') }}</el-menu-item>
-          <el-menu-item v-if="canAccess.remoteMonitoring" index="/device/monitor">{{ $t('menu.remoteMonitor') }}</el-menu-item>
+          <el-menu-item v-if="canAccess.deviceManagement" index="/device/list">
+            {{ $t('menu.deviceList') }}
+          </el-menu-item>
+          <el-menu-item v-if="canAccess.remoteMonitoring" index="/device/monitor">
+            {{ $t('menu.remoteMonitor') }}
+          </el-menu-item>
         </el-submenu>
 
         <el-submenu v-if="canAccess.fileManagement" index="/file">
           <template slot="title">
-            <i class="el-icon-folder"></i>
+            <span class="menu-icon"><i class="el-icon-folder"></i></span>
             <span>{{ $t('menu.file') }}</span>
           </template>
           <el-menu-item index="/file/pattern">{{ $t('menu.patternList') }}</el-menu-item>
@@ -48,7 +54,7 @@
 
         <el-submenu v-if="canAccess.statistics" index="/statistics">
           <template slot="title">
-            <i class="el-icon-s-data"></i>
+            <span class="menu-icon"><i class="el-icon-s-data"></i></span>
             <span>{{ $t('menu.statistics') }}</span>
           </template>
           <el-menu-item index="/statistics/salary">{{ $t('menu.salaryStats') }}</el-menu-item>
@@ -59,7 +65,7 @@
 
         <el-submenu v-if="canAccess.employeeManagement" index="/employee">
           <template slot="title">
-            <i class="el-icon-user"></i>
+            <span class="menu-icon"><i class="el-icon-user"></i></span>
             <span>{{ $t('menu.employee') }}</span>
           </template>
           <el-menu-item index="/employee/list">{{ $t('menu.employeeList') }}</el-menu-item>
@@ -67,50 +73,67 @@
 
         <el-submenu index="/profile">
           <template slot="title">
-            <i class="el-icon-user-solid"></i>
+            <span class="menu-icon"><i class="el-icon-user-solid"></i></span>
             <span>{{ $t('menu.profile') }}</span>
           </template>
           <el-menu-item index="/profile/info">{{ $t('menu.basicInfo') }}</el-menu-item>
           <el-menu-item index="/profile/password">{{ $t('menu.changePassword') }}</el-menu-item>
-          <el-menu-item index="/profile/language">{{ $t('menu.languageSwitch') }}</el-menu-item>
         </el-submenu>
 
         <el-submenu index="/support">
           <template slot="title">
-            <i class="el-icon-service"></i>
+            <span class="menu-icon"><i class="el-icon-service"></i></span>
             <span>{{ $t('menu.support') }}</span>
           </template>
           <el-menu-item index="/support/contact">{{ $t('menu.contact') }}</el-menu-item>
           <el-menu-item index="/support/manual">{{ $t('menu.manual') }}</el-menu-item>
         </el-submenu>
       </el-menu>
-    </div>
+    </aside>
 
-    <!-- 主内容区 -->
     <div class="main-container">
-      <!-- 顶部导航栏 -->
-      <div class="header">
+      <header class="header">
         <div class="header-left">
-          <i
-            :class="isCollapsed ? 'el-icon-s-unfold' : 'el-icon-s-fold'"
-            class="collapse-btn"
-            @click="toggleSidebar"
-          ></i>
-          <el-breadcrumb separator="/">
-            <el-breadcrumb-item
-              v-for="(item, index) in breadcrumbs"
-              :key="index"
-              :to="item.path"
-            >
-              {{ item.title }}
-            </el-breadcrumb-item>
-          </el-breadcrumb>
+          <button class="collapse-btn" type="button" @click="toggleSidebar">
+            <i :class="isCollapsed ? 'el-icon-s-unfold' : 'el-icon-s-fold'"></i>
+          </button>
+          <div class="header-info">
+            <el-breadcrumb separator="/">
+              <el-breadcrumb-item
+                v-for="(item, index) in breadcrumbs"
+                :key="`${item.title}-${index}`"
+                :to="item.path || undefined"
+              >
+                {{ item.title }}
+              </el-breadcrumb-item>
+            </el-breadcrumb>
+            <div class="server-tag" v-if="serverAddress">
+              <i class="el-icon-link"></i>
+              <span>{{ serverAddress }}</span>
+            </div>
+          </div>
         </div>
+
         <div class="header-right">
+          <div class="lang-switch" role="group" aria-label="language switch">
+            <button
+              v-for="item in languageOptions"
+              :key="item.value"
+              type="button"
+              :class="{ active: currentLang === item.value }"
+              @click="changeLang(item.value)"
+            >
+              {{ item.label }}
+            </button>
+          </div>
+
           <el-dropdown trigger="click" @command="handleCommand">
             <div class="user-info">
-              <el-avatar :size="32" icon="el-icon-user-solid"></el-avatar>
-              <span class="username">{{ user?.username || 'Admin' }}</span>
+              <el-avatar :size="34" icon="el-icon-user-solid"></el-avatar>
+              <div class="user-copy">
+                <span class="username">{{ user?.username || 'Admin' }}</span>
+                <span class="user-role">{{ currentLangLabel }}</span>
+              </div>
               <i class="el-icon-arrow-down"></i>
             </div>
             <el-dropdown-menu slot="dropdown">
@@ -126,12 +149,11 @@
             </el-dropdown-menu>
           </el-dropdown>
         </div>
-      </div>
+      </header>
 
-      <!-- 内容区 -->
-      <div class="content">
+      <main class="content">
         <router-view />
-      </div>
+      </main>
     </div>
   </div>
 </template>
@@ -141,8 +163,16 @@ import { mapState, mapMutations, mapActions } from 'vuex'
 
 export default {
   name: 'MainLayout',
+  data() {
+    return {
+      languageOptions: [
+        { label: '中', value: 'zh-CN' },
+        { label: 'EN', value: 'en-US' }
+      ]
+    }
+  },
   computed: {
-    ...mapState(['user', 'sidebarCollapsed']),
+    ...mapState(['user', 'sidebarCollapsed', 'language', 'serverConfig']),
     canAccess() {
       const hasPermission = this.$store.getters.hasPermission
       const deviceManagement = hasPermission('deviceManagement')
@@ -155,7 +185,7 @@ export default {
         statistics: hasPermission('statistics'),
         deviceManagement,
         remoteMonitoring,
-        deviceGroup: deviceManagement || remoteMonitoring
+        deviceSection: deviceManagement || remoteMonitoring
       }
     },
     isCollapsed() {
@@ -164,19 +194,50 @@ export default {
     activeMenu() {
       return this.$route.path
     },
+    currentLang() {
+      return this.language || 'zh-CN'
+    },
+    currentLangLabel() {
+      return this.currentLang === 'zh-CN' ? '简体中文' : 'English'
+    },
+    serverAddress() {
+      const ip = String(this.serverConfig?.ip || '').trim()
+      const port = String(this.serverConfig?.port || '').trim()
+      if (!ip || !port) {
+        return ''
+      }
+      return `${ip}:${port}`
+    },
     breadcrumbs() {
       const matched = this.$route.matched.filter(item => item.meta && item.meta.title)
-      return matched.map(item => ({
-        path: item.path,
-        title: this.$t(item.meta.title)
-      }))
+      const items = []
+
+      matched.forEach(item => {
+        const parentTitle = item.meta.parent ? this.$t(item.meta.parent) : ''
+        if (parentTitle && !items.find(entry => entry.title === parentTitle)) {
+          items.push({ title: parentTitle, path: '' })
+        }
+        items.push({
+          title: this.$t(item.meta.title),
+          path: item.path
+        })
+      })
+
+      return items
     }
   },
   methods: {
     ...mapMutations(['TOGGLE_SIDEBAR']),
-    ...mapActions(['logout']),
+    ...mapActions(['logout', 'setLanguage']),
     toggleSidebar() {
       this.TOGGLE_SIDEBAR()
+    },
+    changeLang(lang) {
+      if (lang === this.currentLang) {
+        return
+      }
+      this.$i18n.locale = lang
+      this.setLanguage(lang)
     },
     handleCommand(command) {
       switch (command) {
@@ -210,121 +271,319 @@ export default {
   display: flex;
   width: 100%;
   height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(63, 130, 255, 0.14), transparent 30%),
+    linear-gradient(180deg, #f7f9fe 0%, #eef3fb 100%);
 }
 
 .sidebar {
-  width: 220px;
+  width: 248px;
   height: 100%;
-  background: linear-gradient(180deg, #1e3c72 0%, #2a5298 100%);
-  transition: width 0.3s;
+  padding: 18px 14px;
+  background: linear-gradient(180deg, #0f2042 0%, #163766 58%, #0d5fa8 100%);
+  box-shadow: 18px 0 38px rgba(10, 27, 58, 0.18);
+  transition: width 0.28s ease;
   overflow: hidden;
 
   &.collapsed {
-    width: 64px;
+    width: 84px;
 
     .logo {
-      padding: 20px 0;
       justify-content: center;
+      padding: 12px 0 20px;
     }
-  }
-
-  .logo {
-    height: 60px;
-    display: flex;
-    align-items: center;
-    padding: 0 20px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 
     .logo-img {
-      width: 32px;
-      height: 32px;
-      margin-right: 10px;
-    }
-
-    .logo-text {
-      color: #fff;
-      font-size: 16px;
-      font-weight: bold;
-      white-space: nowrap;
+      margin-right: 0;
     }
   }
+}
 
-  .sidebar-menu {
-    height: calc(100% - 60px);
-    border: none;
-    overflow-y: auto;
+.logo {
+  display: flex;
+  align-items: center;
+  min-height: 68px;
+  padding: 12px 10px 20px;
 
-    &:not(.el-menu--collapse) {
-      width: 220px;
-    }
+  .logo-img {
+    width: 42px;
+    height: 42px;
+    margin-right: 12px;
+    border-radius: 12px;
+    box-shadow: 0 10px 24px rgba(18, 104, 210, 0.3);
   }
+
+  .logo-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .logo-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #ffffff;
+    letter-spacing: 0.04em;
+  }
+
+  .logo-subtitle {
+    font-size: 11px;
+    color: rgba(220, 232, 255, 0.72);
+    letter-spacing: 0.08em;
+  }
+}
+
+.sidebar-menu {
+  height: calc(100% - 88px);
+  border: none;
+  overflow-y: auto;
+  padding-right: 4px;
+
+  &:not(.el-menu--collapse) {
+    width: 220px;
+  }
+
+  ::v-deep .el-submenu__title,
+  ::v-deep .el-menu-item {
+    height: 48px;
+    line-height: 48px;
+    margin-bottom: 8px;
+    border-radius: 14px;
+    padding-left: 14px !important;
+    color: #d8e4ff !important;
+    transition: all 0.22s ease;
+  }
+
+  ::v-deep .el-submenu__title:hover,
+  ::v-deep .el-menu-item:hover {
+    background: rgba(255, 255, 255, 0.09) !important;
+    color: #ffffff !important;
+  }
+
+  ::v-deep .el-submenu.is-opened > .el-submenu__title,
+  ::v-deep .el-menu-item.is-active {
+    background: linear-gradient(135deg, rgba(67, 139, 255, 0.95), rgba(61, 192, 255, 0.88)) !important;
+    box-shadow: 0 12px 26px rgba(41, 122, 228, 0.26);
+    color: #ffffff !important;
+  }
+
+  ::v-deep .el-menu--inline {
+    background: transparent !important;
+  }
+
+  ::v-deep .el-menu--inline .el-menu-item {
+    height: 42px;
+    line-height: 42px;
+    margin: 4px 0 0 12px;
+    padding-left: 52px !important;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  ::v-deep .el-menu--collapse .el-submenu__title,
+  ::v-deep .el-menu--collapse .el-menu-item {
+    padding: 0 !important;
+    justify-content: center;
+  }
+}
+
+.menu-icon {
+  width: 28px;
+  height: 28px;
+  margin-right: 10px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.09);
+  color: currentColor;
+  font-size: 16px;
+  vertical-align: middle;
 }
 
 .main-container {
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  min-width: 0;
 }
 
 .header {
-  height: 60px;
-  background-color: #3b9dfc;
+  height: 76px;
+  margin: 18px 18px 0 18px;
+  padding: 0 24px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 18px 40px rgba(65, 91, 137, 0.08);
+  border: 1px solid rgba(213, 224, 239, 0.84);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(14px);
+}
 
-  .header-left {
-    display: flex;
-    align-items: center;
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
 
-    .collapse-btn {
-      font-size: 20px;
-      color: #fff;
-      cursor: pointer;
-      margin-right: 20px;
+.collapse-btn {
+  width: 42px;
+  height: 42px;
+  border: none;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #f0f5ff, #e5eefc);
+  color: #1f3f7a;
+  font-size: 18px;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 
-      &:hover {
-        opacity: 0.8;
-      }
-    }
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 18px rgba(78, 109, 160, 0.14);
+  }
+}
 
-    .el-breadcrumb {
-      ::v-deep .el-breadcrumb__inner,
-      ::v-deep .el-breadcrumb__separator {
-        color: rgba(255, 255, 255, 0.8);
-      }
+.header-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
 
-      ::v-deep .el-breadcrumb__inner.is-link:hover {
-        color: #fff;
-      }
+.server-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #f2f6fd;
+  color: #6780a8;
+  font-size: 12px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.lang-switch {
+  display: inline-flex;
+  padding: 4px;
+  background: #edf3fb;
+  border-radius: 999px;
+
+  button {
+    min-width: 48px;
+    height: 32px;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: #60789f;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+
+    &.active {
+      background: #ffffff;
+      color: #1a4280;
+      box-shadow: 0 8px 16px rgba(84, 109, 156, 0.16);
     }
   }
+}
 
-  .header-right {
-    .user-info {
-      display: flex;
-      align-items: center;
-      cursor: pointer;
-      color: #fff;
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px 7px 8px;
+  border-radius: 18px;
+  background: #f7faff;
+  color: #23426f;
+  cursor: pointer;
+}
 
-      .username {
-        margin: 0 8px;
-        font-size: 14px;
-      }
+.user-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
 
-      &:hover {
-        opacity: 0.9;
-      }
-    }
-  }
+.username {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.user-role {
+  font-size: 11px;
+  color: #7a91b4;
 }
 
 .content {
   flex: 1;
+  min-height: 0;
   overflow: auto;
-  background-color: #f5f7fa;
+  padding: 12px 18px 18px;
+}
+
+::v-deep .el-breadcrumb {
+  line-height: 1;
+}
+
+::v-deep .el-breadcrumb__inner,
+::v-deep .el-breadcrumb__separator {
+  color: #5c7399;
+}
+
+::v-deep .el-breadcrumb__inner.is-link:hover {
+  color: #2d5ea6;
+}
+
+@media (max-width: 1200px) {
+  .header {
+    padding: 0 18px;
+  }
+
+  .lang-switch {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    z-index: 20;
+    left: 0;
+    top: 0;
+    bottom: 0;
+  }
+
+  .header {
+    margin: 12px 12px 0 96px;
+    height: auto;
+    min-height: 72px;
+    padding: 14px;
+    align-items: flex-start;
+  }
+
+  .header-left,
+  .header-right {
+    width: 100%;
+  }
+
+  .header-right {
+    justify-content: flex-end;
+  }
+
+  .content {
+    padding: 10px;
+  }
 }
 </style>

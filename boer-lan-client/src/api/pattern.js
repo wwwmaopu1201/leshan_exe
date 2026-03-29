@@ -1,13 +1,7 @@
 import request from './request'
-import { mockGetPatterns, mockGetDownloadQueue, mockGetDownloadLogs } from './mock'
-
-const USE_MOCK = false
 
 // 获取花型文件列表
 export function getPatternList(params) {
-  if (USE_MOCK) {
-    return mockGetPatterns(params)
-  }
   return request({
     url: '/pattern/list',
     method: 'get',
@@ -81,9 +75,6 @@ export function batchDownload(patternIds, deviceIds) {
 
 // 获取下发队列
 export function getDownloadQueue() {
-  if (USE_MOCK) {
-    return mockGetDownloadQueue()
-  }
   return request({
     url: '/pattern/queue',
     method: 'get'
@@ -92,9 +83,6 @@ export function getDownloadQueue() {
 
 // 获取下发日志
 export function getDownloadLog(params) {
-  if (USE_MOCK) {
-    return mockGetDownloadLogs(params)
-  }
   return request({
     url: '/pattern/log',
     method: 'get',

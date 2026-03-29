@@ -1,68 +1,46 @@
 <template>
-  <div class="dashboard-page">
+  <div class="page-container">
     <div class="dashboard-layout">
-      <!-- 左侧设备树 -->
-      <div class="device-tree-panel">
-        <div class="panel-header">
-          <span>设备列表</span>
-          <el-input
-            v-model="treeFilter"
-            size="small"
-            placeholder="搜索设备"
-            prefix-icon="el-icon-search"
-            clearable
-          />
-        </div>
-        <div class="tree-container">
-          <el-tree
-            ref="deviceTree"
-            :data="deviceTree"
-            :props="treeProps"
-            :filter-node-method="filterNode"
-            node-key="_nodeKey"
-            highlight-current
-            default-expand-all
-            @node-click="handleNodeClick"
-          >
-            <span class="tree-node" slot-scope="{ node, data }">
-              <i :class="getNodeIcon(data)"></i>
-              <span>{{ node.label }}</span>
-              <span v-if="data.type === 'device'" :class="['status-dot', data.status]"></span>
-            </span>
-          </el-tree>
-        </div>
-      </div>
+      <aside class="dashboard-side">
+        <device-tree-panel
+          v-model="treeScope"
+          title="设备范围"
+          :min-height="620"
+          @change="handleTreeScopeChange"
+          @refresh="fetchDeviceTree"
+        />
+      </aside>
 
-      <!-- 右侧数据看板 -->
-      <div class="dashboard-content">
-        <!-- 设备信息头部 -->
-        <div class="device-header">
-          <div class="device-info">
-            <h2>{{ selectedScope.label }}</h2>
-            <span
-              v-if="selectedScope.nodeType === 'device'"
-              :class="['status-tag', selectedScope.status]"
-            >
-              {{ getStatusText(selectedScope.status) }}
-            </span>
-            <span v-else class="status-tag group">
-              {{ selectedScope.nodeType === 'group' ? '设备组汇总' : '全厂汇总' }}
-            </span>
-          </div>
-          <div class="device-meta">
-            <span v-if="selectedScope.nodeType === 'device'">型号: {{ selectedScope.model || '-' }}</span>
-            <span v-if="selectedScope.nodeType === 'device'">IP: {{ selectedScope.ip || '-' }}</span>
-            <span v-else>设备数: {{ selectedScope.deviceCount }} 台</span>
+      <section class="dashboard-main">
+        <div class="scope-card card">
+          <div class="scope-meta">
+            <div class="scope-badge" :class="selectedScope.nodeType || 'all'">
+              {{ scopeBadgeText }}
+            </div>
+            <div class="meta-chip">
+              <span>当前范围</span>
+              <strong>{{ selectedScope.label }}</strong>
+            </div>
+            <div class="meta-chip">
+              <span>设备数量</span>
+              <strong>{{ selectedScope.deviceCount || 0 }} 台</strong>
+            </div>
+            <div v-if="selectedScope.nodeType === 'device'" class="meta-chip">
+              <span>设备型号</span>
+              <strong>{{ selectedScope.model || '-' }}</strong>
+            </div>
+            <div v-if="selectedScope.nodeType === 'device'" class="meta-chip">
+              <span>设备 IP</span>
+              <strong>{{ selectedScope.ip || '-' }}</strong>
+            </div>
+            <el-button icon="el-icon-refresh" circle @click="reloadCurrentScope" />
           </div>
         </div>
 
-        <!-- 统计卡片 -->
         <el-row :gutter="20" class="stat-row">
           <el-col :span="6">
-            <div class="stat-card">
-              <div class="stat-icon blue">
-                <i class="el-icon-s-goods"></i>
-              </div>
+            <div class="stat-card blue">
+              <div class="stat-icon"><i class="el-icon-s-goods"></i></div>
               <div class="stat-info">
                 <div class="stat-value">{{ dashboardData.totalPieces }}</div>
                 <div class="stat-extra">今日 {{ dashboardData.todayPieces }} 件</div>
@@ -71,27 +49,18 @@
             </div>
           </el-col>
           <el-col :span="6">
-            <div class="stat-card">
-              <div class="stat-icon green">
-                <i class="el-icon-sort"></i>
-              </div>
+            <div class="stat-card green">
+              <div class="stat-icon"><i class="el-icon-sort"></i></div>
               <div class="stat-info">
                 <div class="stat-value">{{ dashboardData.totalThreadLength }}<small>m</small></div>
-                <div v-if="selectedScope.nodeType === 'device'" class="stat-extra">
-                  已用 {{ dashboardData.usedThreadLength }}m
-                </div>
-                <div v-else class="stat-extra">
-                  平均已用 {{ dashboardData.avgUsedThreadLength }}m · 累计已用 {{ dashboardData.usedThreadLength }}m
-                </div>
+                <div class="stat-extra">{{ threadExtraText }}</div>
                 <div class="stat-label">{{ $t('dashboard.threadLength') }}</div>
               </div>
             </div>
           </el-col>
           <el-col :span="6">
-            <div class="stat-card">
-              <div class="stat-icon orange">
-                <i class="el-icon-time"></i>
-              </div>
+            <div class="stat-card orange">
+              <div class="stat-icon"><i class="el-icon-time"></i></div>
               <div class="stat-info">
                 <div class="stat-value">{{ dashboardData.runningTime }}<small>h</small></div>
                 <div class="stat-extra">{{ runtimeExtraText }}</div>
@@ -101,54 +70,48 @@
           </el-col>
           <el-col :span="6">
             <div class="stat-card">
-              <div class="stat-icon purple">
-                <i class="el-icon-data-line"></i>
-              </div>
+              <div class="stat-icon"><i class="el-icon-data-line"></i></div>
               <div class="stat-info">
                 <div class="stat-value">{{ dashboardData.utilizationRate }}<small>%</small></div>
+                <div class="stat-extra">当前范围综合使用率</div>
                 <div class="stat-label">{{ $t('dashboard.utilizationRate') }}</div>
               </div>
             </div>
           </el-col>
         </el-row>
 
-        <!-- 图表区域 -->
-        <el-row :gutter="20" class="chart-row">
-          <el-col :span="8">
-            <div class="chart-card">
-              <div class="chart-title">{{ $t('dashboard.spindleSpeed') }}</div>
-              <div ref="gaugeChart" class="chart-container gauge"></div>
-            </div>
-          </el-col>
-          <el-col :span="8">
-            <div class="chart-card">
-              <div class="chart-title">加工总件数（近7天）</div>
-              <div ref="pieces7dChart" class="chart-container"></div>
-            </div>
-          </el-col>
-          <el-col :span="8">
-            <div class="chart-card">
-              <div class="chart-title">加工产量统计（近10天）</div>
-              <div ref="productionChart" class="chart-container"></div>
-            </div>
-          </el-col>
-        </el-row>
+        <div class="dashboard-grid">
+          <div class="chart-card gauge-card">
+            <div class="chart-title">{{ $t('dashboard.spindleSpeed') }}</div>
+            <div class="chart-subtitle">当前设备或所选范围的主轴转速</div>
+            <div ref="gaugeChart" class="chart-container gauge"></div>
+          </div>
 
-        <el-row :gutter="20" class="chart-row">
-          <el-col :span="12">
-            <div class="chart-card">
-              <div class="chart-title">运行/加工时长（近7天）</div>
-              <div ref="runtimeChart" class="chart-container"></div>
-            </div>
-          </el-col>
-          <el-col :span="12">
-            <div class="chart-card">
-              <div class="chart-title">设备使用率（近7天）</div>
-              <div ref="utilizationChart" class="chart-container"></div>
-            </div>
-          </el-col>
-        </el-row>
-      </div>
+          <div class="chart-card">
+            <div class="chart-title">加工总件数（近7天）</div>
+            <div class="chart-subtitle">用于观察每日产量波动</div>
+            <div ref="pieces7dChart" class="chart-container"></div>
+          </div>
+
+          <div class="chart-card">
+            <div class="chart-title">加工产量统计</div>
+            <div class="chart-subtitle">展示接口返回的时序产量数据</div>
+            <div ref="productionChart" class="chart-container"></div>
+          </div>
+
+          <div class="chart-card chart-wide">
+            <div class="chart-title">运行 / 加工时长（近7天）</div>
+            <div class="chart-subtitle">运行时长与加工时长对照查看</div>
+            <div ref="runtimeChart" class="chart-container"></div>
+          </div>
+
+          <div class="chart-card chart-wide">
+            <div class="chart-title">设备使用率（近7天）</div>
+            <div class="chart-subtitle">按日查看使用率变化趋势</div>
+            <div ref="utilizationChart" class="chart-container"></div>
+          </div>
+        </div>
+      </section>
     </div>
   </div>
 </template>
@@ -157,17 +120,25 @@
 import * as echarts from 'echarts'
 import { getDeviceTree } from '@/api/device'
 import { getDashboardData } from '@/api/statistics'
+import DeviceTreePanel from '@/components/DeviceTreePanel.vue'
+
+const defaultTreeScope = () => ({
+  label: '',
+  nodeType: '',
+  groupId: '',
+  deviceId: '',
+  deviceIds: []
+})
 
 export default {
   name: 'Dashboard',
+  components: {
+    DeviceTreePanel
+  },
   data() {
     return {
       deviceTree: [],
-      treeProps: {
-        children: 'children',
-        label: 'label'
-      },
-      treeFilter: '',
+      treeScope: defaultTreeScope(),
       selectedScope: {
         label: '全厂设备',
         nodeType: 'all',
@@ -204,11 +175,26 @@ export default {
         return `厂均加工 ${this.dashboardData.processingTime}h`
       }
       return `加工 ${this.dashboardData.processingTime}h`
-    }
-  },
-  watch: {
-    treeFilter(val) {
-      this.$refs.deviceTree.filter(val)
+    },
+    threadExtraText() {
+      if (this.selectedScope.nodeType === 'device') {
+        return `已用 ${this.dashboardData.usedThreadLength}m`
+      }
+      return `平均 ${this.dashboardData.avgUsedThreadLength}m · 累计 ${this.dashboardData.usedThreadLength}m`
+    },
+    scopeBadgeText() {
+      if (this.selectedScope.nodeType === 'device') return '单台设备'
+      if (this.selectedScope.nodeType === 'group') return '设备组'
+      return '全厂汇总'
+    },
+    scopeDescription() {
+      if (this.selectedScope.nodeType === 'device') {
+        return `当前查看 ${this.selectedScope.label} 的实时数据看板。`
+      }
+      if (this.selectedScope.nodeType === 'group') {
+        return `当前范围为设备组，共 ${this.selectedScope.deviceCount} 台设备。`
+      }
+      return '当前查看全厂设备综合数据。'
     }
   },
   mounted() {
@@ -242,6 +228,20 @@ export default {
         }
       })
     },
+    findNodeByKey(key, nodes = this.deviceTree) {
+      const stack = [...nodes]
+      while (stack.length > 0) {
+        const current = stack.pop()
+        if (!current) continue
+        if (current._nodeKey === key) {
+          return current
+        }
+        if (Array.isArray(current.children) && current.children.length > 0) {
+          stack.push(...current.children)
+        }
+      }
+      return null
+    },
     setDefaultScopeAndLoad() {
       const deviceCount = this.countDeviceNodes(this.deviceTree)
       this.selectedScope = {
@@ -252,6 +252,7 @@ export default {
         ip: '',
         deviceCount
       }
+      this.treeScope = defaultTreeScope()
       this.loadDashboardData({})
     },
     countDeviceNodes(nodes = []) {
@@ -269,23 +270,6 @@ export default {
         }
       }
       return count
-    },
-    collectDeviceIds(node) {
-      if (!node) return []
-      if (node.type === 'device') return [Number(node.id)]
-
-      const ids = []
-      const stack = [...(node.children || [])]
-      while (stack.length > 0) {
-        const current = stack.pop()
-        if (!current) continue
-        if (current.type === 'device') {
-          ids.push(Number(current.id))
-        } else if (Array.isArray(current.children) && current.children.length > 0) {
-          stack.push(...current.children)
-        }
-      }
-      return ids
     },
     async loadDashboardData(params = {}) {
       try {
@@ -332,49 +316,47 @@ export default {
         this.initCharts()
       })
     },
-    filterNode(value, data) {
-      if (!value) return true
-      return data.label.toLowerCase().includes(value.toLowerCase())
-    },
-    handleNodeClick(data) {
-      if (data.type === 'device') {
-        this.selectedScope = {
-          label: data.label,
-          nodeType: 'device',
-          status: data.status || '',
-          model: data.model || '',
-          ip: data.ip || '',
-          deviceCount: 1
-        }
-        this.loadDashboardData({ deviceId: data.id })
+    handleTreeScopeChange(payload) {
+      if (!payload?.nodeType) {
+        this.setDefaultScopeAndLoad()
         return
       }
-      const deviceIds = this.collectDeviceIds(data)
+
+      if (payload.nodeType === 'device') {
+        const node = this.findNodeByKey(`device-${payload.deviceId}`)
+        this.selectedScope = {
+          label: payload.label,
+          nodeType: 'device',
+          status: node?.status || '',
+          model: node?.model || '',
+          ip: node?.ip || '',
+          deviceCount: 1
+        }
+        this.loadDashboardData({ deviceId: payload.deviceId })
+        return
+      }
+
+      const node = this.findNodeByKey(`group-${payload.groupId}`)
       this.selectedScope = {
-        label: data.label || '设备组',
+        label: payload.label || '设备组',
         nodeType: 'group',
         status: '',
         model: '',
         ip: '',
-        deviceCount: deviceIds.length
+        deviceCount: payload.deviceIds?.length || this.countDeviceNodes(node?.children || [])
       }
-      this.loadDashboardData({ deviceIds: deviceIds.join(',') })
+      this.loadDashboardData({ deviceIds: (payload.deviceIds || []).join(',') })
     },
-    getNodeIcon(data) {
-      if (data.type === 'device') {
-        return 'el-icon-monitor'
+    reloadCurrentScope() {
+      if (this.treeScope.nodeType === 'device') {
+        this.loadDashboardData({ deviceId: this.treeScope.deviceId })
+        return
       }
-      return data.children && data.children.length ? 'el-icon-folder-opened' : 'el-icon-folder'
-    },
-    getStatusText(status) {
-      const statusMap = {
-        online: '在线',
-        offline: '离线',
-        working: '工作中',
-        idle: '空闲',
-        alarm: '报警'
+      if (this.treeScope.nodeType === 'group') {
+        this.loadDashboardData({ deviceIds: this.treeScope.deviceIds.join(',') })
+        return
       }
-      return statusMap[status] || status
+      this.loadDashboardData({})
     },
     initCharts() {
       this.initGaugeChart()
@@ -383,100 +365,84 @@ export default {
       this.initRuntimeChart()
       this.initUtilizationChart()
     },
-    initGaugeChart() {
-      if (!this.$refs.gaugeChart) return
-      if (this.charts.gauge) {
-        this.charts.gauge.dispose()
+    getOrCreateChart(key, refName) {
+      if (this.charts[key]) {
+        return this.charts[key]
       }
-      const chart = echarts.init(this.$refs.gaugeChart)
-      this.charts.gauge = chart
+      if (!this.$refs[refName]) return null
+      const chart = echarts.init(this.$refs[refName])
+      this.charts[key] = chart
+      return chart
+    },
+    initGaugeChart() {
+      const chart = this.getOrCreateChart('gauge', 'gaugeChart')
+      if (!chart) return
       chart.setOption({
         series: [{
           type: 'gauge',
-          startAngle: 200,
-          endAngle: -20,
+          startAngle: 210,
+          endAngle: -30,
           min: 0,
           max: 5000,
           splitNumber: 5,
-          itemStyle: {
-            color: '#409EFF'
-          },
+          itemStyle: { color: '#2f6df6' },
           progress: {
             show: true,
-            width: 20
+            width: 18
           },
           pointer: {
             show: false
           },
           axisLine: {
             lineStyle: {
-              width: 20,
-              color: [[1, '#e6e6e6']]
+              width: 18,
+              color: [[1, '#e8eef7']]
             }
           },
-          axisTick: {
-            show: false
-          },
-          splitLine: {
-            show: false
-          },
+          axisTick: { show: false },
+          splitLine: { show: false },
           axisLabel: {
-            distance: 30,
-            color: '#999',
+            distance: 26,
+            color: '#8a98ad',
             fontSize: 12
           },
-          anchor: {
-            show: false
-          },
+          anchor: { show: false },
           title: {
-            show: false
+            offsetCenter: [0, '46%'],
+            color: '#8a98ad',
+            fontSize: 13
           },
           detail: {
             valueAnimation: true,
-            width: '60%',
-            lineHeight: 40,
-            borderRadius: 8,
-            offsetCenter: [0, '10%'],
-            fontSize: 28,
+            offsetCenter: [0, '8%'],
+            fontSize: 30,
             fontWeight: 'bold',
             formatter: '{value}',
-            color: '#303133'
+            color: '#22324d'
           },
           data: [{
             value: this.dashboardData.spindleSpeed,
             name: 'RPM'
           }]
         }]
-      })
+      }, true)
     },
     initProductionChart() {
-      if (!this.$refs.productionChart) return
-      if (this.charts.production) {
-        this.charts.production.dispose()
-      }
-      const chart = echarts.init(this.$refs.productionChart)
-      this.charts.production = chart
+      const chart = this.getOrCreateChart('production', 'productionChart')
+      if (!chart) return
       chart.setOption({
-        tooltip: {
-          trigger: 'axis',
-          axisPointer: { type: 'line' }
-        },
-        grid: {
-          left: '3%',
-          right: '4%',
-          bottom: '3%',
-          containLabel: true
-        },
+        tooltip: { trigger: 'axis', axisPointer: { type: 'line' } },
+        grid: { left: '4%', right: '4%', bottom: '4%', top: 20, containLabel: true },
         xAxis: {
           type: 'category',
           data: this.dashboardData.hourlyProduction.map(d => d.date || d.hour),
-          axisLine: { lineStyle: { color: '#ddd' } },
-          axisLabel: { color: '#666', rotate: 40 }
+          axisLine: { lineStyle: { color: '#dbe4f0' } },
+          axisLabel: { color: '#6a7f9d', rotate: 35 }
         },
         yAxis: {
           type: 'value',
-          axisLabel: { color: '#666' },
-          splitLine: { lineStyle: { color: '#eee' } }
+          axisLabel: { color: '#6a7f9d' },
+          splitLine: { lineStyle: { color: '#edf2f8' } }
         },
         series: [{
           type: 'line',
@@ -484,48 +450,33 @@ export default {
           symbol: 'circle',
           symbolSize: 7,
           data: this.dashboardData.hourlyProduction.map(d => d.value),
-          lineStyle: {
-            color: '#409EFF',
-            width: 3
-          },
-          itemStyle: { color: '#409EFF' },
+          lineStyle: { color: '#2f6df6', width: 3 },
+          itemStyle: { color: '#2f6df6' },
           areaStyle: {
             color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: 'rgba(64, 158, 255, 0.28)' },
-              { offset: 1, color: 'rgba(64, 158, 255, 0.05)' }
+              { offset: 0, color: 'rgba(47, 109, 246, 0.28)' },
+              { offset: 1, color: 'rgba(47, 109, 246, 0.04)' }
             ])
           }
         }]
-      })
+      }, true)
     },
     initPieces7dChart() {
-      if (!this.$refs.pieces7dChart) return
-      if (this.charts.pieces7d) {
-        this.charts.pieces7d.dispose()
-      }
-      const chart = echarts.init(this.$refs.pieces7dChart)
-      this.charts.pieces7d = chart
+      const chart = this.getOrCreateChart('pieces7d', 'pieces7dChart')
+      if (!chart) return
       chart.setOption({
-        tooltip: {
-          trigger: 'axis',
-          axisPointer: { type: 'shadow' }
-        },
-        grid: {
-          left: '3%',
-          right: '4%',
-          bottom: '3%',
-          containLabel: true
-        },
+        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+        grid: { left: '4%', right: '4%', bottom: '4%', top: 20, containLabel: true },
         xAxis: {
           type: 'category',
           data: this.dashboardData.pieces7d.map(d => d.date || d.hour),
-          axisLine: { lineStyle: { color: '#ddd' } },
-          axisLabel: { color: '#666' }
+          axisLine: { lineStyle: { color: '#dbe4f0' } },
+          axisLabel: { color: '#6a7f9d' }
         },
         yAxis: {
           type: 'value',
-          axisLabel: { color: '#666' },
-          splitLine: { lineStyle: { color: '#eee' } }
+          axisLabel: { color: '#6a7f9d' },
+          splitLine: { lineStyle: { color: '#edf2f8' } }
         },
         series: [{
           type: 'bar',
@@ -533,44 +484,35 @@ export default {
           barWidth: 22,
           itemStyle: {
             color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: '#67C23A' },
-              { offset: 1, color: '#4fa727' }
+              { offset: 0, color: '#2fb46e' },
+              { offset: 1, color: '#1f935e' }
             ]),
-            borderRadius: [4, 4, 0, 0]
+            borderRadius: [10, 10, 0, 0]
           }
         }]
-      })
+      }, true)
     },
     initRuntimeChart() {
-      if (!this.$refs.runtimeChart) return
-      if (this.charts.runtime) {
-        this.charts.runtime.dispose()
-      }
-      const chart = echarts.init(this.$refs.runtimeChart)
-      this.charts.runtime = chart
+      const chart = this.getOrCreateChart('runtime', 'runtimeChart')
+      if (!chart) return
       chart.setOption({
-        tooltip: {
-          trigger: 'axis'
-        },
+        tooltip: { trigger: 'axis' },
         legend: {
+          top: 0,
+          textStyle: { color: '#6a7f9d' },
           data: ['运行时长', '加工时长']
         },
-        grid: {
-          left: '3%',
-          right: '4%',
-          bottom: '3%',
-          containLabel: true
-        },
+        grid: { left: '4%', right: '4%', bottom: '4%', top: 40, containLabel: true },
         xAxis: {
           type: 'category',
           data: this.dashboardData.runningProcessingTrend.map(d => d.date),
-          axisLine: { lineStyle: { color: '#ddd' } },
-          axisLabel: { color: '#666' }
+          axisLine: { lineStyle: { color: '#dbe4f0' } },
+          axisLabel: { color: '#6a7f9d' }
         },
         yAxis: {
           type: 'value',
-          axisLabel: { color: '#666', formatter: '{value}h' },
-          splitLine: { lineStyle: { color: '#eee' } }
+          axisLabel: { color: '#6a7f9d', formatter: '{value}h' },
+          splitLine: { lineStyle: { color: '#edf2f8' } }
         },
         series: [
           {
@@ -580,8 +522,8 @@ export default {
             symbol: 'circle',
             symbolSize: 6,
             data: this.dashboardData.runningProcessingTrend.map(d => d.runningTime),
-            lineStyle: { color: '#67C23A', width: 2 },
-            itemStyle: { color: '#67C23A' }
+            lineStyle: { color: '#2fb46e', width: 3 },
+            itemStyle: { color: '#2fb46e' }
           },
           {
             name: '加工时长',
@@ -590,57 +532,46 @@ export default {
             symbol: 'circle',
             symbolSize: 6,
             data: this.dashboardData.runningProcessingTrend.map(d => d.processingTime),
-            lineStyle: { color: '#409EFF', width: 2 },
-            itemStyle: { color: '#409EFF' }
+            lineStyle: { color: '#2f6df6', width: 3 },
+            itemStyle: { color: '#2f6df6' }
           }
         ]
-      })
+      }, true)
     },
     initUtilizationChart() {
-      if (!this.$refs.utilizationChart) return
-      if (this.charts.utilization) {
-        this.charts.utilization.dispose()
-      }
-      const chart = echarts.init(this.$refs.utilizationChart)
-      this.charts.utilization = chart
+      const chart = this.getOrCreateChart('utilization', 'utilizationChart')
+      if (!chart) return
       chart.setOption({
         tooltip: {
           trigger: 'axis',
           formatter: '{b}: {c}%'
         },
-        grid: {
-          left: '3%',
-          right: '4%',
-          bottom: '3%',
-          containLabel: true
-        },
+        grid: { left: '4%', right: '4%', bottom: '4%', top: 20, containLabel: true },
         xAxis: {
           type: 'category',
           data: this.dashboardData.utilizationTrend.map(d => d.date),
-          axisLine: { lineStyle: { color: '#ddd' } },
-          axisLabel: { color: '#666' }
+          axisLine: { lineStyle: { color: '#dbe4f0' } },
+          axisLabel: { color: '#6a7f9d' }
         },
         yAxis: {
           type: 'value',
           max: 100,
-          axisLabel: { color: '#666', formatter: '{value}%' },
-          splitLine: { lineStyle: { color: '#eee' } }
+          axisLabel: { color: '#6a7f9d', formatter: '{value}%' },
+          splitLine: { lineStyle: { color: '#edf2f8' } }
         },
-        series: [
-          {
-            type: 'bar',
-            data: this.dashboardData.utilizationTrend.map(d => d.value),
-            barWidth: 24,
-            itemStyle: {
-              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                { offset: 0, color: '#67C23A' },
-                { offset: 1, color: '#4fa727' }
-              ]),
-              borderRadius: [4, 4, 0, 0]
-            }
+        series: [{
+          type: 'bar',
+          data: this.dashboardData.utilizationTrend.map(d => d.value),
+          barWidth: 24,
+          itemStyle: {
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: '#f0b037' },
+              { offset: 1, color: '#cf7b11' }
+            ]),
+            borderRadius: [10, 10, 0, 0]
           }
-        ]
-      })
+        }]
+      }, true)
     },
     handleResize() {
       Object.values(this.charts).forEach(chart => chart && chart.resize())
@@ -650,222 +581,121 @@ export default {
 </script>
 
 <style lang="scss" scoped>
-.dashboard-page {
-  height: 100%;
-  background-color: #f5f7fa;
-}
-
 .dashboard-layout {
   display: flex;
-  height: 100%;
+  gap: 18px;
+  min-height: calc(100vh - 132px);
 }
 
-.device-tree-panel {
+.dashboard-side {
   width: 280px;
-  background: #fff;
-  border-right: 1px solid #e6e6e6;
-  display: flex;
-  flex-direction: column;
-
-  .panel-header {
-    padding: 15px;
-    border-bottom: 1px solid #e6e6e6;
-
-    > span {
-      display: block;
-      font-size: 16px;
-      font-weight: 600;
-      margin-bottom: 10px;
-      color: #303133;
-    }
-  }
-
-  .tree-container {
-    flex: 1;
-    overflow: auto;
-    padding: 10px;
-  }
+  flex-shrink: 0;
 }
 
-.tree-node {
-  display: flex;
-  align-items: center;
-  font-size: 14px;
-
-  i {
-    margin-right: 5px;
-    color: #909399;
-  }
-
-  .status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    margin-left: 8px;
-
-    &.online, &.idle { background: #67C23A; }
-    &.offline { background: #909399; }
-    &.working, &.alarm { background: #F56C6C; }
-  }
-}
-
-.dashboard-content {
+.dashboard-main {
   flex: 1;
-  padding: 20px;
-  overflow: auto;
+  min-width: 0;
 }
 
-.device-header {
-  background: #fff;
-  padding: 20px;
-  border-radius: 8px;
-  margin-bottom: 20px;
+.scope-card {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: center;
-
-  .device-info {
-    display: flex;
-    align-items: center;
-
-    h2 {
-      font-size: 20px;
-      margin: 0;
-      margin-right: 15px;
-      color: #303133;
-    }
-
-    .status-tag {
-      padding: 4px 12px;
-      border-radius: 4px;
-      font-size: 12px;
-
-      &.online, &.idle {
-        background: rgba(103, 194, 58, 0.1);
-        color: #67C23A;
-      }
-      &.offline {
-        background: rgba(144, 147, 153, 0.1);
-        color: #909399;
-      }
-      &.working, &.alarm {
-        background: rgba(245, 108, 108, 0.1);
-        color: #F56C6C;
-      }
-      &.group {
-        background: rgba(64, 158, 255, 0.1);
-        color: #409EFF;
-      }
-    }
-  }
-
-  .device-meta {
-    color: #909399;
-    font-size: 14px;
-
-    span {
-      margin-left: 20px;
-    }
-  }
+  gap: 18px;
+  margin-bottom: 18px;
 }
 
-.stat-row {
-  margin-bottom: 20px;
-}
-
-.stat-card {
-  background: #fff;
-  border-radius: 8px;
-  padding: 20px;
-  display: flex;
-  align-items: center;
-
-  .stat-icon {
-    width: 50px;
-    height: 50px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-right: 15px;
-
-    i { font-size: 24px; color: #fff; }
-
-    &.blue { background: linear-gradient(135deg, #409EFF, #2d8cf0); }
-    &.green { background: linear-gradient(135deg, #67C23A, #5daf34); }
-    &.orange { background: linear-gradient(135deg, #E6A23C, #d69330); }
-    &.purple { background: linear-gradient(135deg, #9b59b6, #8e44ad); }
-  }
-
-  .stat-info {
-    .stat-value {
-      font-size: 24px;
-      font-weight: bold;
-      color: #303133;
-
-      small {
-        font-size: 14px;
-        font-weight: normal;
-        color: #909399;
-        margin-left: 2px;
-      }
-    }
-
-    .stat-extra {
-      margin-top: 2px;
-      font-size: 12px;
-      color: #606266;
-    }
-
-    .stat-label {
-      font-size: 14px;
-      color: #909399;
-      margin-top: 5px;
-    }
-  }
-}
-
-.chart-row {
-  margin-bottom: 20px;
-}
-
-.chart-card {
-  background: #fff;
-  border-radius: 8px;
-  padding: 20px;
-
-  .chart-title {
-    font-size: 16px;
-    font-weight: 600;
-    color: #303133;
-    margin-bottom: 15px;
-  }
-
-  .chart-container {
-    width: 100%;
-    height: 300px;
-
-    &.gauge {
-      height: 250px;
-    }
-  }
-}
-
-.empty-state {
-  display: flex;
-  flex-direction: column;
+.scope-badge {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 100%;
-  color: #909399;
+  min-width: 88px;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #2f6df6;
+  font-size: 12px;
+  font-weight: 700;
 
-  i {
-    font-size: 80px;
-    margin-bottom: 20px;
+  &.device {
+    background: rgba(47, 180, 110, 0.12);
+    color: #2fb46e;
   }
 
-  p {
-    font-size: 16px;
+  &.group {
+    background: rgba(47, 109, 246, 0.12);
+    color: #2f6df6;
+  }
+}
+
+.scope-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.meta-chip {
+  min-width: 120px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: #f7faff;
+
+  span {
+    display: block;
+    color: #8a98ad;
+    font-size: 12px;
+    margin-bottom: 6px;
+  }
+
+  strong {
+    color: #22324d;
+    font-size: 15px;
+  }
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.gauge-card {
+  grid-row: span 1;
+}
+
+.chart-wide {
+  grid-column: span 2;
+}
+
+::v-deep .chart-card .gauge {
+  height: 300px;
+}
+
+@media (max-width: 1200px) {
+  .dashboard-layout {
+    flex-direction: column;
+  }
+
+  .dashboard-side {
+    width: 100%;
+  }
+}
+
+@media (max-width: 768px) {
+  .scope-card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .chart-wide {
+    grid-column: span 1;
   }
 }
 </style>

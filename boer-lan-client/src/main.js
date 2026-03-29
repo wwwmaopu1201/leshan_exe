@@ -22,6 +22,7 @@ Vue.config.productionTip = false
 
 let trialMonitorTimer = null
 let trialExpiredHandled = false
+const isDevMode = import.meta.env.DEV || !import.meta.env.PROD
 
 function renderTrialMessage(message) {
   const app = document.getElementById('app')
@@ -37,7 +38,7 @@ function renderTrialMessage(message) {
 }
 
 async function ensureTrialAvailable() {
-  if (!import.meta.env.PROD) {
+  if (isDevMode) {
     return true
   }
 
@@ -52,7 +53,7 @@ async function ensureTrialAvailable() {
 }
 
 function startTrialMonitor() {
-  if (!import.meta.env.PROD || trialMonitorTimer) {
+  if (isDevMode || trialMonitorTimer) {
     return
   }
 
@@ -77,10 +78,12 @@ function startTrialMonitor() {
 }
 
 async function initApp() {
-  renderTrialMessage('正在检查试用状态...')
-  const trialOk = await ensureTrialAvailable()
-  if (!trialOk) {
-    return
+  if (!isDevMode) {
+    renderTrialMessage('正在检查试用状态...')
+    const trialOk = await ensureTrialAvailable()
+    if (!trialOk) {
+      return
+    }
   }
 
   new Vue({

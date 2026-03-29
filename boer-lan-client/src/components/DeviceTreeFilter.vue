@@ -3,11 +3,19 @@
     <el-popover
       v-model="visible"
       placement="bottom-start"
-      width="340"
+      width="360"
       trigger="click"
       popper-class="device-tree-filter-popover"
     >
-      <div class="tree-tools">
+      <div class="filter-panel">
+        <div class="filter-header">
+          <div>
+            <div class="filter-title">设备范围</div>
+            <div class="filter-subtitle">支持按设备、分组快速筛选</div>
+          </div>
+          <el-button type="text" size="mini" @click="fetchDeviceTree">刷新</el-button>
+        </div>
+
         <el-input
           v-model="keyword"
           size="small"
@@ -15,29 +23,46 @@
           prefix-icon="el-icon-search"
           clearable
         />
-        <el-button type="text" size="small" @click="clearSelection">清空</el-button>
+
+        <div class="selection-bar">
+          <div class="selection-text">
+            <span class="selection-label">当前选择</span>
+            <span class="selection-value">{{ displayLabel }}</span>
+          </div>
+          <el-button type="text" size="mini" @click="clearSelection">清空</el-button>
+        </div>
+
+        <div class="tree-wrapper">
+          <el-tree
+            ref="deviceTree"
+            :data="deviceTree"
+            :props="treeProps"
+            :filter-node-method="filterNode"
+            node-key="_nodeKey"
+            highlight-current
+            default-expand-all
+            @node-click="handleNodeClick"
+          >
+            <div slot-scope="{ node, data }" class="tree-node">
+              <div class="tree-node-main">
+                <i :class="['tree-node-icon', getNodeIcon(data)]"></i>
+                <span class="tree-node-label" :title="node.label">{{ node.label }}</span>
+              </div>
+              <span v-if="data.type === 'device'" :class="['status-dot', data.status]"></span>
+            </div>
+          </el-tree>
+        </div>
       </div>
-      <div class="tree-wrapper">
-        <el-tree
-          ref="deviceTree"
-          :data="deviceTree"
-          :props="treeProps"
-          :filter-node-method="filterNode"
-          node-key="_nodeKey"
-          highlight-current
-          default-expand-all
-          @node-click="handleNodeClick"
-        >
-          <span slot-scope="{ node, data }" class="tree-node">
-            <i :class="getNodeIcon(data)"></i>
-            <span>{{ node.label }}</span>
-            <span v-if="data.type === 'device'" :class="['status-dot', data.status]"></span>
-          </span>
-        </el-tree>
-      </div>
-      <el-button slot="reference" class="filter-btn">
-        <i class="el-icon-s-operation"></i>
-        {{ displayLabel }}
+
+      <el-button slot="reference" class="filter-btn" :class="{ active: Boolean(value?.label) }">
+        <div class="filter-btn-content">
+          <i class="el-icon-s-operation filter-btn-icon"></i>
+          <div class="filter-btn-text">
+            <span class="filter-btn-label">设备筛选</span>
+            <span class="filter-btn-value">{{ displayLabel }}</span>
+          </div>
+        </div>
+        <i class="el-icon-arrow-down"></i>
       </el-button>
     </el-popover>
   </div>
@@ -79,6 +104,15 @@ export default {
       if (this.$refs.deviceTree) {
         this.$refs.deviceTree.filter(val)
       }
+    },
+    value: {
+      deep: true,
+      handler(val) {
+        const key = this.resolveNodeKey(val)
+        this.$nextTick(() => {
+          this.$refs.deviceTree?.setCurrentKey(key || null)
+        })
+      }
     }
   },
   mounted() {
@@ -90,6 +124,13 @@ export default {
         const res = await getDeviceTree()
         if (res.code === 0) {
           this.deviceTree = this.attachNodeKeys(res.data || [])
+          this.$nextTick(() => {
+            this.$refs.deviceTree?.filter(this.keyword)
+            const key = this.resolveNodeKey(this.value)
+            if (key) {
+              this.$refs.deviceTree?.setCurrentKey(key)
+            }
+          })
         }
       } catch (error) {
         console.error('Failed to fetch device tree:', error)
@@ -106,9 +147,19 @@ export default {
         }
       })
     },
+    resolveNodeKey(value) {
+      if (!value) return ''
+      if (value.nodeType === 'device' && value.deviceId) {
+        return `device-${value.deviceId}`
+      }
+      if (value.nodeType === 'group' && value.groupId) {
+        return `group-${value.groupId}`
+      }
+      return ''
+    },
     filterNode(value, data) {
       if (!value) return true
-      return data.label.toLowerCase().includes(value.toLowerCase())
+      return (data.label || '').toLowerCase().includes(value.toLowerCase())
     },
     getNodeIcon(data) {
       if (data.type === 'device') return 'el-icon-monitor'
@@ -133,12 +184,12 @@ export default {
     },
     handleNodeClick(data) {
       if (!data) return
-      const deviceIds = this.collectDeviceIds(data)
       const payload = {
         label: data.label,
         nodeType: data.type === 'device' ? 'device' : 'group',
+        groupId: data.type === 'group' ? String(data.id) : '',
         deviceId: data.type === 'device' ? String(data.id) : '',
-        deviceIds
+        deviceIds: this.collectDeviceIds(data)
       }
       this.$emit('input', payload)
       this.$emit('change', payload)
@@ -148,9 +199,11 @@ export default {
       const payload = {
         label: '',
         nodeType: '',
+        groupId: '',
         deviceId: '',
         deviceIds: []
       }
+      this.$refs.deviceTree?.setCurrentKey(null)
       this.$emit('input', payload)
       this.$emit('change', payload)
       this.visible = false
@@ -164,38 +217,211 @@ export default {
   display: inline-block;
 }
 
-.filter-btn {
-  min-width: 180px;
-  text-align: left;
+.filter-panel {
+  display: grid;
+  gap: 12px;
 }
 
-.tree-tools {
+.filter-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.filter-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #22324d;
+}
+
+.filter-subtitle {
+  margin-top: 4px;
+  color: #8090a8;
+  font-size: 12px;
+}
+
+.selection-bar {
+  min-height: 42px;
+  padding: 0 14px;
+  border-radius: 16px;
+  background: #f5f8ff;
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.selection-text {
+  min-width: 0;
+}
+
+.selection-label {
+  display: block;
+  font-size: 12px;
+  color: #8190a5;
+}
+
+.selection-value {
+  display: block;
+  margin-top: 3px;
+  color: #22324d;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tree-wrapper {
-  max-height: 280px;
+  max-height: 320px;
+  padding-right: 4px;
   overflow: auto;
 }
 
 .tree-node {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.tree-node-main {
+  min-width: 0;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+}
+
+.tree-node-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(47, 109, 246, 0.1);
+  color: #2f6df6;
+  font-size: 13px;
+}
+
+.tree-node-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .status-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
+  flex-shrink: 0;
 
-  &.online { background: #67C23A; }
-  &.working { background: #F56C6C; }
-  &.idle { background: #67C23A; }
-  &.alarm { background: #F56C6C; }
-  &.offline { background: #909399; }
+  &.online {
+    background: #2fb46e;
+  }
+
+  &.working {
+    background: #2f6df6;
+  }
+
+  &.idle {
+    background: #2fb46e;
+  }
+
+  &.alarm {
+    background: #ef5a5a;
+  }
+
+  &.offline {
+    background: #8a98ad;
+  }
+}
+
+.filter-btn {
+  min-width: 230px;
+  min-height: 52px;
+  padding: 10px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(219, 228, 240, 0.92);
+  background: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  box-shadow: 0 10px 22px rgba(59, 87, 132, 0.08);
+
+  &.active {
+    border-color: rgba(47, 109, 246, 0.35);
+    box-shadow: 0 14px 28px rgba(47, 109, 246, 0.14);
+  }
+}
+
+.filter-btn-content {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.filter-btn-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(47, 109, 246, 0.12);
+  color: #2f6df6;
+  font-size: 16px;
+}
+
+.filter-btn-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
+
+.filter-btn-label {
+  color: #8190a5;
+  font-size: 12px;
+}
+
+.filter-btn-value {
+  margin-top: 2px;
+  color: #22324d;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+::v-deep .device-tree-filter-popover {
+  border-radius: 20px;
+  border: 1px solid rgba(219, 228, 240, 0.95);
+  box-shadow: 0 18px 32px rgba(59, 87, 132, 0.14);
+}
+
+::v-deep .device-tree-filter-popover .popper__arrow {
+  display: none;
+}
+
+::v-deep .device-tree-filter-popover .el-popover {
+  padding: 0;
+}
+
+::v-deep .device-tree-filter-popover {
+  padding: 16px;
+}
+
+::v-deep .device-tree-filter-popover .el-tree-node__content {
+  height: 38px;
+  border-radius: 12px;
+  margin-bottom: 4px;
+}
+
+::v-deep .device-tree-filter-popover .el-tree-node.is-current > .el-tree-node__content {
+  background: rgba(47, 109, 246, 0.1);
 }
 </style>

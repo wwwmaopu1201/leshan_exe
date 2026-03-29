@@ -1,20 +1,7 @@
 import request from './request'
-import {
-  mockGetHomeStats,
-  mockGetDashboardData,
-  mockGetSalaryStats,
-  mockGetProcessOverview,
-  mockGetDurationStats,
-  mockGetAlarmStats
-} from './mock'
-
-const USE_MOCK = false
 
 // 获取首页统计数据
 export function getHomeStats() {
-  if (USE_MOCK) {
-    return mockGetHomeStats()
-  }
   return request({
     url: '/statistics/home',
     method: 'get'
@@ -26,9 +13,6 @@ export function getDashboardData(params = {}) {
   const query = typeof params === 'object' && params !== null
     ? params
     : { deviceId: params }
-  if (USE_MOCK) {
-    return mockGetDashboardData(query.deviceId)
-  }
   return request({
     url: '/statistics/dashboard',
     method: 'get',
@@ -38,9 +22,6 @@ export function getDashboardData(params = {}) {
 
 // 获取工资统计
 export function getSalaryStats(params) {
-  if (USE_MOCK) {
-    return mockGetSalaryStats(params)
-  }
   return request({
     url: '/statistics/salary',
     method: 'get',
@@ -50,9 +31,6 @@ export function getSalaryStats(params) {
 
 // 获取工资详情
 export function getSalaryDetail(params) {
-  if (USE_MOCK) {
-    return mockGetSalaryStats(params)
-  }
   return request({
     url: '/statistics/salary/detail',
     method: 'get',
@@ -62,9 +40,6 @@ export function getSalaryDetail(params) {
 
 // 获取加工概况
 export function getProcessOverview(params) {
-  if (USE_MOCK) {
-    return mockGetProcessOverview(params)
-  }
   return request({
     url: '/statistics/process',
     method: 'get',
@@ -74,9 +49,6 @@ export function getProcessOverview(params) {
 
 // 获取时长统计
 export function getDurationStats(params) {
-  if (USE_MOCK) {
-    return mockGetDurationStats(params)
-  }
   return request({
     url: '/statistics/duration',
     method: 'get',
@@ -86,9 +58,6 @@ export function getDurationStats(params) {
 
 // 获取报警统计
 export function getAlarmStats(params) {
-  if (USE_MOCK) {
-    return mockGetAlarmStats(params)
-  }
   return request({
     url: '/statistics/alarm',
     method: 'get',

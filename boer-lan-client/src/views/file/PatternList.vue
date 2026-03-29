@@ -60,8 +60,15 @@
         </div>
 
         <div class="card">
-          <div class="table-actions flex-between">
+          <div class="section-title">
             <div>
+              <h3>服务器花型文件</h3>
+              <p>用于上传、编辑、预览和批量下发服务器中的花型文件。</p>
+            </div>
+          </div>
+
+          <div class="table-actions flex-between">
+            <div class="action-group">
               <el-button type="primary" icon="el-icon-plus" @click="openUploadDialog">
                 添加文件
               </el-button>
@@ -88,7 +95,7 @@
                 {{ $t('file.batchDownload') }}
               </el-button>
               <el-button icon="el-icon-upload" @click="openDeviceFileDialog">
-                设备文件回传
+                定位设备文件模块
               </el-button>
               <el-button
                 type="danger"
@@ -108,6 +115,7 @@
             v-loading="loading"
             :data="tableData"
             border
+            empty-text="暂无数据"
             @selection-change="handleSelectionChange"
           >
             <el-table-column type="selection" width="50" align="center" />
@@ -154,6 +162,119 @@
             layout="total, sizes, prev, pager, next, jumper"
             @size-change="handleSizeChange"
             @current-change="handlePageChange"
+          />
+        </div>
+
+        <div ref="deviceFileSection" class="card device-file-card">
+          <div class="section-title">
+            <div>
+              <h3>设备花型文件</h3>
+              <p>设备端文件回传和上传队列都集中在该模块下方处理。</p>
+            </div>
+          </div>
+
+          <div class="device-file-toolbar">
+            <el-select
+              v-model="deviceFileQuery.deviceId"
+              placeholder="选择设备"
+              filterable
+              style="width: 220px;"
+              @change="handleDeviceFileSearch"
+            >
+              <el-option
+                v-for="item in deviceOptions"
+                :key="item.id"
+                :label="item.name"
+                :value="item.id"
+              />
+            </el-select>
+            <el-input
+              v-model.trim="deviceFileQuery.keyword"
+              placeholder="文件名/订单号"
+              clearable
+              style="width: 180px;"
+              @keyup.enter.native="handleDeviceFileSearch"
+            />
+            <el-select
+              v-model="deviceFileQuery.patternType"
+              placeholder="花型类型"
+              clearable
+              filterable
+              style="width: 160px;"
+              @change="handleDeviceFileSearch"
+            >
+              <el-option
+                v-for="item in patternTypeOptions"
+                :key="item"
+                :label="item"
+                :value="item"
+              />
+            </el-select>
+            <el-button type="primary" icon="el-icon-search" @click="handleDeviceFileSearch">
+              查询
+            </el-button>
+            <el-button icon="el-icon-refresh" @click="resetDeviceFileSearch">
+              重置
+            </el-button>
+          </div>
+
+          <div class="device-file-actions">
+            <el-button
+              type="primary"
+              icon="el-icon-upload2"
+              :disabled="!deviceFileSelectedRows.length"
+              :loading="uploadingFromDevice"
+              @click="handleUploadFromDevice"
+            >
+              上传选中文件到服务器
+            </el-button>
+            <el-button icon="el-icon-tickets" @click="openUploadQueueDialog">
+              查看上传队列
+            </el-button>
+          </div>
+
+          <el-table
+            v-loading="deviceFileLoading"
+            :data="deviceFileList"
+            border
+            empty-text="暂无数据"
+            @selection-change="handleDeviceFileSelectionChange"
+          >
+            <el-table-column type="selection" width="48" align="center" />
+            <el-table-column type="index" label="序号" width="60" align="center" />
+            <el-table-column prop="fileName" label="设备文件名" min-width="180" />
+            <el-table-column prop="patternType" label="花型类型" width="130" />
+            <el-table-column prop="stitches" label="针数" width="100" />
+            <el-table-column prop="size" label="文件大小" width="100" />
+            <el-table-column prop="unitPrice" label="工价" width="110" align="right">
+              <template slot-scope="scope">
+                {{ formatPrice(scope.row.unitPrice) }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="orderNo" label="订单号" min-width="130" />
+            <el-table-column prop="updateTime" label="更新时间" width="170" />
+            <el-table-column label="操作" width="90" align="center">
+              <template slot-scope="scope">
+                <el-button
+                  type="text"
+                  size="small"
+                  class="danger-text"
+                  @click="handleDeleteDeviceFile(scope.row)"
+                >
+                  删除
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <el-pagination
+            :current-page="deviceFilePagination.page"
+            :page-size="deviceFilePagination.pageSize"
+            :total="deviceFilePagination.total"
+            :page-sizes="[10, 20, 50, 100]"
+            layout="total, sizes, prev, pager, next, jumper"
+            @size-change="handleDeviceFileSizeChange"
+            @current-change="handleDeviceFilePageChange"
           />
         </div>
       </section>
@@ -386,119 +507,6 @@
       <span slot="footer" class="dialog-footer">
         <el-button @click="showDeviceDialog = false">{{ $t('common.cancel') }}</el-button>
         <el-button type="primary" @click="confirmDownload">确认下发</el-button>
-      </span>
-    </el-dialog>
-
-    <el-dialog
-      title="设备花型文件"
-      :visible.sync="showDeviceFileDialog"
-      width="980px"
-    >
-      <div class="device-file-toolbar">
-        <el-select
-          v-model="deviceFileQuery.deviceId"
-          placeholder="选择设备"
-          filterable
-          style="width: 220px;"
-          @change="handleDeviceFileSearch"
-        >
-          <el-option
-            v-for="item in deviceOptions"
-            :key="item.id"
-            :label="item.name"
-            :value="item.id"
-          />
-        </el-select>
-        <el-input
-          v-model.trim="deviceFileQuery.keyword"
-          placeholder="文件名/订单号"
-          clearable
-          style="width: 180px;"
-          @keyup.enter.native="handleDeviceFileSearch"
-        />
-        <el-select
-          v-model="deviceFileQuery.patternType"
-          placeholder="花型类型"
-          clearable
-          filterable
-          style="width: 160px;"
-          @change="handleDeviceFileSearch"
-        >
-          <el-option
-            v-for="item in patternTypeOptions"
-            :key="item"
-            :label="item"
-            :value="item"
-          />
-        </el-select>
-        <el-button type="primary" icon="el-icon-search" @click="handleDeviceFileSearch">
-          查询
-        </el-button>
-        <el-button icon="el-icon-refresh" @click="resetDeviceFileSearch">
-          重置
-        </el-button>
-      </div>
-
-      <div class="device-file-actions">
-        <el-button
-          type="primary"
-          icon="el-icon-upload2"
-          :disabled="!deviceFileSelectedRows.length"
-          :loading="uploadingFromDevice"
-          @click="handleUploadFromDevice"
-        >
-          上传选中文件到服务器
-        </el-button>
-        <el-button icon="el-icon-tickets" @click="openUploadQueueDialog">
-          查看上传队列
-        </el-button>
-      </div>
-
-      <el-table
-        v-loading="deviceFileLoading"
-        :data="deviceFileList"
-        border
-        @selection-change="handleDeviceFileSelectionChange"
-      >
-        <el-table-column type="selection" width="48" align="center" />
-        <el-table-column type="index" label="序号" width="60" align="center" />
-        <el-table-column prop="fileName" label="设备文件名" min-width="180" />
-        <el-table-column prop="patternType" label="花型类型" width="130" />
-        <el-table-column prop="stitches" label="针数" width="100" />
-        <el-table-column prop="size" label="文件大小" width="100" />
-        <el-table-column prop="unitPrice" label="工价" width="110" align="right">
-          <template slot-scope="scope">
-            {{ formatPrice(scope.row.unitPrice) }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="orderNo" label="订单号" min-width="130" />
-        <el-table-column prop="updateTime" label="更新时间" width="170" />
-        <el-table-column label="操作" width="90" align="center">
-          <template slot-scope="scope">
-            <el-button
-              type="text"
-              size="small"
-              class="danger-text"
-              @click="handleDeleteDeviceFile(scope.row)"
-            >
-              删除
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <el-pagination
-        :current-page="deviceFilePagination.page"
-        :page-size="deviceFilePagination.pageSize"
-        :total="deviceFilePagination.total"
-        :page-sizes="[10, 20, 50, 100]"
-        layout="total, sizes, prev, pager, next, jumper"
-        @size-change="handleDeviceFileSizeChange"
-        @current-change="handleDeviceFilePageChange"
-      />
-
-      <span slot="footer" class="dialog-footer">
-        <el-button @click="showDeviceFileDialog = false">{{ $t('common.cancel') }}</el-button>
       </span>
     </el-dialog>
 
@@ -808,6 +816,10 @@ export default {
             id: item.id || item.ID,
             name: item.name || item.deviceName || item.code || `设备${item.id || item.ID}`
           }))
+          if (!this.deviceFileQuery.deviceId && this.deviceOptions.length) {
+            this.deviceFileQuery.deviceId = this.deviceOptions[0].id
+            this.fetchDeviceFileList()
+          }
         }
       } catch (error) {
         console.error('Failed to fetch device options:', error)
@@ -894,7 +906,6 @@ export default {
       }
     },
     async openDeviceFileDialog() {
-      this.showDeviceFileDialog = true
       if (!this.deviceOptions.length) {
         await this.fetchDeviceOptions()
       }
@@ -907,6 +918,9 @@ export default {
         this.deviceFileQuery.deviceId = this.deviceOptions[0].id
       }
       this.handleDeviceFileSearch()
+      this.$nextTick(() => {
+        this.$refs.deviceFileSection?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      })
     },
     handleDeviceFileSelectionChange(rows) {
       this.deviceFileSelectedRows = rows
@@ -1309,8 +1323,18 @@ export default {
   min-width: 0;
 }
 
+.action-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .danger-text {
   color: #F56C6C !important;
+}
+
+.device-file-card {
+  margin-top: 18px;
 }
 
 .name-rule-tip {
@@ -1358,12 +1382,15 @@ export default {
 .device-file-toolbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 12px;
 }
 
 .device-file-actions {
   margin-bottom: 12px;
+  display: flex;
+  gap: 10px;
 }
 
 .upload-queue-actions {
@@ -1377,7 +1404,7 @@ export default {
 .preview-container {
   .preview-placeholder {
     height: 200px;
-    background: #f5f7fa;
+    background: #f7fbff;
     border-radius: 8px;
     display: flex;
     flex-direction: column;

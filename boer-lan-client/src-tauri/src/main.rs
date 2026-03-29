@@ -35,6 +35,10 @@ struct TrialStatus {
     remaining_seconds: u64,
 }
 
+fn is_trial_bypass_enabled() -> bool {
+    cfg!(debug_assertions)
+}
+
 fn now_seconds() -> Result<u64, String> {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -98,6 +102,15 @@ fn write_state(path: &PathBuf, state: &TrialState) -> Result<(), String> {
 }
 
 fn inspect_trial_status(app: &tauri::AppHandle) -> TrialStatus {
+    if is_trial_bypass_enabled() {
+        return TrialStatus {
+            valid: true,
+            message: "开发模式已绕过试用校验".to_string(),
+            expires_at: None,
+            remaining_seconds: u64::MAX,
+        };
+    }
+
     let state_path = match trial_state_path(app) {
         Ok(path) => path,
         Err(err) => {

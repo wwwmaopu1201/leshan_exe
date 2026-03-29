@@ -1,12 +1,19 @@
 <template>
   <div class="page-container">
-    <!-- 搜索栏 -->
     <div class="search-bar">
       <el-form :inline="true" :model="searchForm">
         <el-form-item :label="$t('employee.employeeName')">
           <el-input
-            v-model="searchForm.keyword"
-            :placeholder="$t('common.search')"
+            v-model.trim="searchForm.keyword"
+            placeholder="姓名 / 工号 / 备注"
+            clearable
+            @keyup.enter.native="handleSearch"
+          />
+        </el-form-item>
+        <el-form-item :label="$t('employee.phone')">
+          <el-input
+            v-model.trim="searchForm.phone"
+            placeholder="手机号"
             clearable
             @keyup.enter.native="handleSearch"
           />
@@ -22,10 +29,16 @@
       </el-form>
     </div>
 
-    <!-- 操作栏和表格 -->
     <div class="card">
-      <div class="table-actions flex-between">
+      <div class="section-title">
         <div>
+          <h3>员工管理</h3>
+          <p>支持按姓名、工号、手机号快速筛选</p>
+        </div>
+      </div>
+
+      <div class="table-actions flex-between">
+        <div class="action-group">
           <el-button type="primary" icon="el-icon-plus" @click="handleAdd">
             {{ $t('employee.addEmployee') }}
           </el-button>
@@ -44,7 +57,7 @@
             批量删除
           </el-button>
         </div>
-        <div>
+        <div class="action-group">
           <el-button icon="el-icon-download" @click="handleExport">
             {{ $t('common.export') }}
           </el-button>
@@ -52,20 +65,20 @@
         </div>
       </div>
 
-      <!-- 数据表格 -->
       <el-table
         v-loading="loading"
-        :data="tableData"
+        :data="pagedTableData"
         border
+        :max-height="tableMaxHeight"
+        empty-text="暂无数据"
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" width="50" align="center" />
-        <el-table-column prop="code" :label="$t('employee.employeeCode')" width="100" />
-        <el-table-column prop="name" :label="$t('employee.employeeName')" width="120" />
-        <el-table-column prop="phone" :label="$t('employee.phone')" width="140" />
-        <el-table-column prop="remark" :label="$t('common.remark')" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="createTime" :label="$t('common.createTime')" width="160" />
-        <el-table-column :label="$t('common.operation')" width="150" align="center" fixed="right">
+        <el-table-column prop="code" :label="$t('employee.employeeCode')" width="120" />
+        <el-table-column prop="name" :label="$t('employee.employeeName')" width="140" />
+        <el-table-column prop="phone" :label="$t('employee.phone')" width="150" />
+        <el-table-column prop="createTime" :label="$t('common.createTime')" width="170" />
+        <el-table-column :label="$t('common.operation')" width="160" align="center">
           <template slot-scope="scope">
             <el-button type="text" size="small" @click="handleEdit(scope.row)">
               {{ $t('common.edit') }}
@@ -75,9 +88,9 @@
             </el-button>
           </template>
         </el-table-column>
+        <el-table-column prop="remark" :label="$t('common.remark')" min-width="220" show-overflow-tooltip />
       </el-table>
 
-      <!-- 分页 -->
       <el-pagination
         :current-page="pagination.page"
         :page-size="pagination.pageSize"
@@ -89,14 +102,13 @@
       />
     </div>
 
-    <!-- 新增/编辑弹窗 -->
     <el-dialog
       :title="editForm.id ? $t('employee.editEmployee') : $t('employee.addEmployee')"
       :visible.sync="showEditDialog"
-      width="500px"
+      width="520px"
       @close="resetEditForm"
     >
-      <el-form ref="editFormRef" :model="editForm" :rules="editRules" label-width="80px">
+      <el-form ref="editFormRef" :model="editForm" :rules="editRules" label-width="84px">
         <el-form-item :label="$t('employee.employeeCode')" prop="code">
           <el-input v-model="editForm.code" placeholder="请输入11位以内员工工号" :disabled="!!editForm.id" />
         </el-form-item>
@@ -107,7 +119,13 @@
           <el-input v-model="editForm.phone" />
         </el-form-item>
         <el-form-item :label="$t('common.remark')" prop="remark">
-          <el-input v-model="editForm.remark" type="textarea" :rows="3" :disabled="!!editForm.id" />
+          <el-input
+            v-model="editForm.remark"
+            type="textarea"
+            :rows="3"
+            :disabled="!!editForm.id"
+            placeholder="新增员工时可填写备注"
+          />
         </el-form-item>
       </el-form>
       <span slot="footer" class="dialog-footer">
@@ -119,19 +137,17 @@
     <el-dialog
       title="批量导入员工"
       :visible.sync="showImportDialog"
-      width="680px"
+      width="700px"
       @close="resetImportDialog"
     >
-      <div style="margin-bottom: 8px; color: #606266;">
+      <div class="import-tip">
         每行格式：`员工工号,员工姓名,手机号,备注`（前三列必填）
       </div>
-      <div style="margin-bottom: 10px;">
+      <div class="import-toolbar">
         <el-button size="small" icon="el-icon-folder-opened" @click="triggerImportFileSelect">
-          选择CSV文件
+          选择 CSV 文件
         </el-button>
-        <span style="margin-left: 8px; color: #909399;">
-          {{ importFileName || '未选择文件' }}
-        </span>
+        <span class="import-file-name">{{ importFileName || '未选择文件' }}</span>
         <input
           ref="importFileInput"
           type="file"
@@ -143,7 +159,7 @@
       <el-input
         v-model="importText"
         type="textarea"
-        :rows="10"
+        :rows="12"
         placeholder="可直接粘贴CSV内容，或点击上方“选择CSV文件”自动填充&#10;例如：&#10;E10001,张三,13800138000,一组员工&#10;E10002,李四,13900139000,二组员工"
       />
       <span slot="footer" class="dialog-footer">
@@ -155,7 +171,14 @@
 </template>
 
 <script>
-import { getEmployeeList, createEmployee, updateEmployee, deleteEmployee, importEmployees, exportEmployees } from '@/api/employee'
+import {
+  getEmployeeList,
+  createEmployee,
+  updateEmployee,
+  deleteEmployee,
+  importEmployees,
+  exportEmployees
+} from '@/api/employee'
 
 export default {
   name: 'EmployeeList',
@@ -165,7 +188,8 @@ export default {
       tableData: [],
       selectedRows: [],
       searchForm: {
-        keyword: ''
+        keyword: '',
+        phone: ''
       },
       pagination: {
         page: 1,
@@ -197,6 +221,15 @@ export default {
       }
     }
   },
+  computed: {
+    tableMaxHeight() {
+      return 'calc(100vh - 310px)'
+    },
+    pagedTableData() {
+      const start = (this.pagination.page - 1) * this.pagination.pageSize
+      return this.tableData.slice(start, start + this.pagination.pageSize)
+    }
+  },
   mounted() {
     this.fetchData()
   },
@@ -204,14 +237,16 @@ export default {
     async fetchData() {
       this.loading = true
       try {
+        const queryKeyword = this.searchForm.keyword || this.searchForm.phone || ''
         const res = await getEmployeeList({
-          keyword: this.searchForm.keyword,
-          page: this.pagination.page,
-          pageSize: this.pagination.pageSize
+          keyword: queryKeyword,
+          page: 1,
+          pageSize: 2000
         })
         if (res.code === 0) {
-          this.tableData = res.data.list || []
-          this.pagination.total = res.data.total || 0
+          const rawList = Array.isArray(res.data) ? res.data : (res.data?.list || [])
+          this.tableData = this.applyLocalFilters(rawList)
+          this.pagination.total = this.tableData.length
         }
       } catch (error) {
         console.error('Failed to fetch employees:', error)
@@ -220,12 +255,28 @@ export default {
         this.loading = false
       }
     },
+    applyLocalFilters(list) {
+      const keyword = String(this.searchForm.keyword || '').trim().toLowerCase()
+      const phone = String(this.searchForm.phone || '').trim()
+      return list.filter(item => {
+        const matchedKeyword = !keyword || [
+          item.name,
+          item.code,
+          item.remark
+        ].some(value => String(value || '').toLowerCase().includes(keyword))
+        const matchedPhone = !phone || String(item.phone || '').includes(phone)
+        return matchedKeyword && matchedPhone
+      })
+    },
     handleSearch() {
       this.pagination.page = 1
       this.fetchData()
     },
     handleReset() {
-      this.searchForm = { keyword: '' }
+      this.searchForm = {
+        keyword: '',
+        phone: ''
+      }
       this.handleSearch()
     },
     handleSelectionChange(rows) {
@@ -233,11 +284,9 @@ export default {
     },
     handleSizeChange(size) {
       this.pagination.pageSize = size
-      this.fetchData()
     },
     handlePageChange(page) {
       this.pagination.page = page
-      this.fetchData()
     },
     handleAdd() {
       this.editForm = {
@@ -376,25 +425,60 @@ export default {
 
       return { employees, lineErrors }
     },
-    downloadImportTemplate() {
+    async saveCsvWithPicker(csvContent, suggestedName) {
+      if (!window.showSaveFilePicker) {
+        return false
+      }
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName,
+          types: [
+            {
+              description: 'CSV 文件',
+              accept: {
+                'text/csv': ['.csv']
+              }
+            }
+          ]
+        })
+        const writable = await handle.createWritable()
+        await writable.write(csvContent)
+        await writable.close()
+        return true
+      } catch (error) {
+        if (error?.name !== 'AbortError') {
+          console.error('Save file with picker failed:', error)
+        }
+        return false
+      }
+    },
+    fallbackDownload(csvContent, filename) {
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+    },
+    async downloadImportTemplate() {
       const headers = ['员工工号', '员工姓名', '手机号', '备注']
       const examples = [
         ['E10001', '张三', '13800138000', '一组员工'],
         ['E10002', '李四', '13900139000', '二组员工']
       ]
       const csv = [headers, ...examples]
-        .map(row => row.map(col => `\"${String(col).replace(/\"/g, '\"\"')}\"`).join(','))
+        .map(row => row.map(col => `"${String(col).replace(/"/g, '""')}"`).join(','))
         .join('\n')
-      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
-      const url = window.URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = '员工导入模板.csv'
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      window.URL.revokeObjectURL(url)
-      this.$message.success('模板下载成功')
+      const content = '\uFEFF' + csv
+      const filename = '员工导入模板.csv'
+      const saved = await this.saveCsvWithPicker(content, filename)
+      if (!saved) {
+        this.fallbackDownload(content, filename)
+      }
+      this.$message.success(saved ? '模板已保存' : '模板下载成功')
     },
     async handleSave() {
       try {
@@ -507,7 +591,7 @@ export default {
     async handleExport() {
       try {
         const res = await exportEmployees({
-          keyword: this.searchForm.keyword
+          keyword: this.searchForm.keyword || this.searchForm.phone || ''
         })
         if (res.code !== 0) {
           this.$message.error(res.message || '导出失败')
@@ -515,27 +599,26 @@ export default {
         }
 
         const headers = ['员工工号', '员工姓名', '手机号', '备注', '创建时间']
-        const rows = (Array.isArray(res.data) ? res.data : []).map(item => ([
-          item.code || '',
-          item.name || '',
-          item.phone || '',
-          item.remark || '',
-          item.createTime || ''
-        ]))
+        const rows = (Array.isArray(res.data) ? res.data : [])
+          .filter(item => this.applyLocalFilters([item]).length > 0)
+          .map(item => ([
+            item.code || '',
+            item.name || '',
+            item.phone || '',
+            item.remark || '',
+            item.createTime || ''
+          ]))
         const csv = [headers, ...rows]
-          .map(row => row.map(col => `\"${String(col).replace(/\"/g, '\"\"')}\"`).join(','))
+          .map(row => row.map(col => `"${String(col).replace(/"/g, '""')}"`).join(','))
           .join('\n')
 
-        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
-        const url = window.URL.createObjectURL(blob)
-        const link = document.createElement('a')
-        link.href = url
-        link.download = `employees_${Date.now()}.csv`
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-        window.URL.revokeObjectURL(url)
-        this.$message.success('导出成功')
+        const content = '\uFEFF' + csv
+        const filename = `employees_${Date.now()}.csv`
+        const saved = await this.saveCsvWithPicker(content, filename)
+        if (!saved) {
+          this.fallbackDownload(content, filename)
+        }
+        this.$message.success(saved ? '导出文件已保存' : '导出成功')
       } catch (error) {
         console.error('Export employees failed:', error)
         this.$message.error('导出失败')
@@ -546,7 +629,29 @@ export default {
 </script>
 
 <style lang="scss" scoped>
+.action-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.import-tip {
+  margin-bottom: 10px;
+  color: #677c9c;
+}
+
+.import-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.import-file-name {
+  color: #8b99ad;
+}
+
 .danger-text {
-  color: #F56C6C !important;
+  color: #ef5a5a !important;
 }
 </style>

@@ -1,158 +1,157 @@
 <template>
   <div class="page-container">
-    <!-- 搜索栏 -->
-    <div class="search-bar">
-      <el-form :inline="true" :model="searchForm">
-        <el-form-item :label="$t('device.deviceName')">
-          <el-input
-            v-model="searchForm.keyword"
-            :placeholder="$t('common.search')"
-            clearable
-            @keyup.enter.native="handleSearch"
+    <div class="device-page-layout">
+      <aside class="device-page-side">
+        <device-tree-panel
+          ref="treePanel"
+          v-model="treeFilter"
+          title="设备树与分组"
+          :management="true"
+          :min-height="560"
+          @change="handleTreeChange"
+          @refresh="handleTreeRefresh"
+        />
+      </aside>
+
+      <section class="device-page-main">
+        <div class="search-bar">
+          <el-form :inline="true" :model="searchForm">
+            <el-form-item :label="$t('device.deviceName')">
+              <el-input
+                v-model.trim="searchForm.keyword"
+                :placeholder="$t('common.search')"
+                clearable
+                @keyup.enter.native="handleSearch"
+              />
+            </el-form-item>
+            <el-form-item :label="$t('device.deviceStatus')">
+              <el-select v-model="searchForm.status" clearable placeholder="全部状态">
+                <el-option label="全部" value="" />
+                <el-option :label="$t('device.online')" value="online" />
+                <el-option :label="$t('device.working')" value="working" />
+                <el-option :label="$t('device.idle')" value="idle" />
+                <el-option :label="$t('device.offline')" value="offline" />
+                <el-option :label="$t('device.alarm')" value="alarm" />
+              </el-select>
+            </el-form-item>
+            <el-form-item :label="$t('common.createTime')">
+              <el-date-picker
+                v-model="searchForm.dateRange"
+                type="daterange"
+                value-format="yyyy-MM-dd"
+                range-separator="至"
+                start-placeholder="开始日期"
+                end-placeholder="结束日期"
+              />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" icon="el-icon-search" @click="handleSearch">
+                {{ $t('common.search') }}
+              </el-button>
+              <el-button icon="el-icon-refresh" @click="handleReset">
+                {{ $t('common.reset') }}
+              </el-button>
+            </el-form-item>
+          </el-form>
+        </div>
+
+        <div class="card">
+          <div class="table-actions flex-between">
+            <div class="action-group">
+              <el-button type="primary" icon="el-icon-plus" @click="handleAdd">
+                {{ $t('device.addDevice') }}
+              </el-button>
+              <el-button
+                type="danger"
+                icon="el-icon-delete"
+                :disabled="!selectedRows.length"
+                @click="handleBatchDelete"
+              >
+                {{ $t('device.batchRemoveFromGroup') }}
+              </el-button>
+              <el-button
+                icon="el-icon-folder-add"
+                :disabled="!selectedRows.length"
+                @click="openMoveDialog"
+              >
+                {{ $t('device.moveToGroup') }}
+              </el-button>
+            </div>
+            <el-button icon="el-icon-refresh" circle @click="fetchData" />
+          </div>
+
+          <el-table
+            v-loading="loading"
+            :data="pagedTableData"
+            border
+            :row-class-name="getRowClassName"
+            empty-text="暂无数据"
+            @selection-change="handleSelectionChange"
+            @row-dblclick="handleRowDoubleClick"
+          >
+            <el-table-column type="selection" width="50" align="center" />
+            <el-table-column label="序号" width="70" align="center">
+              <template slot-scope="scope">
+                {{ (pagination.page - 1) * pagination.pageSize + scope.$index + 1 }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="code" :label="$t('device.deviceCode')" width="120" />
+            <el-table-column :label="$t('device.deviceName')" min-width="200">
+              <template slot-scope="scope">
+                <span>{{ formatDeviceName(scope.row) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="initialName" :label="$t('device.initialName')" width="130" />
+            <el-table-column prop="type" :label="$t('device.deviceType')" width="100" />
+            <el-table-column prop="model" :label="$t('device.deviceModel')" width="110" />
+            <el-table-column prop="employeeCode" :label="$t('employee.employeeCode')" width="120" />
+            <el-table-column prop="employeeName" :label="$t('employee.employeeName')" width="120" />
+            <el-table-column prop="mainboardSn" :label="$t('device.mainboardSn')" width="150" />
+            <el-table-column prop="ip" :label="$t('device.ipAddress')" width="140" />
+            <el-table-column prop="group" :label="$t('device.group')" width="130">
+              <template slot-scope="scope">
+                <span v-if="scope.row.group">{{ scope.row.group }}</span>
+                <span v-else class="ungrouped-text">未分组</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="remark" :label="$t('common.remark')" min-width="180" show-overflow-tooltip />
+            <el-table-column prop="createTime" :label="$t('common.createTime')" width="170" />
+            <el-table-column prop="status" :label="$t('device.deviceStatus')" width="110" align="center">
+              <template slot-scope="scope">
+                <span class="status-dot" :class="'status-' + scope.row.status"></span>
+                <el-tag :type="getStatusType(scope.row.status)" size="small">
+                  {{ getStatusText(scope.row.status) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column :label="$t('common.operation')" width="190" align="center" fixed="right">
+              <template slot-scope="scope">
+                <el-button type="text" size="small" @click="handleEdit(scope.row)">
+                  {{ $t('common.edit') }}
+                </el-button>
+                <el-button type="text" size="small" @click="handleMonitor(scope.row)">
+                  监控
+                </el-button>
+                <el-button type="text" size="small" class="danger-text" @click="handleDelete(scope.row)">
+                  {{ $t('device.removeFromGroup') }}
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <el-pagination
+            :current-page="pagination.page"
+            :page-size="pagination.pageSize"
+            :total="pagination.total"
+            :page-sizes="[10, 20, 50, 100]"
+            layout="total, sizes, prev, pager, next, jumper"
+            @size-change="handleSizeChange"
+            @current-change="handlePageChange"
           />
-        </el-form-item>
-        <el-form-item :label="$t('device.deviceStatus')">
-          <el-select v-model="searchForm.status" clearable>
-            <el-option label="全部" value="" />
-            <el-option :label="$t('device.online')" value="online" />
-            <el-option :label="$t('device.working')" value="working" />
-            <el-option :label="$t('device.idle')" value="idle" />
-            <el-option :label="$t('device.offline')" value="offline" />
-            <el-option :label="$t('device.alarm')" value="alarm" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="$t('device.group')">
-          <el-select v-model="searchForm.groupId" clearable>
-            <el-option label="全部" value="" />
-            <el-option
-              v-for="group in groupOptions"
-              :key="group.id"
-              :label="group.name"
-              :value="group.id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="$t('common.createTime')">
-          <el-date-picker
-            v-model="searchForm.dateRange"
-            type="daterange"
-            value-format="yyyy-MM-dd"
-            range-separator="至"
-            start-placeholder="开始日期"
-            end-placeholder="结束日期"
-          />
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" icon="el-icon-search" @click="handleSearch">
-            {{ $t('common.search') }}
-          </el-button>
-          <el-button icon="el-icon-refresh" @click="handleReset">
-            {{ $t('common.reset') }}
-          </el-button>
-        </el-form-item>
-      </el-form>
+        </div>
+      </section>
     </div>
 
-    <!-- 操作栏 -->
-    <div class="card">
-      <div class="table-actions flex-between">
-        <div>
-          <el-button type="primary" icon="el-icon-plus" @click="handleAdd">
-            {{ $t('device.addDevice') }}
-          </el-button>
-          <el-button
-            type="danger"
-            icon="el-icon-delete"
-            :disabled="!selectedRows.length"
-            @click="handleBatchDelete"
-          >
-            {{ $t('device.batchRemoveFromGroup') }}
-          </el-button>
-          <el-button
-            icon="el-icon-folder-add"
-            :disabled="!selectedRows.length"
-            @click="openMoveDialog"
-          >
-            {{ $t('device.moveToGroup') }}
-          </el-button>
-        </div>
-        <div>
-          <el-button icon="el-icon-refresh" circle @click="fetchData" />
-        </div>
-      </div>
-
-      <!-- 数据表格 -->
-      <el-table
-        v-loading="loading"
-        :data="tableData"
-        border
-        :row-class-name="getRowClassName"
-        @selection-change="handleSelectionChange"
-        @row-dblclick="handleRowDoubleClick"
-      >
-        <el-table-column type="selection" width="50" align="center" />
-        <el-table-column label="序号" width="70" align="center">
-          <template slot-scope="scope">
-            {{ (pagination.page - 1) * pagination.pageSize + scope.$index + 1 }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="code" :label="$t('device.deviceCode')" width="120" />
-        <el-table-column :label="$t('device.deviceName')" min-width="180">
-          <template slot-scope="scope">
-            <span>{{ formatDeviceName(scope.row) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="initialName" :label="$t('device.initialName')" width="130" />
-        <el-table-column prop="type" :label="$t('device.deviceType')" width="100" />
-        <el-table-column prop="model" :label="$t('device.deviceModel')" width="100" />
-        <el-table-column prop="employeeCode" :label="$t('employee.employeeCode')" width="120" />
-        <el-table-column prop="employeeName" :label="$t('employee.employeeName')" width="120" />
-        <el-table-column prop="mainboardSn" :label="$t('device.mainboardSn')" width="140" />
-        <el-table-column prop="remark" :label="$t('common.remark')" min-width="160" show-overflow-tooltip />
-        <el-table-column prop="ip" :label="$t('device.ipAddress')" width="140" />
-        <el-table-column prop="group" :label="$t('device.group')" width="120">
-          <template slot-scope="scope">
-            <span v-if="scope.row.group">{{ scope.row.group }}</span>
-            <span v-else class="ungrouped-text">未分组</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="createTime" :label="$t('common.createTime')" width="160" />
-        <el-table-column prop="status" :label="$t('device.deviceStatus')" width="100" align="center">
-          <template slot-scope="scope">
-            <span class="status-dot" :class="'status-' + scope.row.status"></span>
-            <el-tag :type="getStatusType(scope.row.status)" size="small">
-              {{ getStatusText(scope.row.status) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column :label="$t('common.operation')" width="180" align="center" fixed="right">
-          <template slot-scope="scope">
-            <el-button type="text" size="small" @click="handleEdit(scope.row)">
-              {{ $t('common.edit') }}
-            </el-button>
-            <el-button type="text" size="small" @click="handleMonitor(scope.row)">
-              监控
-            </el-button>
-            <el-button type="text" size="small" class="danger-text" @click="handleDelete(scope.row)">
-              {{ $t('device.removeFromGroup') }}
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <!-- 分页 -->
-      <el-pagination
-        :current-page="pagination.page"
-        :page-size="pagination.pageSize"
-        :total="pagination.total"
-        :page-sizes="[10, 20, 50, 100]"
-        layout="total, sizes, prev, pager, next, jumper"
-        @size-change="handleSizeChange"
-        @current-change="handlePageChange"
-      />
-    </div>
-
-    <!-- 新增/编辑弹窗 -->
     <el-dialog
       :title="editForm.id ? $t('device.editDevice') : $t('device.addDevice')"
       :visible.sync="showEditDialog"
@@ -170,13 +169,13 @@
           <el-input v-model="editForm.initialName" />
         </el-form-item>
         <el-form-item :label="$t('device.deviceType')" prop="type">
-          <el-select v-model="editForm.type" style="width: 100%">
+          <el-select v-model="editForm.type">
             <el-option label="缝纫机" value="缝纫机" />
             <el-option label="绣花机" value="绣花机" />
           </el-select>
         </el-form-item>
         <el-form-item :label="$t('device.deviceModel')" prop="model">
-          <el-select v-model="editForm.model" style="width: 100%">
+          <el-select v-model="editForm.model">
             <el-option label="BM-2000" value="BM-2000" />
             <el-option label="BM-3000" value="BM-3000" />
             <el-option label="BM-5000" value="BM-5000" />
@@ -198,7 +197,7 @@
           <el-input v-model="editForm.remark" type="textarea" :rows="3" />
         </el-form-item>
         <el-form-item :label="$t('device.group')" prop="groupId">
-          <el-select v-model="editForm.groupId" style="width: 100%" clearable>
+          <el-select v-model="editForm.groupId" clearable placeholder="未分组">
             <el-option
               v-for="group in groupOptions"
               :key="group.id"
@@ -214,15 +213,14 @@
       </span>
     </el-dialog>
 
-    <!-- 移动到分组弹窗 -->
     <el-dialog
       :title="$t('device.moveToGroup')"
       :visible.sync="showMoveDialog"
-      width="400px"
+      width="420px"
     >
       <el-form label-width="80px">
         <el-form-item :label="$t('device.group')">
-          <el-select v-model="moveTargetGroupId" style="width: 100%" clearable>
+          <el-select v-model="moveTargetGroupId" clearable placeholder="未分组">
             <el-option label="未分组（移出分组）" :value="null" />
             <el-option
               v-for="group in groupOptions"
@@ -242,20 +240,40 @@
 </template>
 
 <script>
-import { getDeviceList, createDevice, updateDevice, deleteDevice, batchDeleteDevices, moveToGroup, getDeviceGroups } from '@/api/device'
+import DeviceTreePanel from '@/components/DeviceTreePanel.vue'
+import {
+  getDeviceList,
+  createDevice,
+  updateDevice,
+  deleteDevice,
+  batchDeleteDevices,
+  moveToGroup,
+  getDeviceGroups
+} from '@/api/device'
+
+const defaultTreeFilter = () => ({
+  label: '',
+  nodeType: '',
+  groupId: '',
+  deviceId: '',
+  deviceIds: []
+})
 
 export default {
   name: 'DeviceList',
+  components: {
+    DeviceTreePanel
+  },
   data() {
     return {
       loading: false,
       tableData: [],
       groupOptions: [],
       selectedRows: [],
+      treeFilter: defaultTreeFilter(),
       searchForm: {
         keyword: '',
         status: '',
-        groupId: '',
         dateRange: []
       },
       pagination: {
@@ -289,6 +307,20 @@ export default {
       moveTargetGroupId: null
     }
   },
+  computed: {
+    currentScopeLabel() {
+      return this.treeFilter.label || '全部设备'
+    },
+    currentScopeTypeText() {
+      if (this.treeFilter.nodeType === 'device') return '单台设备'
+      if (this.treeFilter.nodeType === 'group') return '设备分组'
+      return '全部设备'
+    },
+    pagedTableData() {
+      const start = (this.pagination.page - 1) * this.pagination.pageSize
+      return this.tableData.slice(start, start + this.pagination.pageSize)
+    }
+  },
   mounted() {
     this.fetchGroups()
     this.fetchData()
@@ -310,15 +342,16 @@ export default {
         const res = await getDeviceList({
           keyword: this.searchForm.keyword,
           status: this.searchForm.status,
-          groupId: this.searchForm.groupId,
+          groupId: this.treeFilter.nodeType === 'group' ? this.treeFilter.groupId : '',
           startDate: this.searchForm.dateRange?.[0] || '',
           endDate: this.searchForm.dateRange?.[1] || '',
-          page: this.pagination.page,
-          pageSize: this.pagination.pageSize
+          page: 1,
+          pageSize: 2000
         })
         if (res.code === 0) {
-          this.tableData = res.data.list || []
-          this.pagination.total = res.data.total || 0
+          const rawList = Array.isArray(res.data) ? res.data : (res.data?.list || [])
+          this.tableData = this.applyTreeFilter(rawList)
+          this.pagination.total = this.tableData.length
         }
       } catch (error) {
         console.error('Failed to fetch devices:', error)
@@ -327,29 +360,52 @@ export default {
         this.loading = false
       }
     },
+    applyTreeFilter(list) {
+      if (this.treeFilter.nodeType === 'device' && this.treeFilter.deviceId) {
+        return list.filter(item => String(item.id) === String(this.treeFilter.deviceId))
+      }
+      if (this.treeFilter.nodeType === 'group' && this.treeFilter.deviceIds.length) {
+        const allowedIds = new Set(this.treeFilter.deviceIds.map(id => String(id)))
+        return list.filter(item => allowedIds.has(String(item.id)))
+      }
+      return list
+    },
     handleSearch() {
       this.pagination.page = 1
       this.fetchData()
     },
     handleReset() {
-      this.searchForm = { keyword: '', status: '', groupId: '', dateRange: [] }
+      this.searchForm = {
+        keyword: '',
+        status: '',
+        dateRange: []
+      }
+      this.treeFilter = defaultTreeFilter()
+      this.$refs.treePanel?.clearSelection()
       this.handleSearch()
+    },
+    handleTreeChange(payload) {
+      this.treeFilter = payload
+      this.pagination.page = 1
+      this.fetchData()
+    },
+    handleTreeRefresh() {
+      this.fetchGroups()
+      this.fetchData()
     },
     handleSelectionChange(rows) {
       this.selectedRows = rows
     },
     handleSizeChange(size) {
       this.pagination.pageSize = size
-      this.fetchData()
     },
     handlePageChange(page) {
       this.pagination.page = page
-      this.fetchData()
     },
     getStatusType(status) {
       const map = {
         online: 'success',
-        working: 'danger',
+        working: 'primary',
         idle: 'success',
         offline: 'info',
         alarm: 'danger'
@@ -458,6 +514,7 @@ export default {
         if (res.code === 0) {
           this.$message.success(this.$t('common.success'))
           this.showEditDialog = false
+          this.fetchGroups()
           this.fetchData()
         } else {
           this.$message.error(res.message || '保存失败')
@@ -492,13 +549,13 @@ export default {
         this.$t('device.confirmBatchRemoveFromGroup', { count: this.selectedRows.length }),
         this.$t('common.warning'),
         {
-        confirmButtonText: this.$t('common.confirm'),
-        cancelButtonText: this.$t('common.cancel'),
-        type: 'warning'
+          confirmButtonText: this.$t('common.confirm'),
+          cancelButtonText: this.$t('common.cancel'),
+          type: 'warning'
         }
       ).then(async () => {
         try {
-          const ids = this.selectedRows.map(r => r.id)
+          const ids = this.selectedRows.map(row => row.id)
           const res = await batchDeleteDevices(ids)
           if (res.code === 0) {
             this.$message.success(res.message || this.$t('device.batchRemovedFromGroup'))
@@ -515,7 +572,7 @@ export default {
     async handleMoveToGroup() {
       try {
         const isUngroup = this.moveTargetGroupId === null || this.moveTargetGroupId === undefined || this.moveTargetGroupId === ''
-        const deviceIds = this.selectedRows.map(r => r.id)
+        const deviceIds = this.selectedRows.map(row => row.id)
         const res = await moveToGroup(deviceIds, isUngroup ? null : this.moveTargetGroupId)
         if (res.code === 0) {
           this.$message.success(isUngroup ? '已移出分组' : this.$t('common.success'))
@@ -535,13 +592,64 @@ export default {
 </script>
 
 <style lang="scss" scoped>
+.scope-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.scope-copy {
+  h3 {
+    font-size: 20px;
+    color: #243654;
+    margin-bottom: 6px;
+  }
+
+  p {
+    color: #7d8da4;
+    font-size: 13px;
+  }
+}
+
+.scope-tag {
+  min-width: 90px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #24416f;
+  background: #eff4fc;
+
+  &.group {
+    background: rgba(47, 109, 246, 0.12);
+    color: #2f6df6;
+  }
+
+  &.device {
+    background: rgba(47, 180, 110, 0.12);
+    color: #2fb46e;
+  }
+}
+
+.action-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .danger-text {
-  color: #F56C6C !important;
+  color: #ef5a5a !important;
 }
 
 .ungrouped-text {
-  color: #F56C6C;
-  font-weight: 600;
+  color: #ef5a5a;
+  font-weight: 700;
 }
 
 .status-dot {
@@ -551,28 +659,25 @@ export default {
   border-radius: 50%;
   margin-right: 6px;
 
-  &.status-idle {
-    background: #67C23A;
+  &.status-idle,
+  &.status-online {
+    background: #2fb46e;
   }
 
   &.status-working {
-    background: #F56C6C;
-  }
-
-  &.status-online {
-    background: #67C23A;
+    background: #2f6df6;
   }
 
   &.status-offline {
-    background: #909399;
+    background: #8a98ad;
   }
 
   &.status-alarm {
-    background: #F56C6C;
+    background: #ef5a5a;
   }
 }
 
 ::v-deep .el-table .row-ungrouped > td {
-  background: #fff1f0;
+  background: #fff2f2;
 }
 </style>

@@ -1,13 +1,7 @@
 import request from './request'
-import { mockGetEmployees } from './mock'
-
-const USE_MOCK = false
 
 // 获取员工列表
 export function getEmployeeList(params) {
-  if (USE_MOCK) {
-    return mockGetEmployees(params)
-  }
   return request({
     url: '/employee/list',
     method: 'get',

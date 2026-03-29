@@ -1,13 +1,7 @@
 import request from './request'
-import { mockGetDeviceTree, mockGetDevices } from './mock'
-
-const USE_MOCK = false
 
 // 获取设备树
 export function getDeviceTree() {
-  if (USE_MOCK) {
-    return mockGetDeviceTree()
-  }
   return request({
     url: '/device/tree',
     method: 'get'
@@ -16,9 +10,6 @@ export function getDeviceTree() {
 
 // 获取设备列表
 export function getDeviceList(params) {
-  if (USE_MOCK) {
-    return mockGetDevices(params)
-  }
   return request({
     url: '/device/list',
     method: 'get',

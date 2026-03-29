@@ -1,48 +1,57 @@
-// 全局样式变量
-$primary-color: #409EFF;
-$sidebar-bg-start: #1e3c72;
-$sidebar-bg-end: #2a5298;
-$header-bg: #3b9dfc;
-$body-bg: #f5f7fa;
+// Global design tokens
+$primary-color: #2f6df6;
+$primary-deep: #173f97;
+$primary-soft: #eef4ff;
+$sidebar-bg-start: #0f2042;
+$sidebar-bg-end: #0d5fa8;
+$header-bg: #ffffff;
+$body-bg: #eef3fb;
 $card-bg: #ffffff;
-$text-primary: #303133;
-$text-regular: #606266;
-$text-secondary: #909399;
-$border-color: #DCDFE6;
+$text-primary: #22324d;
+$text-regular: #54657f;
+$text-secondary: #8a98ad;
+$border-color: #dbe4f0;
 
-// 状态颜色
-$status-success: #67C23A;
-$status-warning: #E6A23C;
-$status-danger: #F56C6C;
-$status-info: #909399;
+// Status colors
+$status-success: #2fb46e;
+$status-warning: #e3a32d;
+$status-danger: #ef5a5a;
+$status-info: #8a98ad;
 
-// Reset
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
-html, body {
+html,
+body,
+#app {
   width: 100%;
   height: 100%;
   font-size: 14px;
   color: $text-primary;
-  background-color: $body-bg;
+  background:
+    radial-gradient(circle at top left, rgba(63, 130, 255, 0.12), transparent 26%),
+    linear-gradient(180deg, #f7f9fe 0%, $body-bg 100%);
 }
 
-// 滚动条样式
+body {
+  overflow: hidden;
+  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: rgba(144, 147, 153, 0.3);
-  border-radius: 3px;
+  background-color: rgba(123, 140, 168, 0.35);
+  border-radius: 999px;
 
   &:hover {
-    background-color: rgba(144, 147, 153, 0.5);
+    background-color: rgba(123, 140, 168, 0.55);
   }
 }
 
@@ -50,7 +59,6 @@ html, body {
   background-color: transparent;
 }
 
-// 通用类
 .flex {
   display: flex;
 }
@@ -77,6 +85,26 @@ html, body {
 
 .text-right {
   text-align: right;
+}
+
+.text-primary {
+  color: $primary-color;
+}
+
+.text-success {
+  color: $status-success;
+}
+
+.text-warning {
+  color: $status-warning;
+}
+
+.text-danger {
+  color: $status-danger;
+}
+
+.text-muted {
+  color: $text-secondary;
 }
 
 .mt-10 {
@@ -111,131 +139,285 @@ html, body {
   padding: 20px;
 }
 
-// 页面容器
 .page-container {
-  padding: 20px;
-  background-color: $body-bg;
+  padding: 0;
   min-height: 100%;
 }
 
-// 卡片样式
 .card {
-  background-color: $card-bg;
-  border-radius: 4px;
+  background: $card-bg;
+  border: 1px solid rgba(221, 229, 240, 0.92);
+  border-radius: 22px;
   padding: 20px;
-  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+  box-shadow: 0 18px 36px rgba(59, 87, 132, 0.08);
 
   &-header {
     font-size: 16px;
-    font-weight: 600;
+    font-weight: 700;
     color: $text-primary;
-    margin-bottom: 20px;
-    padding-bottom: 15px;
+    margin-bottom: 18px;
+    padding-bottom: 14px;
     border-bottom: 1px solid $border-color;
   }
 }
 
-// 搜索栏样式
 .search-bar {
-  background-color: $card-bg;
-  padding: 20px;
-  border-radius: 4px;
-  margin-bottom: 20px;
-  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(221, 229, 240, 0.92);
+  border-radius: 22px;
+  padding: 18px 20px;
+  margin-bottom: 18px;
+  box-shadow: 0 12px 28px rgba(75, 95, 135, 0.06);
+
+  .el-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px 20px;
+  }
 
   .el-form-item {
+    margin-right: 0;
     margin-bottom: 0;
-    margin-right: 20px;
   }
 }
 
-// 表格操作按钮
 .table-actions {
-  margin-bottom: 15px;
+  margin-bottom: 18px;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
-// 状态标签
+.section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0;
+
+  h3 {
+    font-size: 18px;
+    color: $text-primary;
+  }
+
+  p {
+    color: $text-secondary;
+    font-size: 13px;
+  }
+}
+
+.section-title > :first-child {
+  display: none !important;
+}
+
+.section-title > :last-child:not(:first-child) {
+  margin-left: auto;
+  margin-bottom: 16px;
+}
+
+.section-title p,
+.chart-subtitle,
+.panel-subtitle,
+.filter-subtitle,
+.scope-copy p,
+.hero-copy,
+.profile-note,
+.range-notice,
+.queue-note,
+.queue-table-tip,
+.queue-stat-desc {
+  display: none !important;
+}
+
 .status-tag {
-  &.online {
-    background-color: rgba($status-success, 0.1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 600;
+
+  &.online,
+  &.idle {
+    background-color: rgba($status-success, 0.12);
     color: $status-success;
-    border-color: $status-success;
+    border-color: rgba($status-success, 0.24);
   }
 
   &.offline {
-    background-color: rgba($status-info, 0.1);
+    background-color: rgba($status-info, 0.14);
     color: $status-info;
-    border-color: $status-info;
+    border-color: rgba($status-info, 0.22);
   }
 
   &.alarm {
-    background-color: rgba($status-danger, 0.1);
+    background-color: rgba($status-danger, 0.12);
     color: $status-danger;
-    border-color: $status-danger;
+    border-color: rgba($status-danger, 0.18);
   }
 
   &.working {
-    background-color: rgba($primary-color, 0.1);
+    background-color: rgba($primary-color, 0.12);
     color: $primary-color;
-    border-color: $primary-color;
+    border-color: rgba($primary-color, 0.2);
+  }
+
+  &.group {
+    background-color: rgba($primary-deep, 0.08);
+    color: $primary-deep;
+    border-color: rgba($primary-deep, 0.16);
   }
 }
 
-// 统计卡片
 .stat-card {
-  background: linear-gradient(135deg, $primary-color 0%, darken($primary-color, 10%) 100%);
-  border-radius: 8px;
-  padding: 20px;
-  color: #fff;
+  min-height: 132px;
+  border-radius: 24px;
+  padding: 22px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #3476ff 0%, #144bc1 100%);
+  box-shadow: 0 18px 30px rgba(52, 118, 255, 0.2);
+
+  .stat-icon {
+    width: 54px;
+    height: 54px;
+    border-radius: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.16);
+    font-size: 24px;
+  }
 
   .stat-value {
-    font-size: 32px;
-    font-weight: bold;
-    margin-bottom: 5px;
+    font-size: 30px;
+    line-height: 1;
+    font-weight: 700;
+    margin-bottom: 10px;
   }
 
   .stat-label {
     font-size: 14px;
-    opacity: 0.9;
+    opacity: 0.88;
   }
 
-  &.success {
-    background: linear-gradient(135deg, $status-success 0%, darken($status-success, 10%) 100%);
+  .stat-extra {
+    margin-bottom: 10px;
+    font-size: 12px;
+    opacity: 0.8;
   }
 
-  &.warning {
-    background: linear-gradient(135deg, $status-warning 0%, darken($status-warning, 10%) 100%);
+  &.success,
+  &.green {
+    background: linear-gradient(135deg, #28b56d 0%, #168c61 100%);
+    box-shadow: 0 18px 30px rgba(40, 181, 109, 0.18);
   }
 
-  &.danger {
-    background: linear-gradient(135deg, $status-danger 0%, darken($status-danger, 10%) 100%);
+  &.warning,
+  &.orange {
+    background: linear-gradient(135deg, #f0b037 0%, #cf7b11 100%);
+    box-shadow: 0 18px 30px rgba(240, 176, 55, 0.18);
+  }
+
+  &.danger,
+  &.red {
+    background: linear-gradient(135deg, #f76969 0%, #d43c51 100%);
+    box-shadow: 0 18px 30px rgba(239, 90, 90, 0.18);
+  }
+
+  &.blue {
+    background: linear-gradient(135deg, #3476ff 0%, #144bc1 100%);
   }
 }
 
-// 图表卡片
 .chart-card {
-  background-color: $card-bg;
-  border-radius: 8px;
+  background: $card-bg;
+  border-radius: 22px;
+  border: 1px solid rgba(221, 229, 240, 0.92);
   padding: 20px;
-  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+  box-shadow: 0 18px 36px rgba(59, 87, 132, 0.08);
 
   .chart-title {
     font-size: 16px;
-    font-weight: 600;
+    font-weight: 700;
     color: $text-primary;
-    margin-bottom: 15px;
+    margin-bottom: 16px;
+  }
+
+  .chart-subtitle {
+    margin-top: -10px;
+    margin-bottom: 14px;
+    font-size: 12px;
+    color: $text-secondary;
   }
 
   .chart-container {
     width: 100%;
-    height: 300px;
+    height: 320px;
   }
 }
 
-// Element UI 覆盖样式
+.split-layout,
+.stats-layout,
+.pattern-layout,
+.device-page-layout {
+  display: flex;
+  gap: 18px;
+  min-height: calc(100vh - 132px);
+}
+
+.split-layout-side,
+.stats-side,
+.pattern-side,
+.device-page-side {
+  width: 280px;
+  flex-shrink: 0;
+}
+
+.split-layout-main,
+.stats-main,
+.pattern-main,
+.device-page-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.panel-shell {
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(221, 229, 240, 0.92);
+  border-radius: 22px;
+  box-shadow: 0 18px 36px rgba(59, 87, 132, 0.08);
+}
+
+.empty-state {
+  min-height: 260px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: $text-secondary;
+  text-align: center;
+
+  i {
+    font-size: 38px;
+    color: #97abc8;
+  }
+}
+
 .el-button--primary {
   background-color: $primary-color;
   border-color: $primary-color;
+  box-shadow: 0 10px 22px rgba(47, 109, 246, 0.18);
+}
+
+.el-button.is-round {
+  padding-left: 18px;
+  padding-right: 18px;
 }
 
 .el-menu {
@@ -243,16 +425,33 @@ html, body {
 }
 
 .el-table {
-  border-radius: 4px;
+  border-radius: 16px;
+  overflow: hidden;
 
   th {
-    background-color: #fafafa !important;
+    background: #f8fbff !important;
+    color: #5a6f90;
+    font-weight: 700;
   }
+
+  td,
+  th {
+    border-bottom-color: #edf2f8;
+  }
+}
+
+.el-table__empty-block {
+  min-height: 120px;
 }
 
 .el-pagination {
   margin-top: 20px;
   text-align: right;
+}
+
+.el-dialog {
+  border-radius: 24px;
+  overflow: hidden;
 }
 
 .el-dialog__header {
@@ -263,4 +462,53 @@ html, body {
 .el-dialog__footer {
   border-top: 1px solid $border-color;
   padding-top: 15px;
+}
+
+.el-input__inner,
+.el-textarea__inner,
+.el-select .el-input__inner,
+.el-date-editor .el-input__inner {
+  border-radius: 12px;
+  border-color: #d9e3f0;
+}
+
+.el-input-number,
+.el-date-editor.el-input,
+.el-date-editor.el-input__inner,
+.el-select {
+  width: 100%;
+}
+
+@media (max-width: 1200px) {
+  .split-layout,
+  .stats-layout,
+  .pattern-layout,
+  .device-page-layout {
+    flex-direction: column;
+  }
+
+  .split-layout-side,
+  .stats-side,
+  .pattern-side,
+  .device-page-side {
+    width: 100%;
+  }
+}
+
+@media (max-width: 768px) {
+  .page-container {
+    padding: 12px;
+  }
+
+  .search-bar,
+  .card,
+  .chart-card {
+    border-radius: 18px;
+    padding: 16px;
+  }
+
+  .stat-card {
+    min-height: 116px;
+    padding: 18px;
+  }
 }
