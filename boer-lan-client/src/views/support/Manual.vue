@@ -22,7 +22,7 @@
             <p>帮助安装、登录、设备管理和日常排查快速上手。</p>
           </div>
           <div class="header-actions">
-            <div class="version">{{ $t('support.version') }}: v1.0.6</div>
+            <div class="version">{{ $t('support.version') }}: v1.0.8</div>
             <el-button size="small" type="primary" icon="el-icon-download" @click="downloadManual">
               下载说明
             </el-button>
@@ -160,7 +160,7 @@ export default {
       const url = `${process.env.BASE_URL}manuals/client-user-manual.pdf`
       const link = document.createElement('a')
       link.href = url
-      link.download = '局域网客户端操作说明-v1.0.6.pdf'
+      link.download = '局域网客户端操作说明-v1.0.8.pdf'
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
