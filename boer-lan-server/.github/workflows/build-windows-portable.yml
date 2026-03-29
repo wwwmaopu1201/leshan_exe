@@ -1,0 +1,68 @@
+name: Build Windows Portable
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/build-windows-portable.yml"
+      - "backend/**"
+      - "src/**"
+      - "src-tauri/**"
+      - "scripts/package-portable.ps1"
+      - "package.json"
+      - "package-lock.json"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+          cache-dependency-path: backend/go.sum
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build Windows backend
+        run: go build -ldflags='-s -w' -o src-tauri/backend-server.exe backend/cmd/server/main.go
+
+      - name: Build Tauri Windows app
+        run: npm run tauri:build:portable
+
+      - name: Copy backend into release directory
+        shell: pwsh
+        run: Copy-Item src-tauri/backend-server.exe src-tauri/target/release/backend-server.exe -Force
+
+      - name: Package portable archive
+        shell: pwsh
+        run: ./scripts/package-portable.ps1
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: boer-lan-server-windows-portable
+          if-no-files-found: error
+          path: |
+            src-tauri/target/release/portable/Boer-LAN-Server/*
+            src-tauri/target/release/portable/Boer-LAN-Server-windows-portable.zip
+            src-tauri/target/release/boer-lan-server.exe
+            src-tauri/target/release/backend-server.exe
