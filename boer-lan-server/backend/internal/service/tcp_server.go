@@ -10,9 +10,9 @@ import (
 )
 
 const (
-	TCPPort              = 38400
-	HeartbeatTimeout     = 60 * time.Second
-	OfflineCheckInterval = 15 * time.Second
+	TCPPort               = 38400
+	ConnectionIdleTimeout = 3 * time.Minute
+	OfflineCheckInterval  = 15 * time.Second
 )
 
 // ConnectionManager 管理所有设备TCP连接
@@ -128,7 +128,7 @@ func (s *TCPServer) serve() {
 	}
 }
 
-// offlineChecker 定时检查心跳超时的设备
+// offlineChecker 定时检查连接空闲超时的设备
 func (s *TCPServer) offlineChecker() {
 	ticker := time.NewTicker(OfflineCheckInterval)
 	defer ticker.Stop()
@@ -140,8 +140,8 @@ func (s *TCPServer) offlineChecker() {
 		case <-ticker.C:
 			now := time.Now()
 			for _, dc := range s.connMgr.GetAll() {
-				if now.Sub(dc.lastHeartbeat) > HeartbeatTimeout {
-					emitTCPLog(s.db, "warn", true, "[TCP] Device %s heartbeat timeout, closing connection", dc.deviceCode)
+				if now.Sub(dc.lastHeartbeat) > ConnectionIdleTimeout {
+					emitTCPLog(s.db, "warn", true, "[TCP] Device %s connection idle timeout, closing connection", dc.deviceCode)
 					dc.conn.Close()
 				}
 			}

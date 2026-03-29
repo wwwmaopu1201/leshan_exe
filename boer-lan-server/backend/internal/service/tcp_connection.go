@@ -2,6 +2,7 @@ package service
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -10,9 +11,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"boer-lan-server/internal/model"
 
+	"golang.org/x/text/encoding/simplifiedchinese"
 	"gorm.io/gorm"
 )
 
@@ -93,6 +97,7 @@ func (dc *DeviceConnection) Handle() {
 		}
 		dc.warnedNoPacket = false
 		_ = dc.conn.SetReadDeadline(time.Time{})
+		dc.lastHeartbeat = time.Now()
 
 		emitTCPLog(
 			dc.db,
@@ -200,8 +205,8 @@ func (dc *DeviceConnection) handleDeviceInfo(pkt *Packet) {
 		return
 	}
 
-	// 协议格式与 xieyi_test 一致：
-	// model(uint32) + deviceId(uint32) + name(utf8)
+	// 协议格式：
+	// model(uint32) + deviceId(uint32) + name(text)
 	modelCode := binary.BigEndian.Uint32(pkt.Data[0:4])
 	deviceCodeNum := binary.BigEndian.Uint32(pkt.Data[4:8])
 	deviceName := normalizeProtocolText(pkt.Data[8:])
@@ -515,7 +520,97 @@ func trimNullBytes(data []byte) string {
 }
 
 func normalizeProtocolText(data []byte) string {
-	return strings.TrimSpace(trimNullBytes(data))
+	raw := bytes.TrimSpace(data)
+	if len(raw) == 0 {
+		return ""
+	}
+
+	if isLikelyUTF16LEText(raw) {
+		if decoded := decodeUTF16LECString(raw); decoded != "" {
+			return decoded
+		}
+	}
+
+	raw = bytes.TrimRight(raw, "\x00")
+	if len(raw) == 0 {
+		return ""
+	}
+
+	if utf8.Valid(raw) {
+		return strings.TrimSpace(string(raw))
+	}
+
+	if decoded := decodeGB18030Text(raw); decoded != "" {
+		return decoded
+	}
+
+	return strings.TrimSpace(trimNullBytes(raw))
+}
+
+func isLikelyUTF16LEText(data []byte) bool {
+	if len(data) < 2 {
+		return false
+	}
+
+	validUnits := 0
+	invalidUnits := 0
+	evenLength := len(data) - (len(data) % 2)
+	for offset := 0; offset+1 < evenLength; offset += 2 {
+		word := binary.LittleEndian.Uint16(data[offset : offset+2])
+		if word == 0x0000 || word == 0xFDFD || word == 0xFFFF {
+			break
+		}
+
+		isPrintableASCII := word >= 0x0020 && word <= 0x007E
+		isCJK := (word >= 0x3400 && word <= 0x4DBF) ||
+			(word >= 0x4E00 && word <= 0x9FFF) ||
+			(word >= 0xF900 && word <= 0xFAFF)
+		isPunctuation := (word >= 0x3000 && word <= 0x303F) ||
+			(word >= 0xFF00 && word <= 0xFFEF)
+
+		if isPrintableASCII || isCJK || isPunctuation {
+			validUnits++
+			continue
+		}
+
+		invalidUnits++
+	}
+
+	return validUnits > 0 && invalidUnits == 0
+}
+
+func decodeGB18030Text(data []byte) string {
+	decoded, err := simplifiedchinese.GB18030.NewDecoder().Bytes(data)
+	if err != nil {
+		return ""
+	}
+
+	text := strings.TrimSpace(strings.TrimRight(string(decoded), "\x00"))
+	if !looksReasonableProtocolText(text) {
+		return ""
+	}
+	return text
+}
+
+func looksReasonableProtocolText(value string) bool {
+	trimmed := strings.TrimSpace(strings.TrimRight(value, "\x00"))
+	if trimmed == "" {
+		return false
+	}
+
+	validCount := 0
+	for _, r := range trimmed {
+		switch {
+		case r == utf8.RuneError:
+			return false
+		case unicode.IsControl(r) && !unicode.IsSpace(r):
+			return false
+		default:
+			validCount++
+		}
+	}
+
+	return validCount > 0
 }
 
 func extractIP(addr string) string {
