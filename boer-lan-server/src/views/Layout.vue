@@ -135,102 +135,104 @@ export default {
   display: flex;
   width: 100%;
   height: 100%;
+  background: #f5f7fa;
 }
 
 .app-sidebar {
   width: 240px;
-  padding: 18px 16px;
+  padding: 12px 0;
   display: flex;
   flex-direction: column;
-  background:
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.16), transparent 28%),
-    linear-gradient(180deg, #0f2042 0%, #0d5fa8 100%);
-  color: #ffffff;
+  background: #ffffff;
+  border-right: 1px solid #e6e6e6;
+  color: #303133;
 }
 
 .sidebar-brand {
-  min-height: 76px;
-  padding: 16px;
-  border-radius: 22px;
+  min-height: 64px;
+  padding: 0 16px 12px;
   display: flex;
   align-items: center;
-  gap: 14px;
-  background: rgba(255, 255, 255, 0.1);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  gap: 12px;
+  border-bottom: 1px solid #ebeef5;
 }
 
 .sidebar-brand__icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 18px;
+  width: 36px;
+  height: 36px;
+  border-radius: 4px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.16);
-  font-size: 22px;
+  background: #ecf5ff;
+  color: #409eff;
+  font-size: 18px;
 }
 
 .sidebar-brand__copy {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 
   strong {
-    font-size: 18px;
-    font-weight: 700;
+    font-size: 16px;
+    font-weight: 600;
   }
 
   span {
-    color: rgba(216, 230, 255, 0.82);
+    color: #909399;
     font-size: 12px;
   }
 }
 
 .sidebar-menu {
-  margin-top: 18px;
+  margin-top: 12px;
   border: none;
   flex: 1;
 }
 
 .sidebar-menu ::v-deep .el-menu-item {
-  height: 48px;
-  line-height: 48px;
-  margin-bottom: 8px;
-  border-radius: 16px;
-  color: #d8e6ff !important;
+  height: 44px;
+  line-height: 44px;
+  margin: 0 12px 4px;
+  border-radius: 4px;
+  color: #303133 !important;
 }
 
 .sidebar-menu ::v-deep .el-menu-item i {
-  width: 30px;
+  width: 24px;
   margin-right: 10px;
-  font-size: 18px;
+  font-size: 16px;
   color: inherit;
 }
 
 .sidebar-menu ::v-deep .el-menu-item:hover {
-  background: rgba(255, 255, 255, 0.12) !important;
+  background: #ecf5ff !important;
+  color: #409eff !important;
 }
 
 .sidebar-menu ::v-deep .el-menu-item.is-active {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.12)) !important;
-  box-shadow: 0 14px 22px rgba(2, 14, 41, 0.18);
+  background: #ecf5ff !important;
+  color: #409eff !important;
 }
 
 .sidebar-footer {
-  padding: 14px 16px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.1);
+  margin: 12px 16px 0;
+  padding: 12px;
+  border-radius: 4px;
+  background: #f5f7fa;
+  border: 1px solid #ebeef5;
 }
 
 .sidebar-footer__title {
-  color: rgba(216, 230, 255, 0.82);
+  color: #909399;
   font-size: 12px;
 }
 
 .sidebar-footer__value {
   margin-top: 6px;
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .app-main {
@@ -242,15 +244,14 @@ export default {
 }
 
 .app-header {
-  min-height: 72px;
-  padding: 14px 24px;
+  min-height: 60px;
+  padding: 12px 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  background: rgba(255, 255, 255, 0.7);
-  border-bottom: 1px solid rgba(221, 229, 240, 0.9);
-  backdrop-filter: blur(16px);
+  background: #ffffff;
+  border-bottom: 1px solid #ebeef5;
 }
 
 .app-header__title {
@@ -258,8 +259,9 @@ export default {
 
   h1 {
     margin: 0;
-    font-size: 24px;
-    color: #22324d;
+    font-size: 20px;
+    color: #303133;
+    font-weight: 500;
   }
 }
 
@@ -272,31 +274,32 @@ export default {
 }
 
 .server-chip {
-  min-height: 46px;
-  padding: 8px 14px;
-  border-radius: 16px;
-  border: 1px solid rgba(219, 228, 240, 0.92);
-  background: rgba(255, 255, 255, 0.96);
+  min-height: 40px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: 1px solid #dcdfe6;
+  background: #ffffff;
   display: inline-flex;
   flex-direction: column;
   justify-content: center;
   gap: 4px;
 
   strong {
-    color: #22324d;
+    color: #303133;
     font-size: 14px;
+    font-weight: 500;
   }
 }
 
 .server-chip__label {
-  color: #8190a5;
+  color: #909399;
   font-size: 12px;
 }
 
 .app-content {
   flex: 1;
   min-height: 0;
-  padding: 12px 24px 24px;
+  padding: 0;
   overflow-y: auto;
 }
 
@@ -313,8 +316,14 @@ export default {
 }
 
 @media (max-width: 920px) {
+  .app-shell {
+    flex-direction: column;
+  }
+
   .app-sidebar {
-    width: 212px;
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid #e6e6e6;
   }
 }
 </style>

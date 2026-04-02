@@ -271,17 +271,15 @@ export default {
   display: flex;
   width: 100%;
   height: 100vh;
-  background:
-    radial-gradient(circle at top left, rgba(63, 130, 255, 0.14), transparent 30%),
-    linear-gradient(180deg, #f7f9fe 0%, #eef3fb 100%);
+  background: #f5f7fa;
 }
 
 .sidebar {
   width: 248px;
   height: 100%;
-  padding: 18px 14px;
-  background: linear-gradient(180deg, #0f2042 0%, #163766 58%, #0d5fa8 100%);
-  box-shadow: 18px 0 38px rgba(10, 27, 58, 0.18);
+  padding: 12px 0;
+  background: #ffffff;
+  border-right: 1px solid #e6e6e6;
   transition: width 0.28s ease;
   overflow: hidden;
 
@@ -290,7 +288,7 @@ export default {
 
     .logo {
       justify-content: center;
-      padding: 12px 0 20px;
+      padding: 12px 0;
     }
 
     .logo-img {
@@ -303,14 +301,14 @@ export default {
   display: flex;
   align-items: center;
   min-height: 68px;
-  padding: 12px 10px 20px;
+  padding: 0 16px 12px;
+  border-bottom: 1px solid #ebeef5;
 
   .logo-img {
-    width: 42px;
-    height: 42px;
+    width: 36px;
+    height: 36px;
     margin-right: 12px;
-    border-radius: 12px;
-    box-shadow: 0 10px 24px rgba(18, 104, 210, 0.3);
+    border-radius: 4px;
   }
 
   .logo-copy {
@@ -322,63 +320,60 @@ export default {
 
   .logo-title {
     font-size: 16px;
-    font-weight: 700;
-    color: #ffffff;
-    letter-spacing: 0.04em;
+    font-weight: 600;
+    color: #303133;
   }
 
   .logo-subtitle {
     font-size: 11px;
-    color: rgba(220, 232, 255, 0.72);
-    letter-spacing: 0.08em;
+    color: #909399;
   }
 }
 
 .sidebar-menu {
-  height: calc(100% - 88px);
+  height: calc(100% - 80px);
   border: none;
   overflow-y: auto;
-  padding-right: 4px;
+  padding: 12px 0;
 
   &:not(.el-menu--collapse) {
-    width: 220px;
+    width: 100%;
   }
 
   ::v-deep .el-submenu__title,
   ::v-deep .el-menu-item {
-    height: 48px;
-    line-height: 48px;
-    margin-bottom: 8px;
-    border-radius: 14px;
-    padding-left: 14px !important;
-    color: #d8e4ff !important;
-    transition: all 0.22s ease;
+    height: 44px;
+    line-height: 44px;
+    margin: 0 12px 4px;
+    border-radius: 4px;
+    padding-left: 16px !important;
+    color: #303133 !important;
+    transition: background-color 0.2s ease;
   }
 
   ::v-deep .el-submenu__title:hover,
   ::v-deep .el-menu-item:hover {
-    background: rgba(255, 255, 255, 0.09) !important;
-    color: #ffffff !important;
+    background: #ecf5ff !important;
+    color: #409eff !important;
   }
 
   ::v-deep .el-submenu.is-opened > .el-submenu__title,
   ::v-deep .el-menu-item.is-active {
-    background: linear-gradient(135deg, rgba(67, 139, 255, 0.95), rgba(61, 192, 255, 0.88)) !important;
-    box-shadow: 0 12px 26px rgba(41, 122, 228, 0.26);
-    color: #ffffff !important;
+    background: #ecf5ff !important;
+    color: #409eff !important;
   }
 
   ::v-deep .el-menu--inline {
-    background: transparent !important;
+    background: #ffffff !important;
   }
 
   ::v-deep .el-menu--inline .el-menu-item {
-    height: 42px;
-    line-height: 42px;
-    margin: 4px 0 0 12px;
-    padding-left: 52px !important;
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.04);
+    height: 40px;
+    line-height: 40px;
+    margin: 0 12px 4px 24px;
+    padding-left: 28px !important;
+    border-radius: 4px;
+    background: transparent;
   }
 
   ::v-deep .el-menu--collapse .el-submenu__title,
@@ -389,14 +384,12 @@ export default {
 }
 
 .menu-icon {
-  width: 28px;
-  height: 28px;
+  width: 20px;
+  height: 20px;
   margin-right: 10px;
-  border-radius: 10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.09);
   color: currentColor;
   font-size: 16px;
   vertical-align: middle;
@@ -410,17 +403,13 @@ export default {
 }
 
 .header {
-  height: 76px;
-  margin: 18px 18px 0 18px;
-  padding: 0 24px;
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 18px 40px rgba(65, 91, 137, 0.08);
-  border: 1px solid rgba(213, 224, 239, 0.84);
+  min-height: 60px;
+  padding: 0 20px;
+  background: #ffffff;
+  border-bottom: 1px solid #ebeef5;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  backdrop-filter: blur(14px);
 }
 
 .header-left {
@@ -431,19 +420,19 @@ export default {
 }
 
 .collapse-btn {
-  width: 42px;
-  height: 42px;
-  border: none;
-  border-radius: 14px;
-  background: linear-gradient(135deg, #f0f5ff, #e5eefc);
-  color: #1f3f7a;
-  font-size: 18px;
+  width: 32px;
+  height: 32px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #606266;
+  font-size: 16px;
   cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: border-color 0.2s ease, color 0.2s ease;
 
   &:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 10px 18px rgba(78, 109, 160, 0.14);
+    color: #409eff;
+    border-color: #c6e2ff;
   }
 }
 
@@ -460,10 +449,10 @@ export default {
   gap: 6px;
   width: fit-content;
   max-width: 100%;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: #f2f6fd;
-  color: #6780a8;
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: #f4f4f5;
+  color: #606266;
   font-size: 12px;
 }
 
@@ -475,26 +464,26 @@ export default {
 
 .lang-switch {
   display: inline-flex;
-  padding: 4px;
-  background: #edf3fb;
-  border-radius: 999px;
+  padding: 2px;
+  background: #f5f7fa;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
 
   button {
-    min-width: 48px;
-    height: 32px;
+    min-width: 44px;
+    height: 28px;
     border: none;
-    border-radius: 999px;
+    border-radius: 4px;
     background: transparent;
-    color: #60789f;
+    color: #606266;
     font-size: 12px;
-    font-weight: 700;
+    font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
 
     &.active {
-      background: #ffffff;
-      color: #1a4280;
-      box-shadow: 0 8px 16px rgba(84, 109, 156, 0.16);
+      background: #409eff;
+      color: #ffffff;
     }
   }
 }
@@ -503,10 +492,11 @@ export default {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 7px 10px 7px 8px;
-  border-radius: 18px;
-  background: #f7faff;
-  color: #23426f;
+  padding: 6px 10px 6px 8px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #303133;
   cursor: pointer;
 }
 
@@ -518,19 +508,19 @@ export default {
 
 .username {
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .user-role {
   font-size: 11px;
-  color: #7a91b4;
+  color: #909399;
 }
 
 .content {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 12px 18px 18px;
+  padding: 0;
 }
 
 ::v-deep .el-breadcrumb {
@@ -539,16 +529,16 @@ export default {
 
 ::v-deep .el-breadcrumb__inner,
 ::v-deep .el-breadcrumb__separator {
-  color: #5c7399;
+  color: #909399;
 }
 
 ::v-deep .el-breadcrumb__inner.is-link:hover {
-  color: #2d5ea6;
+  color: #409eff;
 }
 
 @media (max-width: 1200px) {
   .header {
-    padding: 0 18px;
+    padding: 0 16px;
   }
 
   .lang-switch {
@@ -566,7 +556,6 @@ export default {
   }
 
   .header {
-    margin: 12px 12px 0 96px;
     height: auto;
     min-height: 72px;
     padding: 14px;

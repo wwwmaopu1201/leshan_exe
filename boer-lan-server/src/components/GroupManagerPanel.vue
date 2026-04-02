@@ -36,6 +36,7 @@
         :filter-node-method="filterNode"
         :props="{ label: 'name', children: 'children' }"
         @node-click="handleNodeClick"
+        @node-contextmenu="handleNodeContextMenu"
       >
         <div slot-scope="{ node, data }" class="tree-node">
           <div class="tree-node__main">
@@ -65,6 +66,25 @@
         </div>
       </el-tree>
     </div>
+
+    <ul
+      v-if="contextMenu.visible"
+      class="group-context-menu"
+      :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
+      @click.stop
+      @contextmenu.prevent
+    >
+      <li @click="handleContextMenuAction('addRoot')">新增顶层分组</li>
+      <template v-if="contextMenu.node">
+        <li @click="handleContextMenuAction('addSibling')">新增同级分组</li>
+        <li @click="handleContextMenuAction('addChild')">新增子分组</li>
+        <li :class="{ disabled: !canMoveUp(contextMenu.node) }" @click="handleContextMenuAction('moveUp')">上移</li>
+        <li :class="{ disabled: !canMoveDown(contextMenu.node) }" @click="handleContextMenuAction('moveDown')">下移</li>
+        <li @click="handleContextMenuAction('edit')">重命名</li>
+        <li class="danger" @click="handleContextMenuAction('delete')">删除分组</li>
+      </template>
+      <li @click="handleContextMenuAction('refresh')">刷新</li>
+    </ul>
   </div>
 </template>
 
@@ -97,7 +117,13 @@ export default {
     return {
       loading: false,
       keyword: '',
-      groupTree: []
+      groupTree: [],
+      contextMenu: {
+        visible: false,
+        x: 0,
+        y: 0,
+        node: null
+      }
     }
   },
   computed: {
@@ -120,7 +146,13 @@ export default {
     }
   },
   mounted() {
+    document.addEventListener('click', this.hideContextMenu)
+    window.addEventListener('blur', this.hideContextMenu)
     this.loadGroupTree()
+  },
+  beforeDestroy() {
+    document.removeEventListener('click', this.hideContextMenu)
+    window.removeEventListener('blur', this.hideContextMenu)
   },
   methods: {
     normalizeTree(nodes = []) {
@@ -176,6 +208,68 @@ export default {
       }
       this.$emit('input', payload)
       this.$emit('change', payload)
+      this.hideContextMenu()
+    },
+    handleNodeContextMenu(event, data) {
+      if (!data) {
+        return
+      }
+      event.preventDefault()
+      this.handleNodeClick(data)
+      this.contextMenu = {
+        visible: true,
+        x: Math.min(event.clientX, window.innerWidth - 180),
+        y: Math.min(event.clientY, window.innerHeight - 220),
+        node: data
+      }
+    },
+    hideContextMenu() {
+      if (!this.contextMenu.visible) {
+        return
+      }
+      this.contextMenu.visible = false
+      this.contextMenu.node = null
+    },
+    handleContextMenuAction(action) {
+      const group = this.contextMenu.node
+      if ((action !== 'addRoot' && action !== 'refresh') && !group) {
+        return
+      }
+      if ((action === 'moveUp' && !this.canMoveUp(group)) || (action === 'moveDown' && !this.canMoveDown(group))) {
+        return
+      }
+      this.hideContextMenu()
+      if (action === 'addRoot') {
+        this.createGroup(null)
+        return
+      }
+      if (action === 'addSibling') {
+        this.addSibling(group)
+        return
+      }
+      if (action === 'addChild') {
+        this.addChild(group)
+        return
+      }
+      if (action === 'moveUp') {
+        this.moveUp(group)
+        return
+      }
+      if (action === 'moveDown') {
+        this.moveDown(group)
+        return
+      }
+      if (action === 'edit') {
+        this.editGroup(group)
+        return
+      }
+      if (action === 'delete') {
+        this.deleteGroup(group)
+        return
+      }
+      if (action === 'refresh') {
+        this.loadGroupTree()
+      }
     },
     clearSelection() {
       this.$refs.groupTreeRef?.setCurrentKey(null)
@@ -320,5 +414,43 @@ export default {
 
 .tree-scroll ::v-deep .el-tree-node.is-current > .el-tree-node__content {
   background: rgba(47, 109, 246, 0.1);
+}
+
+.group-context-menu {
+  position: fixed;
+  z-index: 3000;
+  margin: 0;
+  padding: 6px 0;
+  list-style: none;
+  min-width: 152px;
+  background: #fff;
+  border: 1px solid #e4e7ed;
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
+}
+
+.group-context-menu li {
+  padding: 7px 14px;
+  font-size: 13px;
+  color: #303133;
+  cursor: pointer;
+  user-select: none;
+}
+
+.group-context-menu li:hover {
+  background: #f5f7fa;
+}
+
+.group-context-menu li.danger {
+  color: #f56c6c;
+}
+
+.group-context-menu li.disabled {
+  color: #c0c4cc;
+  cursor: not-allowed;
+}
+
+.group-context-menu li.disabled:hover {
+  background: transparent;
 }
 </style>

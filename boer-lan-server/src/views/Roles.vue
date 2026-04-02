@@ -488,6 +488,14 @@ export default {
 </script>
 
 <style scoped>
+.filter-panel ::v-deep .el-input {
+  width: 220px;
+}
+
+.filter-panel ::v-deep .el-date-editor--daterange {
+  width: 260px;
+}
+
 .permission-toolbar {
   margin-bottom: 10px;
   display: flex;
@@ -504,5 +512,12 @@ export default {
   max-height: 320px;
   overflow: auto;
   background: #f9fbff;
+}
+
+@media (max-width: 768px) {
+  .filter-panel ::v-deep .el-input,
+  .filter-panel ::v-deep .el-date-editor--daterange {
+    width: 100%;
+  }
 }
 </style>

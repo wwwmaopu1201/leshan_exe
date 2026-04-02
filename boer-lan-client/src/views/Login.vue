@@ -238,11 +238,9 @@ export default {
 
 <style lang="scss" scoped>
 .login-container {
-  position: relative;
   width: 100%;
   min-height: 100vh;
-  overflow: hidden;
-  background: linear-gradient(135deg, #07162f 0%, #0f2750 52%, #0a5caa 100%);
+  background: #f5f7fa;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -250,84 +248,40 @@ export default {
 }
 
 .login-bg {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-}
-
-.bg-orb {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(10px);
-  opacity: 0.7;
-}
-
-.orb-a {
-  width: 420px;
-  height: 420px;
-  left: -100px;
-  top: -80px;
-  background: radial-gradient(circle, rgba(78, 198, 255, 0.42) 0%, rgba(78, 198, 255, 0) 68%);
-}
-
-.orb-b {
-  width: 520px;
-  height: 520px;
-  right: -180px;
-  bottom: -140px;
-  background: radial-gradient(circle, rgba(84, 122, 255, 0.36) 0%, rgba(84, 122, 255, 0) 70%);
-}
-
-.bg-grid {
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
-  background-size: 48px 48px;
-  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.4), transparent 90%);
+  display: none;
 }
 
 .login-shell {
-  position: relative;
-  z-index: 1;
   width: min(1120px, 100%);
-  min-height: 680px;
+  min-height: 620px;
   display: grid;
   grid-template-columns: 1.08fr 0.92fr;
-  border-radius: 32px;
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 0 30px 70px rgba(2, 12, 31, 0.35);
-  backdrop-filter: blur(16px);
+  gap: 24px;
 }
 
 .login-showcase {
-  padding: 48px 46px;
-  background:
-    linear-gradient(180deg, rgba(8, 25, 53, 0.82) 0%, rgba(11, 48, 93, 0.58) 100%),
-    radial-gradient(circle at top left, rgba(84, 189, 255, 0.18), transparent 34%);
-  color: #ffffff;
+  padding: 32px;
+  background: #ffffff;
+  border: 1px solid #ebeef5;
+  border-radius: 4px;
   display: flex;
   flex-direction: column;
+  justify-content: center;
 }
 
 .brand-chip {
   display: inline-flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 14px;
+  padding: 0;
   width: fit-content;
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.08);
-  margin-bottom: 56px;
+  margin-bottom: 36px;
 }
 
 .brand-logo {
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
 }
 
 .brand-copy {
@@ -339,87 +293,94 @@ export default {
 .brand-name {
   font-size: 13px;
   letter-spacing: 0.14em;
-  font-weight: 700;
+  font-weight: 600;
+  color: #303133;
 }
 
 .brand-caption {
   font-size: 12px;
-  color: rgba(227, 237, 255, 0.78);
+  color: #909399;
 }
 
 .showcase-copy {
   max-width: 420px;
-  margin-bottom: 48px;
+  margin-bottom: 28px;
 
   h1 {
-    font-size: 42px;
-    line-height: 1.18;
-    margin-bottom: 16px;
+    font-size: 30px;
+    line-height: 1.3;
+    margin-bottom: 12px;
+    color: #303133;
   }
 
   p {
-    font-size: 16px;
-    line-height: 1.85;
-    color: rgba(226, 236, 255, 0.82);
+    font-size: 14px;
+    line-height: 1.8;
+    color: #606266;
   }
 }
 
 .feature-list {
   display: grid;
-  gap: 16px;
-  margin-top: auto;
+  gap: 12px;
+  margin-top: 8px;
 }
 
 .feature-card {
   display: flex;
   align-items: flex-start;
-  gap: 14px;
-  padding: 18px 20px;
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.08);
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 4px;
+  background: #fafafa;
+  border: 1px solid #ebeef5;
 
   i {
-    width: 42px;
-    height: 42px;
-    border-radius: 14px;
+    width: 36px;
+    height: 36px;
+    border-radius: 4px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: rgba(87, 183, 255, 0.16);
-    color: #90dbff;
-    font-size: 20px;
+    background: #ecf5ff;
+    color: #409eff;
+    font-size: 18px;
   }
 
   strong {
     display: block;
     margin-bottom: 6px;
-    font-size: 15px;
+    font-size: 14px;
+    color: #303133;
   }
 
   span {
     display: block;
-    color: rgba(229, 238, 255, 0.74);
+    color: #909399;
     line-height: 1.6;
     font-size: 13px;
   }
 }
 
 .login-panel {
-  background: rgba(255, 255, 255, 0.96);
-  padding: 28px 42px 34px;
+  background: #ffffff;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  padding: 24px 28px 28px;
   display: flex;
   flex-direction: column;
+  justify-content: center;
 }
 
 .panel-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 42px;
+  margin-bottom: 28px;
 }
 
 .toolbar-title {
-  color: #7f91aa;
+  color: #909399;
   font-size: 13px;
   letter-spacing: 0.08em;
 }
@@ -429,24 +390,23 @@ export default {
 }
 
 .panel-head {
-  margin-bottom: 28px;
+  margin-bottom: 24px;
 
   .panel-logo {
-    width: 60px;
-    height: 60px;
-    border-radius: 18px;
-    box-shadow: 0 14px 26px rgba(40, 102, 214, 0.18);
-    margin-bottom: 18px;
+    width: 52px;
+    height: 52px;
+    border-radius: 4px;
+    margin-bottom: 16px;
   }
 
   h2 {
-    font-size: 28px;
-    color: #1d3662;
-    margin-bottom: 10px;
+    font-size: 24px;
+    color: #303133;
+    margin-bottom: 8px;
   }
 
   p {
-    color: #7d8ca4;
+    color: #909399;
     font-size: 14px;
   }
 }
@@ -474,10 +434,10 @@ export default {
 
 .field-label {
   display: block;
-  margin-bottom: 10px;
-  color: #50627d;
+  margin-bottom: 8px;
+  color: #606266;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .form-actions {
@@ -485,7 +445,7 @@ export default {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  color: #7d8ca4;
+  color: #909399;
   font-size: 12px;
 }
 
@@ -495,19 +455,17 @@ export default {
 
 .login-btn {
   width: 100%;
-  height: 50px;
-  margin-top: auto;
-  border-radius: 16px;
+  height: 40px;
+  margin-top: 4px;
+  border-radius: 4px;
   font-size: 15px;
-  font-weight: 700;
+  font-weight: 500;
 }
 
 ::v-deep .el-input__inner {
-  height: 48px;
-  line-height: 48px;
-  border-radius: 15px;
-  border-color: #d7e0ee;
-  background: #f9fbff;
+  height: 40px;
+  line-height: 40px;
+  border-radius: 4px;
 }
 
 ::v-deep .el-input__prefix {
@@ -526,11 +484,11 @@ export default {
   }
 
   .login-showcase {
-    padding: 34px 28px;
+    padding: 24px;
   }
 
   .login-panel {
-    padding: 24px 24px 28px;
+    padding: 20px;
   }
 }
 
@@ -540,7 +498,7 @@ export default {
   }
 
   .showcase-copy h1 {
-    font-size: 30px;
+    font-size: 26px;
   }
 
   .form-actions {

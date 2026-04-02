@@ -65,6 +65,7 @@
               :filter-node-method="filterTreeNode"
               :props="{ label: 'name', children: 'children' }"
               @node-click="handleTreeNodeClick"
+              @node-contextmenu="handleTreeNodeContextMenu"
             >
               <div slot-scope="{ node, data }" class="tree-node">
                 <div class="tree-node__main">
@@ -246,6 +247,26 @@
         <el-button type="primary" :loading="moving" @click="confirmMoveDevices">确定移动</el-button>
       </span>
     </el-dialog>
+
+    <ul
+      v-if="contextMenu.visible"
+      class="group-context-menu"
+      :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
+      @click.stop
+      @contextmenu.prevent
+    >
+      <li @click="handleContextMenuAction('addRoot')">新增顶层分组</li>
+      <template v-if="contextMenu.node">
+        <li @click="handleContextMenuAction('addSibling')">新增同级分组</li>
+        <li @click="handleContextMenuAction('addChild')">新增子分组</li>
+        <li @click="handleContextMenuAction('moveSelectedHere')">移动已选设备到当前组</li>
+        <li :class="{ disabled: !canMoveUp(contextMenu.node) }" @click="handleContextMenuAction('moveUp')">上移</li>
+        <li :class="{ disabled: !canMoveDown(contextMenu.node) }" @click="handleContextMenuAction('moveDown')">下移</li>
+        <li @click="handleContextMenuAction('edit')">重命名</li>
+        <li class="danger" @click="handleContextMenuAction('delete')">删除分组</li>
+      </template>
+      <li @click="handleContextMenuAction('refresh')">刷新</li>
+    </ul>
   </div>
 </template>
 
@@ -269,6 +290,12 @@ export default {
       moveDialogVisible: false,
       moveTargetGroupId: null,
       editDialogVisible: false,
+      contextMenu: {
+        visible: false,
+        x: 0,
+        y: 0,
+        node: null
+      },
       treeSelection: {
         mode: 'all',
         groupId: null,
@@ -333,12 +360,16 @@ export default {
     }
   },
   mounted() {
+    document.addEventListener('click', this.hideContextMenu)
+    window.addEventListener('blur', this.hideContextMenu)
     this.initPage()
     this.refreshTimer = setInterval(() => {
       this.autoRefreshDevices()
     }, 5000)
   },
   beforeDestroy() {
+    document.removeEventListener('click', this.hideContextMenu)
+    window.removeEventListener('blur', this.hideContextMenu)
     if (this.refreshTimer) {
       clearInterval(this.refreshTimer)
       this.refreshTimer = null
@@ -419,6 +450,72 @@ export default {
         mode: 'group',
         groupId: data.id,
         label: data.name
+      }
+      this.hideContextMenu()
+    },
+    handleTreeNodeContextMenu(event, data) {
+      if (!data) {
+        return
+      }
+      event.preventDefault()
+      this.handleTreeNodeClick(data)
+      this.contextMenu = {
+        visible: true,
+        x: Math.min(event.clientX, window.innerWidth - 180),
+        y: Math.min(event.clientY, window.innerHeight - 240),
+        node: data
+      }
+    },
+    hideContextMenu() {
+      if (!this.contextMenu.visible) {
+        return
+      }
+      this.contextMenu.visible = false
+      this.contextMenu.node = null
+    },
+    handleContextMenuAction(action) {
+      const group = this.contextMenu.node
+      if ((action !== 'addRoot' && action !== 'refresh') && !group) {
+        return
+      }
+      if ((action === 'moveUp' && !this.canMoveUp(group)) || (action === 'moveDown' && !this.canMoveDown(group))) {
+        return
+      }
+      this.hideContextMenu()
+      if (action === 'addRoot') {
+        this.createGroup(null)
+        return
+      }
+      if (action === 'addSibling') {
+        this.addSibling(group)
+        return
+      }
+      if (action === 'addChild') {
+        this.addChild(group)
+        return
+      }
+      if (action === 'moveSelectedHere') {
+        this.moveSelectedDevicesToGroup(group)
+        return
+      }
+      if (action === 'moveUp') {
+        this.moveUp(group)
+        return
+      }
+      if (action === 'moveDown') {
+        this.moveDown(group)
+        return
+      }
+      if (action === 'edit') {
+        this.editGroup(group)
+        return
+      }
+      if (action === 'delete') {
+        this.deleteGroup(group)
+        return
+      }
+      if (action === 'refresh') {
+        this.loadGroupTree()
       }
     },
     setTreeScope(mode) {
@@ -509,6 +606,32 @@ export default {
       this.moveTargetGroupId = null
       this.moveDialogVisible = true
     },
+    async moveSelectedDevicesToGroup(group) {
+      const targetGroupId = Number(group?.id || 0)
+      if (targetGroupId <= 0) {
+        this.$message.warning('目标分组无效')
+        return
+      }
+      if (!this.selectedDeviceIds.length) {
+        this.$message.warning('请先勾选设备')
+        return
+      }
+      this.moving = true
+      try {
+        const res = await this.$axios.post('/device/move', {
+          deviceIds: this.selectedDeviceIds,
+          groupId: targetGroupId
+        })
+        if (res.code === 0) {
+          this.$message.success('分组移动成功')
+          await Promise.all([this.loadDevices(), this.loadGroupTree()])
+        }
+      } catch (error) {
+        console.error('移动设备到当前分组失败', error)
+      } finally {
+        this.moving = false
+      }
+    },
     async confirmMoveDevices() {
       if (!this.selectedDeviceIds.length) {
         this.$message.warning('请先选择设备')
@@ -598,6 +721,129 @@ export default {
       } catch (error) {
         console.error('Ping失败', error)
       }
+    },
+    createGroup(parentId) {
+      const title = parentId ? '新增子分组' : '新建顶层分组'
+      this.$prompt('请输入分组名称', title, {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        inputValidator: value => {
+          if (!value || !value.trim()) return '分组名称不能为空'
+          if ([...value.trim()].length > 50) return '分组名称不能超过50个字符'
+          return true
+        }
+      }).then(async ({ value }) => {
+        try {
+          const payload = { name: value.trim() }
+          if (parentId) {
+            payload.parentId = parentId
+          }
+          await this.$axios.post('/group', payload)
+          this.$message.success('创建成功')
+          await this.loadGroupTree()
+        } catch (error) {
+          console.error('创建设备分组失败', error)
+        }
+      }).catch(() => {})
+    },
+    addSibling(group) {
+      this.createGroup(group.parentId || null)
+    },
+    addChild(group) {
+      this.createGroup(group.id)
+    },
+    editGroup(group) {
+      this.$prompt('请输入新的分组名称', '重命名分组', {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        inputValue: group.name,
+        inputValidator: value => {
+          if (!value || !value.trim()) return '分组名称不能为空'
+          if ([...value.trim()].length > 50) return '分组名称不能超过50个字符'
+          return true
+        }
+      }).then(async ({ value }) => {
+        try {
+          await this.$axios.put(`/group/${group.id}`, { name: value.trim() })
+          this.$message.success('修改成功')
+          await Promise.all([this.loadGroupTree(), this.loadDevices()])
+        } catch (error) {
+          console.error('修改分组失败', error)
+        }
+      }).catch(() => {})
+    },
+    findNodeContext(targetId, nodes = this.groupTree, parent = null) {
+      for (let i = 0; i < nodes.length; i++) {
+        const current = nodes[i]
+        if (current.id === targetId) {
+          return {
+            parent,
+            siblings: nodes,
+            index: i
+          }
+        }
+        if (current.children && current.children.length > 0) {
+          const found = this.findNodeContext(targetId, current.children, current)
+          if (found) return found
+        }
+      }
+      return null
+    },
+    canMoveUp(group) {
+      const context = this.findNodeContext(group.id)
+      return !!context && context.index > 0
+    },
+    canMoveDown(group) {
+      const context = this.findNodeContext(group.id)
+      return !!context && context.index < context.siblings.length - 1
+    },
+    async persistSort(siblings) {
+      const payload = siblings.map((item, index) => ({
+        id: item.id,
+        sortOrder: index + 1
+      }))
+      const res = await this.$axios.post('/group/sort', payload)
+      if (res.code === 0) {
+        this.$message.success('排序已更新')
+      }
+      await this.loadGroupTree()
+    },
+    async moveUp(group) {
+      const context = this.findNodeContext(group.id)
+      if (!context || context.index <= 0) return
+      const { siblings, index } = context
+      const current = siblings[index]
+      siblings.splice(index, 1)
+      siblings.splice(index - 1, 0, current)
+      await this.persistSort(siblings)
+    },
+    async moveDown(group) {
+      const context = this.findNodeContext(group.id)
+      if (!context || context.index >= context.siblings.length - 1) return
+      const { siblings, index } = context
+      const current = siblings[index]
+      siblings.splice(index, 1)
+      siblings.splice(index + 1, 0, current)
+      await this.persistSort(siblings)
+    },
+    async deleteGroup(group) {
+      try {
+        await this.$confirm(
+          '确定要删除该分组吗？删除后该分组下设备将转为未分组，子分组会提升到当前层级。',
+          '警告',
+          { type: 'warning' }
+        )
+        const res = await this.$axios.delete(`/group/${group.id}`)
+        this.$message.success(res.msg || '删除成功')
+        if (this.treeSelection.mode === 'group' && Number(this.treeSelection.groupId) === Number(group.id)) {
+          this.setTreeScope('all')
+        }
+        await Promise.all([this.loadGroupTree(), this.loadDevices()])
+      } catch (error) {
+        if (error !== 'cancel') {
+          console.error('删除分组失败', error)
+        }
+      }
     }
   }
 }
@@ -620,5 +866,43 @@ export default {
 
 .tree-scroll ::v-deep .el-tree-node.is-current > .el-tree-node__content {
   background: rgba(47, 109, 246, 0.1);
+}
+
+.group-context-menu {
+  position: fixed;
+  z-index: 3000;
+  margin: 0;
+  padding: 6px 0;
+  list-style: none;
+  min-width: 152px;
+  background: #fff;
+  border: 1px solid #e4e7ed;
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
+}
+
+.group-context-menu li {
+  padding: 7px 14px;
+  font-size: 13px;
+  color: #303133;
+  cursor: pointer;
+  user-select: none;
+}
+
+.group-context-menu li:hover {
+  background: #f5f7fa;
+}
+
+.group-context-menu li.danger {
+  color: #f56c6c;
+}
+
+.group-context-menu li.disabled {
+  color: #c0c4cc;
+  cursor: not-allowed;
+}
+
+.group-context-menu li.disabled:hover {
+  background: transparent;
 }
 </style>

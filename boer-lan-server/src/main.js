@@ -16,6 +16,12 @@ Vue.config.productionTip = false
 let trialMonitorTimer = null
 let trialExpiredHandled = false
 
+function installContextMenuGuard() {
+  document.addEventListener('contextmenu', event => {
+    event.preventDefault()
+  })
+}
+
 async function ensureTrialAvailable() {
   if (!import.meta.env.PROD) {
     return true
@@ -92,6 +98,8 @@ async function waitForBackend(retries = 30, options = {}) {
 }
 
 async function initApp() {
+  installContextMenuGuard()
+
   renderBootMessage('正在检查试用状态...')
   const trialOk = await ensureTrialAvailable()
   if (!trialOk) {
