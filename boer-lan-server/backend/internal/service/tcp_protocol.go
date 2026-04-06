@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -8,10 +9,11 @@ import (
 
 // 包头标识
 const (
-	HeaderByte1 = 0x44
-	HeaderByte2 = 0x54
-	HeaderSize  = 23 // 2(header) + 4(addr1) + 4(addr2) + 3(reserved) + 2(paramType) + 2(paramNo) + 1(totalFrames) + 1(frameNo) + 4(length)
-	CRC16Size   = 2
+	HeaderByte1  = 0x44
+	HeaderByte2  = 0x54
+	HeaderSize   = 23 // 2(header) + 4(addr1) + 4(addr2) + 3(reserved) + 2(paramType) + 2(paramNo) + 1(totalFrames) + 1(frameNo) + 4(length)
+	CRC16Size    = 2
+	MaxFrameSize = 1024 * 1024
 )
 
 // ParamType + ParamNo 指令常量
@@ -32,14 +34,47 @@ const (
 	PTMainboardSN uint16 = 0x1302
 	PNMainboardSN uint16 = 0x157C
 	// 开始/停止缝制
-	PTSewing uint16 = 0x0B29
-	PNSewing uint16 = 0x0032
+	PTSewing            uint16 = 0x0B29
+	PNSewing            uint16 = 0x0032
+	PTRealtimeStatus    uint16 = 0x0B29
+	PNRealtimeStatus    uint16 = 0x0033
+	PTThreadTrim        uint16 = 0x0B29
+	PNThreadTrim        uint16 = 0x0034
+	PTReadHighPoint     uint16 = 0x0B29
+	PNReadHighPoint     uint16 = 0x0035
+	PTSetHighPoint      uint16 = 0x0B29
+	PNSetHighPoint      uint16 = 0x0036
+	PTReadLowPoint      uint16 = 0x0B29
+	PNReadLowPoint      uint16 = 0x0037
+	PTSetLowPoint       uint16 = 0x0B29
+	PNSetLowPoint       uint16 = 0x0038
+	PTSetSpeed          uint16 = 0x0B29
+	PNSetSpeed          uint16 = 0x0039
+	PTSewingRange       uint16 = 0x0B29
+	PNSewingRange       uint16 = 0x0015
+	PTPatternInfo       uint16 = 0x0B29
+	PNPatternInfo       uint16 = 0x0016
+	PTBottomThreadCount uint16 = 0x0B29
+	PNBottomThreadCount uint16 = 0x0006
+	PTProductionCount   uint16 = 0x0B29
+	PNProductionCount   uint16 = 0x0003
+	PTOilPrompt         uint16 = 0x0B29
+	PNOilPrompt         uint16 = 0x0029
 	// 报警
-	PTAlarm uint16 = 0x0B97
-	PNAlarm uint16 = 0x0001
+	PTAlarm     uint16 = 0x0B97
+	PNAlarm     uint16 = 0x0001
+	PTIdleAlarm uint16 = 0x0B97
+	PNIdleAlarm uint16 = 0x0002
 	// 生产数据
-	PTProduction uint16 = 0x0B2A
-	PNProduction uint16 = 0x000C
+	PTProduction    uint16 = 0x0B2A
+	PNProduction    uint16 = 0x000C
+	PNProductionOld uint16 = 0x000B
+	PTNeedleCount   uint16 = 0x0B01
+	PNNeedleCount   uint16 = 0x001F
+	PTCurrentSpeed  uint16 = 0x1302
+	PNCurrentSpeed  uint16 = 0x107C
+	PTMaxSpeed      uint16 = 0x1301
+	PNMaxSpeed      uint16 = 0x00A3
 )
 
 // Packet 协议数据包
@@ -52,6 +87,9 @@ type Packet struct {
 	TotalFrames uint8
 	FrameNo     uint8
 	Data        []byte
+	Raw         []byte
+	ParseError  string
+	Recovered   string
 }
 
 // ParsePacket 从reader中读取并解析一个完整的协议包。
@@ -96,6 +134,11 @@ func ParsePacket(reader io.Reader) (*Packet, error) {
 
 	payloadLen := int(lengthField) - CRC16Size
 	p.Data = tail[:payloadLen]
+	p.Raw = make([]byte, HeaderSize+int(lengthField))
+	p.Raw[0] = HeaderByte1
+	p.Raw[1] = HeaderByte2
+	copy(p.Raw[2:], hdr)
+	copy(p.Raw[HeaderSize:], tail)
 
 	// 校验CRC16：对 header(2) + hdr(21) + payload 整体计算
 	rawForCRC := make([]byte, 2+len(hdr)+payloadLen)
@@ -111,6 +154,165 @@ func ParsePacket(reader io.Reader) (*Packet, error) {
 	}
 
 	return p, nil
+}
+
+type FrameParser struct {
+	buffer []byte
+}
+
+func NewFrameParser() *FrameParser {
+	return &FrameParser{
+		buffer: make([]byte, 0, 4096),
+	}
+}
+
+func (p *FrameParser) PendingSnapshot(limit int) []byte {
+	if limit <= 0 || len(p.buffer) <= limit {
+		return append([]byte(nil), p.buffer...)
+	}
+	return append([]byte(nil), p.buffer[:limit]...)
+}
+
+func (p *FrameParser) PendingLen() int {
+	return len(p.buffer)
+}
+
+func (p *FrameParser) Push(chunk []byte) []*Packet {
+	if len(chunk) == 0 {
+		return nil
+	}
+
+	p.buffer = append(p.buffer, chunk...)
+	packets := make([]*Packet, 0, 4)
+	header := []byte{HeaderByte1, HeaderByte2}
+
+	for len(p.buffer) >= HeaderSize+CRC16Size {
+		headIndex := bytes.Index(p.buffer, header)
+		if headIndex < 0 {
+			p.buffer = p.buffer[:0]
+			break
+		}
+		if headIndex > 0 {
+			p.buffer = p.buffer[headIndex:]
+		}
+		if len(p.buffer) < HeaderSize+CRC16Size {
+			break
+		}
+
+		lengthField := binary.BigEndian.Uint32(p.buffer[19:23])
+		packetLength := HeaderSize + int(lengthField)
+		if packetLength < HeaderSize+CRC16Size || packetLength > MaxFrameSize {
+			packets = append(packets, &Packet{
+				Raw:        append([]byte(nil), p.buffer[:minInt(len(p.buffer), HeaderSize+32)]...),
+				ParseError: fmt.Sprintf("invalid frame length %d", lengthField),
+			})
+			p.buffer = p.buffer[2:]
+			continue
+		}
+		if len(p.buffer) < packetLength {
+			break
+		}
+
+		raw := append([]byte(nil), p.buffer[:packetLength]...)
+		p.buffer = p.buffer[packetLength:]
+
+		pkt, err := parsePacketBuffer(raw)
+		if err != nil {
+			packets = append(packets, &Packet{
+				Raw:        raw[:minInt(len(raw), HeaderSize+32)],
+				ParseError: err.Error(),
+			})
+			continue
+		}
+		packets = append(packets, pkt)
+	}
+
+	return packets
+}
+
+func parsePacketBuffer(raw []byte) (*Packet, error) {
+	if len(raw) < HeaderSize+CRC16Size {
+		return nil, fmt.Errorf("frame too short")
+	}
+	if raw[0] != HeaderByte1 || raw[1] != HeaderByte2 {
+		return nil, fmt.Errorf("invalid frame head")
+	}
+
+	lengthField := binary.BigEndian.Uint32(raw[19:23])
+	if int(lengthField) != len(raw)-HeaderSize {
+		return nil, fmt.Errorf("frame length mismatch")
+	}
+
+	payloadLen := int(lengthField) - CRC16Size
+	if payloadLen < 0 {
+		return nil, fmt.Errorf("invalid payload length %d", payloadLen)
+	}
+
+	expectedCRC := binary.BigEndian.Uint16(raw[len(raw)-CRC16Size:])
+	actualCRC := CRC16Modbus(raw[:len(raw)-CRC16Size])
+	if expectedCRC != actualCRC {
+		if pkt := tryRecoverUploadPatternCommandFrame(raw, lengthField, expectedCRC, actualCRC); pkt != nil {
+			return pkt, nil
+		}
+		return nil, fmt.Errorf("crc mismatch: expected 0x%04X, got 0x%04X", expectedCRC, actualCRC)
+	}
+
+	pkt := &Packet{
+		Addr1:       binary.BigEndian.Uint32(raw[2:6]),
+		Addr2:       binary.BigEndian.Uint32(raw[6:10]),
+		ParamType:   binary.BigEndian.Uint16(raw[13:15]),
+		ParamNo:     binary.BigEndian.Uint16(raw[15:17]),
+		TotalFrames: raw[17],
+		FrameNo:     raw[18],
+		Data:        append([]byte(nil), raw[HeaderSize:len(raw)-CRC16Size]...),
+		Raw:         raw,
+	}
+	copy(pkt.Reserved[:], raw[10:13])
+	return pkt, nil
+}
+
+func tryRecoverUploadPatternCommandFrame(raw []byte, lengthField uint32, expectedCRC, actualCRC uint16) *Packet {
+	if len(raw) < HeaderSize+CRC16Size {
+		return nil
+	}
+
+	paramType := binary.BigEndian.Uint16(raw[13:15])
+	paramNo := binary.BigEndian.Uint16(raw[15:17])
+	if paramType != PTPattern || paramNo != PNUploadPatternCommand {
+		return nil
+	}
+
+	totalFrames := raw[17]
+	frameNo := raw[18]
+	if totalFrames != 1 || (frameNo != 0 && frameNo != 1) {
+		return nil
+	}
+
+	if lengthField < 2 || lengthField > 256 {
+		return nil
+	}
+
+	recoveredPayload := append([]byte(nil), raw[HeaderSize:]...)
+	if len(recoveredPayload) != int(lengthField) {
+		return nil
+	}
+	if !isLikelyUTF16LEText(recoveredPayload[2:]) {
+		return nil
+	}
+
+	pkt := &Packet{
+		Addr1:       binary.BigEndian.Uint32(raw[2:6]),
+		Addr2:       binary.BigEndian.Uint32(raw[6:10]),
+		ParamType:   paramType,
+		ParamNo:     paramNo,
+		TotalFrames: totalFrames,
+		FrameNo:     frameNo,
+		Data:        recoveredPayload,
+		Raw:         raw,
+		Recovered:   fmt.Sprintf("上传花型指令 CRC 异常，已按无CRC兼容处理（expected 0x%04X, got 0x%04X）", expectedCRC, actualCRC),
+	}
+	copy(pkt.Reserved[:], raw[10:13])
+	return pkt
 }
 
 // BuildPacket 将Packet序列化为字节流（含CRC16）
@@ -143,6 +345,17 @@ func BuildPacket(p *Packet) []byte {
 	binary.BigEndian.PutUint16(buf[HeaderSize+dataLen:], crc)
 
 	return buf
+}
+
+func buildProtocolCommand(paramType, paramNo uint16, data []byte) *Packet {
+	payload := append([]byte(nil), data...)
+	return &Packet{
+		ParamType:   paramType,
+		ParamNo:     paramNo,
+		TotalFrames: 1,
+		FrameNo:     1,
+		Data:        payload,
+	}
 }
 
 // CRC16Modbus 计算CRC16-MODBUS校验值
@@ -201,4 +414,11 @@ func wrapHeaderReadError(err error, sample []byte, bytesRead int) error {
 		return fmt.Errorf("read %d bytes before header match: %w", bytesRead, err)
 	}
 	return fmt.Errorf("read %d bytes before header match, sample=% X: %w", bytesRead, sample, err)
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

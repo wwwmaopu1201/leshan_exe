@@ -3,7 +3,7 @@
     <div class="page-header">
       <div class="page-title-block">
         <h2>设备管理</h2>
-        <p>左侧设备树按分组筛选，右侧统一查看设备状态、分组、备注和批量移动操作。</p>
+        <p>左侧设备树按分组筛选，右侧统一查看设备状态、分组、协议实时信息和批量移动操作。</p>
       </div>
     </div>
 
@@ -152,6 +152,11 @@
             <el-table-column prop="type" label="设备类型" width="110" />
             <el-table-column prop="model" label="机型" width="110" />
             <el-table-column prop="mainboardSn" label="主板编号" min-width="140" />
+            <el-table-column prop="identifiedBy" label="识别方式" width="110">
+              <template slot-scope="{ row }">
+                {{ formatIdentifiedBy(row.identifiedBy) }}
+              </template>
+            </el-table-column>
             <el-table-column label="状态" width="100" align="center">
               <template slot-scope="{ row }">
                 <span :class="['status-pill', getStatusTone(row.status)]">
@@ -159,6 +164,19 @@
                 </span>
               </template>
             </el-table-column>
+            <el-table-column prop="currentPatternName" label="当前花型" min-width="160" show-overflow-tooltip />
+            <el-table-column prop="alarmCode" label="报警码" width="90" align="center" />
+            <el-table-column label="速度" width="120" align="center">
+              <template slot-scope="{ row }">
+                {{ row.currentSpeed || 0 }}/{{ row.maxSpeedValue || 0 }}
+              </template>
+            </el-table-column>
+            <el-table-column label="产量" width="110" align="center">
+              <template slot-scope="{ row }">
+                {{ row.productionCurrent || 0 }}/{{ row.productionTotal || 0 }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="lastProtocolAt" label="最近协议时间" width="170" />
             <el-table-column prop="ip" label="设备 IP" width="130" />
             <el-table-column label="分组" min-width="150">
               <template slot-scope="{ row }">
@@ -696,6 +714,14 @@ export default {
         alarm: 'danger'
       }
       return map[status] || 'info'
+    },
+    formatIdentifiedBy(value) {
+      const map = {
+        protocol: '协议编号',
+        mainboard: '主板号',
+        'ip-pending': 'IP占位'
+      }
+      return map[value] || '-'
     },
     getStatusLabel(status) {
       const map = {

@@ -54,60 +54,11 @@ function crc16CcittFalse(buffer) {
 
 export const PROTOCOL_PRESETS = [
   {
-    id: "le-modbus-lencrc",
-    name: "小端 / CRC16 Modbus / 长度含CRC",
-    byteOrder: "le",
-    crcMode: "modbus",
-    lengthMode: "includeCrc",
-  },
-  {
     id: "be-modbus-lencrc",
     name: "大端 / CRC16 Modbus / 长度含CRC",
     byteOrder: "be",
     crcMode: "modbus",
     lengthMode: "includeCrc",
-  },
-  {
-    id: "le-ccitt-lencrc",
-    name: "小端 / CRC16 CCITT / 长度含CRC",
-    byteOrder: "le",
-    crcMode: "ccitt-false",
-    lengthMode: "includeCrc",
-  },
-  {
-    id: "be-ccitt-lencrc",
-    name: "大端 / CRC16 CCITT / 长度含CRC",
-    byteOrder: "be",
-    crcMode: "ccitt-false",
-    lengthMode: "includeCrc",
-  },
-  {
-    id: "le-arc-lencrc",
-    name: "小端 / CRC16 ARC / 长度含CRC",
-    byteOrder: "le",
-    crcMode: "arc",
-    lengthMode: "includeCrc",
-  },
-  {
-    id: "be-arc-lencrc",
-    name: "大端 / CRC16 ARC / 长度含CRC",
-    byteOrder: "be",
-    crcMode: "arc",
-    lengthMode: "includeCrc",
-  },
-  {
-    id: "le-modbus-lenpayload",
-    name: "小端 / CRC16 Modbus / 长度不含CRC",
-    byteOrder: "le",
-    crcMode: "modbus",
-    lengthMode: "payloadOnly",
-  },
-  {
-    id: "be-modbus-lenpayload",
-    name: "大端 / CRC16 Modbus / 长度不含CRC",
-    byteOrder: "be",
-    crcMode: "modbus",
-    lengthMode: "payloadOnly",
   },
 ];
 

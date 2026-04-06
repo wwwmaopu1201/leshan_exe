@@ -1,7 +1,6 @@
 package service
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/binary"
 	"errors"
@@ -32,6 +31,10 @@ type DeviceConnection struct {
 	lastHeartbeat  time.Time
 	connMgr        *ConnectionManager
 	warnedNoPacket bool
+	stateMu        sync.RWMutex
+	registered     bool
+	registerAt     time.Time
+	loopStopCh     chan struct{}
 	patternMu      sync.Mutex
 	patternPacketC chan *Packet
 }
@@ -52,27 +55,28 @@ func (dc *DeviceConnection) Handle() {
 
 	remoteAddr := dc.conn.RemoteAddr().String()
 	emitTCPLog(dc.db, "info", true, "[TCP] New connection from %s", remoteAddr)
+	dc.startHandshakeLoop()
 
-	bufferedReader := bufio.NewReader(dc.conn)
-	rawReader := newRawCaptureReader(bufferedReader, 96)
+	parser := NewFrameParser()
+	readBuffer := make([]byte, 4096)
 
 	for {
-		rawReader.Reset()
 		_ = dc.conn.SetReadDeadline(time.Now().Add(15 * time.Second))
-		pkt, err := ParsePacket(rawReader)
+		n, err := dc.conn.Read(readBuffer)
 		if err != nil {
 			var netErr net.Error
 			if errors.As(err, &netErr) && netErr.Timeout() {
 				if !dc.warnedNoPacket {
-					snapshot := rawReader.Snapshot()
-					if snapshot.Total == 0 {
+					pendingLen := parser.PendingLen()
+					if pendingLen == 0 {
 						emitTCPLog(dc.db, "warn", true, "[TCP] Connection from %s established, but no protocol packet received within 15s", remoteAddr)
 					} else {
+						snapshot := parser.PendingSnapshot(96)
 						emitTCPLog(dc.db, "warn", true,
 							"[TCP] Connection from %s received %d raw bytes within 15s, but no complete protocol packet was parsed: %s",
 							remoteAddr,
-							snapshot.Total,
-							formatRawCapture(snapshot),
+							pendingLen,
+							packetDataPreview(snapshot, 96),
 						)
 					}
 					dc.warnedNoPacket = true
@@ -80,14 +84,14 @@ func (dc *DeviceConnection) Handle() {
 				continue
 			}
 			if !isConnClosed(err) {
-				snapshot := rawReader.Snapshot()
-				if snapshot.Total > 0 {
+				snapshot := parser.PendingSnapshot(96)
+				if len(snapshot) > 0 {
 					emitTCPLog(dc.db, "error", true,
 						"[TCP] Parse error from %s (device=%s): %v raw=%s",
 						remoteAddr,
 						dc.deviceCode,
 						err,
-						formatRawCapture(snapshot),
+						packetDataPreview(snapshot, 96),
 					)
 				} else {
 					emitTCPLog(dc.db, "error", true, "[TCP] Parse error from %s (device=%s): %v", remoteAddr, dc.deviceCode, err)
@@ -95,26 +99,49 @@ func (dc *DeviceConnection) Handle() {
 			}
 			return
 		}
-		dc.warnedNoPacket = false
-		_ = dc.conn.SetReadDeadline(time.Time{})
-		dc.lastHeartbeat = time.Now()
+		if n <= 0 {
+			continue
+		}
 
-		emitTCPLog(
-			dc.db,
-			"",
-			false,
-			"[TCP] Packet from %s: addr1=%d addr2=%d type=0x%04X no=0x%04X frame=%d/%d len=%d data=%s",
-			remoteAddr,
-			pkt.Addr1,
-			pkt.Addr2,
-			pkt.ParamType,
-			pkt.ParamNo,
-			int(pkt.FrameNo),
-			int(pkt.TotalFrames),
-			len(pkt.Data),
-			packetDataPreview(pkt.Data, 24),
-		)
-		dc.dispatch(pkt)
+		packets := parser.Push(readBuffer[:n])
+		for _, pkt := range packets {
+			if pkt == nil {
+				continue
+			}
+			if pkt.ParseError != "" {
+				emitTCPLog(dc.db, "warn", true,
+					"[TCP] Invalid packet from %s (device=%s): %s raw=%s",
+					remoteAddr,
+					dc.deviceCode,
+					pkt.ParseError,
+					packetDataPreview(pkt.Raw, 96),
+				)
+				continue
+			}
+
+			dc.warnedNoPacket = false
+			dc.lastHeartbeat = time.Now()
+
+			emitTCPLog(
+				dc.db,
+				"",
+				false,
+				"[TCP] Packet from %s: addr1=%d addr2=%d type=0x%04X no=0x%04X frame=%d/%d len=%d data=%s",
+				remoteAddr,
+				pkt.Addr1,
+				pkt.Addr2,
+				pkt.ParamType,
+				pkt.ParamNo,
+				int(pkt.FrameNo),
+				int(pkt.TotalFrames),
+				len(pkt.Data),
+				packetDataPreview(pkt.Data, 24),
+			)
+			if pkt.Recovered != "" {
+				emitTCPLog(dc.db, "warn", true, "[TCP] Packet recovery applied: device=%s remote=%s detail=%s", dc.deviceCode, remoteAddr, pkt.Recovered)
+			}
+			dc.dispatch(pkt)
+		}
 	}
 }
 
@@ -137,10 +164,44 @@ func (dc *DeviceConnection) dispatch(pkt *Packet) {
 		dc.handleHeartbeat(pkt)
 	case pkt.ParamType == PTSewing && pkt.ParamNo == PNSewing:
 		dc.handleSewing(pkt)
+	case pkt.ParamType == PTSewingRange && pkt.ParamNo == PNSewingRange:
+		dc.handleSewingRange(pkt)
+	case pkt.ParamType == PTPatternInfo && pkt.ParamNo == PNPatternInfo:
+		dc.handlePatternInfo(pkt)
+	case pkt.ParamType == PTProductionCount && pkt.ParamNo == PNProductionCount:
+		dc.handleProductionCount(pkt)
+	case pkt.ParamType == PTBottomThreadCount && pkt.ParamNo == PNBottomThreadCount:
+		dc.handleBottomThreadCount(pkt)
+	case pkt.ParamType == PTCurrentSpeed && pkt.ParamNo == PNCurrentSpeed:
+		dc.handleCurrentSpeed(pkt)
+	case pkt.ParamType == PTMaxSpeed && pkt.ParamNo == PNMaxSpeed:
+		dc.handleMaxSpeed(pkt)
+	case pkt.ParamType == PTNeedleCount && pkt.ParamNo == PNNeedleCount:
+		dc.handleNeedleCount(pkt)
+	case pkt.ParamType == PTRealtimeStatus && pkt.ParamNo == PNRealtimeStatus:
+		dc.handleRealtimeStatus(pkt)
+	case pkt.ParamType == PTThreadTrim && pkt.ParamNo == PNThreadTrim:
+		dc.handleThreadTrim(pkt)
+	case pkt.ParamType == PTReadHighPoint && pkt.ParamNo == PNReadHighPoint:
+		dc.handleHighPoint(pkt)
+	case pkt.ParamType == PTReadLowPoint && pkt.ParamNo == PNReadLowPoint:
+		dc.handleLowPoint(pkt)
+	case pkt.ParamType == PTSetHighPoint && pkt.ParamNo == PNSetHighPoint:
+		dc.handleSetHighPoint(pkt)
+	case pkt.ParamType == PTSetLowPoint && pkt.ParamNo == PNSetLowPoint:
+		dc.handleSetLowPoint(pkt)
+	case pkt.ParamType == PTSetSpeed && pkt.ParamNo == PNSetSpeed:
+		dc.handleSetSpeed(pkt)
 	case pkt.ParamType == PTAlarm && pkt.ParamNo == PNAlarm:
 		dc.handleAlarm(pkt)
+	case pkt.ParamType == PTIdleAlarm && pkt.ParamNo == PNIdleAlarm:
+		dc.handleIdleAlarm(pkt)
+	case pkt.ParamType == PTOilPrompt && pkt.ParamNo == PNOilPrompt:
+		dc.handleOilPrompt(pkt)
 	case pkt.ParamType == PTProduction && pkt.ParamNo == PNProduction:
 		dc.handleProduction(pkt)
+	case pkt.ParamType == PTProduction && pkt.ParamNo == PNProductionOld:
+		dc.handleProductionOld(pkt)
 	default:
 		emitTCPLog(dc.db, "warn", true, "[TCP] Unknown command: ParamType=0x%04X ParamNo=0x%04X (device=%s addr1=%d addr2=%d)",
 			pkt.ParamType, pkt.ParamNo, dc.deviceCode, pkt.Addr1, pkt.Addr2)
@@ -193,6 +254,10 @@ func (dc *DeviceConnection) routePatternPacket(pkt *Packet) bool {
 
 // handleRegister 处理注册消息：回复注册确认
 func (dc *DeviceConnection) handleRegister(pkt *Packet) {
+	dc.markRegistered("register")
+	if dc.deviceID == 0 {
+		dc.ensurePlaceholderDevice("register")
+	}
 	emitTCPLog(dc.db, "info", true, "[TCP] Register request from %s addr1=%d addr2=%d len=%d data=%s",
 		dc.conn.RemoteAddr(), pkt.Addr1, pkt.Addr2, len(pkt.Data), packetDataPreview(pkt.Data, 24))
 	dc.send(buildProtocolReply(pkt, nil))
@@ -200,6 +265,7 @@ func (dc *DeviceConnection) handleRegister(pkt *Packet) {
 
 // handleDeviceInfo 处理设备信息：解析型号+编号+名称，upsert到数据库
 func (dc *DeviceConnection) handleDeviceInfo(pkt *Packet) {
+	dc.markRegistered("device-info")
 	if len(pkt.Data) < 8 {
 		emitTCPLog(dc.db, "warn", true, "[TCP] Device info data too short: %d bytes (expected at least 8)", len(pkt.Data))
 		return
@@ -211,9 +277,22 @@ func (dc *DeviceConnection) handleDeviceInfo(pkt *Packet) {
 	deviceCodeNum := binary.BigEndian.Uint32(pkt.Data[4:8])
 	deviceName := normalizeProtocolText(pkt.Data[8:])
 	deviceType, modelName := mapDeviceModel(modelCode)
-	code := fmt.Sprintf("%d", deviceCodeNum)
+	code := strings.TrimSpace(dc.deviceCode)
+	if code == "0" {
+		code = ""
+	}
+	if deviceCodeNum > 0 {
+		code = fmt.Sprintf("%d", deviceCodeNum)
+	}
+	if code == "" {
+		code, _, _, _ = dc.provisionalIdentity()
+	}
 	if deviceName == "" {
-		deviceName = "设备" + code
+		if strings.TrimSpace(dc.deviceName) != "" && !strings.Contains(dc.deviceName, pendingDevicePrefix) {
+			deviceName = strings.TrimSpace(dc.deviceName)
+		} else {
+			deviceName = "设备" + code
+		}
 	}
 
 	ip := extractIP(dc.conn.RemoteAddr().String())
@@ -223,80 +302,36 @@ func (dc *DeviceConnection) handleDeviceInfo(pkt *Packet) {
 	emitTCPLog(dc.db, "info", true,
 		"[TCP] Device info: modelCode=%d code=%s name=%s type=%s model=%s ip=%s flag=%s",
 		modelCode, code, deviceName, deviceType, modelName, ip, mainboardSN)
-
-	var device model.Device
-	err := dc.db.Where("code = ?", code).First(&device).Error
-	switch {
-	case errors.Is(err, gorm.ErrRecordNotFound):
-		device = model.Device{
-			Code:        code,
-			Name:        deviceName,
-			InitialName: deviceName,
-			Type:        deviceType,
-			ModelName:   modelName,
-			MainboardSN: mainboardSN,
-			IP:          ip,
-			Status:      "online",
-			LastOnline:  now,
-		}
-		if err := dc.db.Create(&device).Error; err != nil {
-			emitTCPLog(dc.db, "error", true, "[TCP] Failed to create device %s: %v", code, err)
-			return
-		}
-	case err != nil:
-		emitTCPLog(dc.db, "error", true, "[TCP] Failed to query device %s: %v", code, err)
-		return
-	default:
-		updates := map[string]interface{}{
-			"type":        deviceType,
-			"model_name":  modelName,
-			"ip":          ip,
-			"status":      "online",
-			"last_online": now,
-		}
-		if strings.TrimSpace(device.Name) == "" {
-			updates["name"] = deviceName
-		}
-		if strings.TrimSpace(device.InitialName) == "" {
-			updates["initial_name"] = deviceName
-		}
-		if mainboardSN != "" {
-			updates["mainboard_sn"] = mainboardSN
-		}
-		if err := dc.db.Model(&device).Updates(updates).Error; err != nil {
-			emitTCPLog(dc.db, "error", true, "[TCP] Failed to update device %s: %v", code, err)
-			return
-		}
-	}
-
-	if dc.deviceCode != "" && dc.deviceCode != code && dc.connMgr != nil {
-		dc.connMgr.Unregister(dc.deviceCode, dc)
-	}
-
-	dc.deviceCode = code
-	dc.deviceID = device.ID
 	dc.deviceModel = modelCode
 	dc.deviceName = deviceName
 	dc.lastHeartbeat = now
-	if dc.connMgr != nil {
-		dc.connMgr.Register(code, dc)
+
+	if err := dc.upsertDeviceRecord(code, deviceName, deviceType, modelName, "device-info"); err != nil {
+		emitTCPLog(dc.db, "error", true, "[TCP] Failed to upsert device %s: %v", code, err)
+		return
 	}
 
 	emitTCPLog(dc.db, "info", true,
 		"[TCP] Device registered: code=%s id=%d name=%s modelCode=%d model=%s ip=%s",
-		code, device.ID, deviceName, modelCode, modelName, ip)
+		dc.deviceCode, dc.deviceID, deviceName, modelCode, modelName, ip)
 }
 
 // handleMainboardSN 处理设备标志符，兼容沿用 mainboard_sn 字段存储
 func (dc *DeviceConnection) handleMainboardSN(pkt *Packet) {
+	dc.markRegistered("device-flag")
 	sn := normalizeProtocolText(pkt.Data)
 	dc.deviceFlag = sn
 	if dc.deviceID == 0 {
+		dc.ensurePlaceholderDevice("device-flag")
 		emitTCPLog(dc.db, "info", true, "[TCP] Device flag cached before device registration: flag=%s remote=%s",
 			sn, dc.conn.RemoteAddr())
 		return
 	}
-	if err := dc.db.Model(&model.Device{}).Where("id = ?", dc.deviceID).Update("mainboard_sn", sn).Error; err != nil {
+	if err := dc.db.Model(&model.Device{}).Where("id = ?", dc.deviceID).Updates(map[string]interface{}{
+		"mainboard_sn":     sn,
+		"identified_by":    dc.resolveIdentifiedBy(dc.deviceCode, sn),
+		"last_protocol_at": time.Now(),
+	}).Error; err != nil {
 		emitTCPLog(dc.db, "error", true, "[TCP] Failed to update device flag: device=%s flag=%s err=%v", dc.deviceCode, sn, err)
 		return
 	}
@@ -306,6 +341,10 @@ func (dc *DeviceConnection) handleMainboardSN(pkt *Packet) {
 // handleTimeSync 处理时间同步。
 // 如果设备上传的是合法 BCD 时间，仅记录；若为空或非法，则按测试服务端规则回 8 字节当前时间。
 func (dc *DeviceConnection) handleTimeSync(pkt *Packet) {
+	dc.markRegistered("time-sync")
+	if dc.deviceID == 0 {
+		dc.ensurePlaceholderDevice("time-sync")
+	}
 	if len(pkt.Data) >= 7 {
 		deviceTime, err := parseProtocolBCDDateTime(pkt.Data)
 		if err == nil {
@@ -326,9 +365,11 @@ func (dc *DeviceConnection) handleTimeSync(pkt *Packet) {
 
 // handleHeartbeat 处理心跳：回复固定空包，更新时间
 func (dc *DeviceConnection) handleHeartbeat(pkt *Packet) {
+	dc.markRegistered("heartbeat")
 	dc.lastHeartbeat = time.Now()
 
 	if dc.deviceID == 0 {
+		dc.ensurePlaceholderDevice("heartbeat")
 		emitTCPLog(dc.db, "warn", true, "[TCP] Heartbeat received before device info: remote=%s addr1=%d addr2=%d len=%d",
 			dc.conn.RemoteAddr(), pkt.Addr1, pkt.Addr2, len(pkt.Data))
 	}
@@ -338,6 +379,7 @@ func (dc *DeviceConnection) handleHeartbeat(pkt *Packet) {
 			"last_online": dc.lastHeartbeat,
 			"status":      gorm.Expr("CASE WHEN status = 'offline' THEN 'online' ELSE status END"),
 		})
+		dc.updateDeviceRuntime(map[string]interface{}{})
 	}
 
 	dc.send(buildProtocolReply(pkt, nil))
@@ -345,6 +387,10 @@ func (dc *DeviceConnection) handleHeartbeat(pkt *Packet) {
 
 // handleSewing 处理开始/停止缝制
 func (dc *DeviceConnection) handleSewing(pkt *Packet) {
+	dc.markRegistered("sewing-status")
+	if dc.deviceID == 0 {
+		dc.ensurePlaceholderDevice("sewing-status")
+	}
 	if dc.deviceID == 0 || len(pkt.Data) < 1 {
 		return
 	}
@@ -362,10 +408,219 @@ func (dc *DeviceConnection) handleSewing(pkt *Packet) {
 	}
 
 	dc.db.Model(&model.Device{}).Where("id = ?", dc.deviceID).Update("status", status)
+	dc.updateDeviceRuntime(map[string]interface{}{"status": status})
+}
+
+func (dc *DeviceConnection) handleSewingRange(pkt *Packet) {
+	dc.markRegistered("sewing-range")
+	if dc.deviceID == 0 {
+		dc.ensurePlaceholderDevice("sewing-range")
+	}
+	if len(pkt.Data) < 8 {
+		return
+	}
+	xRange := int32(binary.BigEndian.Uint32(pkt.Data[0:4]))
+	yRange := int32(binary.BigEndian.Uint32(pkt.Data[4:8]))
+	dc.updateDeviceRuntime(map[string]interface{}{
+		"sewing_range_x": int(xRange),
+		"sewing_range_y": int(yRange),
+	})
+	emitTCPLog(dc.db, "info", false, "[TCP] Device sewing range: device=%s x=%d y=%d", dc.deviceCode, xRange, yRange)
+}
+
+func (dc *DeviceConnection) handlePatternInfo(pkt *Packet) {
+	dc.markRegistered("pattern-info")
+	if dc.deviceID == 0 {
+		dc.ensurePlaceholderDevice("pattern-info")
+	}
+	if len(pkt.Data) < 2 {
+		return
+	}
+	patternNo := binary.BigEndian.Uint16(pkt.Data[0:2])
+	patternName := normalizeProtocolText(pkt.Data[2:])
+	dc.updateDeviceRuntime(map[string]interface{}{
+		"current_pattern_no":   uint(patternNo),
+		"current_pattern_name": patternName,
+	})
+	emitTCPLog(dc.db, "info", false, "[TCP] Device pattern info: device=%s patternNo=%d patternName=%s", dc.deviceCode, patternNo, patternName)
+}
+
+func (dc *DeviceConnection) handleProductionCount(pkt *Packet) {
+	dc.markRegistered("production-count")
+	if dc.deviceID == 0 {
+		dc.ensurePlaceholderDevice("production-count")
+	}
+	if len(pkt.Data) < 8 {
+		return
+	}
+	totalCount := binary.BigEndian.Uint32(pkt.Data[0:4])
+	currentCount := binary.BigEndian.Uint32(pkt.Data[4:8])
+	dc.updateDeviceRuntime(map[string]interface{}{
+		"production_total":   uint(totalCount),
+		"production_current": uint(currentCount),
+	})
+	emitTCPLog(dc.db, "info", false, "[TCP] Device production count: device=%s total=%d current=%d", dc.deviceCode, totalCount, currentCount)
+}
+
+func (dc *DeviceConnection) handleBottomThreadCount(pkt *Packet) {
+	dc.markRegistered("bottom-thread-count")
+	if dc.deviceID == 0 {
+		dc.ensurePlaceholderDevice("bottom-thread-count")
+	}
+	if len(pkt.Data) < 8 {
+		return
+	}
+	totalLength := binary.BigEndian.Uint32(pkt.Data[0:4])
+	remainLength := binary.BigEndian.Uint32(pkt.Data[4:8])
+	dc.updateDeviceRuntime(map[string]interface{}{
+		"bottom_thread_total":  uint(totalLength),
+		"bottom_thread_remain": uint(remainLength),
+	})
+	emitTCPLog(dc.db, "info", false, "[TCP] Device bottom thread count: device=%s total=%d remain=%d", dc.deviceCode, totalLength, remainLength)
+}
+
+func (dc *DeviceConnection) handleCurrentSpeed(pkt *Packet) {
+	dc.markRegistered("current-speed")
+	if dc.deviceID == 0 {
+		dc.ensurePlaceholderDevice("current-speed")
+	}
+	if len(pkt.Data) < 2 {
+		return
+	}
+	currentSpeed := binary.BigEndian.Uint16(pkt.Data[0:2])
+	dc.updateDeviceRuntime(map[string]interface{}{"current_speed": uint(currentSpeed)})
+	emitTCPLog(dc.db, "info", false, "[TCP] Device current speed: device=%s speed=%d", dc.deviceCode, currentSpeed)
+}
+
+func (dc *DeviceConnection) handleMaxSpeed(pkt *Packet) {
+	dc.markRegistered("max-speed")
+	if dc.deviceID == 0 {
+		dc.ensurePlaceholderDevice("max-speed")
+	}
+	if len(pkt.Data) < 2 {
+		return
+	}
+	maxSpeed := binary.BigEndian.Uint16(pkt.Data[0:2])
+	dc.updateDeviceRuntime(map[string]interface{}{"max_speed_value": uint(maxSpeed)})
+	emitTCPLog(dc.db, "info", false, "[TCP] Device max speed: device=%s speed=%d", dc.deviceCode, maxSpeed)
+}
+
+func (dc *DeviceConnection) handleNeedleCount(pkt *Packet) {
+	dc.markRegistered("needle-count")
+	if dc.deviceID == 0 {
+		dc.ensurePlaceholderDevice("needle-count")
+	}
+	if len(pkt.Data) < 4 {
+		return
+	}
+	needleCount := binary.BigEndian.Uint32(pkt.Data[0:4])
+	dc.updateDeviceRuntime(map[string]interface{}{"needle_count_value": uint(needleCount)})
+	emitTCPLog(dc.db, "info", false, "[TCP] Device needle count: device=%s count=%d", dc.deviceCode, needleCount)
+}
+
+func (dc *DeviceConnection) handleRealtimeStatus(pkt *Packet) {
+	dc.markRegistered("realtime-status")
+	if dc.deviceID == 0 {
+		dc.ensurePlaceholderDevice("realtime-status")
+	}
+	if len(pkt.Data) < 3 {
+		return
+	}
+	status := pkt.Data[0]
+	patternNo := binary.BigEndian.Uint16(pkt.Data[1:3])
+	patternName := normalizeProtocolText(pkt.Data[3:])
+	dc.updateDeviceRuntime(map[string]interface{}{
+		"current_pattern_no":   uint(patternNo),
+		"current_pattern_name": patternName,
+	})
+	emitTCPLog(dc.db, "info", false,
+		"[TCP] Device realtime status: device=%s status=%d patternNo=%d patternName=%s",
+		dc.deviceCode,
+		status,
+		patternNo,
+		patternName,
+	)
+}
+
+func (dc *DeviceConnection) handleThreadTrim(pkt *Packet) {
+	dc.markRegistered("thread-trim")
+	if dc.deviceID == 0 {
+		dc.ensurePlaceholderDevice("thread-trim")
+	}
+	emitTCPLog(dc.db, "info", false, "[TCP] Device thread trim complete: device=%s", dc.deviceCode)
+}
+
+func (dc *DeviceConnection) handleHighPoint(pkt *Packet) {
+	dc.markRegistered("high-point")
+	if dc.deviceID == 0 {
+		dc.ensurePlaceholderDevice("high-point")
+	}
+	if len(pkt.Data) < 2 {
+		return
+	}
+	value := binary.BigEndian.Uint16(pkt.Data[0:2])
+	dc.updateDeviceRuntime(map[string]interface{}{"high_point_value": uint(value)})
+	emitTCPLog(dc.db, "info", false, "[TCP] Device high point: device=%s value=%d", dc.deviceCode, value)
+}
+
+func (dc *DeviceConnection) handleLowPoint(pkt *Packet) {
+	dc.markRegistered("low-point")
+	if dc.deviceID == 0 {
+		dc.ensurePlaceholderDevice("low-point")
+	}
+	if len(pkt.Data) < 2 {
+		return
+	}
+	value := binary.BigEndian.Uint16(pkt.Data[0:2])
+	dc.updateDeviceRuntime(map[string]interface{}{"low_point_value": uint(value)})
+	emitTCPLog(dc.db, "info", false, "[TCP] Device low point: device=%s value=%d", dc.deviceCode, value)
+}
+
+func (dc *DeviceConnection) handleSetHighPoint(pkt *Packet) {
+	dc.markRegistered("set-high-point")
+	if dc.deviceID == 0 {
+		dc.ensurePlaceholderDevice("set-high-point")
+	}
+	if len(pkt.Data) >= 2 {
+		value := binary.BigEndian.Uint16(pkt.Data[0:2])
+		dc.updateDeviceRuntime(map[string]interface{}{"high_point_value": uint(value)})
+		emitTCPLog(dc.db, "info", false, "[TCP] Device set high point request: device=%s value=%d", dc.deviceCode, value)
+	}
+	dc.send(buildProtocolReply(pkt, []byte{0x00}))
+}
+
+func (dc *DeviceConnection) handleSetLowPoint(pkt *Packet) {
+	dc.markRegistered("set-low-point")
+	if dc.deviceID == 0 {
+		dc.ensurePlaceholderDevice("set-low-point")
+	}
+	if len(pkt.Data) >= 2 {
+		value := binary.BigEndian.Uint16(pkt.Data[0:2])
+		dc.updateDeviceRuntime(map[string]interface{}{"low_point_value": uint(value)})
+		emitTCPLog(dc.db, "info", false, "[TCP] Device set low point request: device=%s value=%d", dc.deviceCode, value)
+	}
+	dc.send(buildProtocolReply(pkt, []byte{0x00}))
+}
+
+func (dc *DeviceConnection) handleSetSpeed(pkt *Packet) {
+	dc.markRegistered("set-speed")
+	if dc.deviceID == 0 {
+		dc.ensurePlaceholderDevice("set-speed")
+	}
+	if len(pkt.Data) >= 2 {
+		value := binary.BigEndian.Uint16(pkt.Data[0:2])
+		dc.updateDeviceRuntime(map[string]interface{}{"current_speed": uint(value)})
+		emitTCPLog(dc.db, "info", false, "[TCP] Device set speed request: device=%s value=%d", dc.deviceCode, value)
+	}
+	dc.send(buildProtocolReply(pkt, []byte{0x00}))
 }
 
 // handleAlarm 处理报警消息
 func (dc *DeviceConnection) handleAlarm(pkt *Packet) {
+	dc.markRegistered("alarm")
+	if dc.deviceID == 0 {
+		dc.ensurePlaceholderDevice("alarm")
+	}
 	if dc.deviceID == 0 || len(pkt.Data) < 2 {
 		return
 	}
@@ -375,6 +630,10 @@ func (dc *DeviceConnection) handleAlarm(pkt *Packet) {
 	if alarmCode != 0 {
 		// 报警触发
 		dc.db.Model(&model.Device{}).Where("id = ?", dc.deviceID).Update("status", "alarm")
+		dc.updateDeviceRuntime(map[string]interface{}{
+			"status":     "alarm",
+			"alarm_code": fmt.Sprintf("%d", alarmCode),
+		})
 		dc.db.Create(&model.AlarmRecord{
 			DeviceID:  dc.deviceID,
 			AlarmCode: fmt.Sprintf("%d", alarmCode),
@@ -386,6 +645,10 @@ func (dc *DeviceConnection) handleAlarm(pkt *Packet) {
 	} else {
 		// 报警解除
 		dc.db.Model(&model.Device{}).Where("id = ?", dc.deviceID).Update("status", "online")
+		dc.updateDeviceRuntime(map[string]interface{}{
+			"status":     "online",
+			"alarm_code": "",
+		})
 		// 关闭未解决的报警
 		now := time.Now()
 		dc.db.Model(&model.AlarmRecord{}).
@@ -398,8 +661,36 @@ func (dc *DeviceConnection) handleAlarm(pkt *Packet) {
 	}
 }
 
+func (dc *DeviceConnection) handleIdleAlarm(pkt *Packet) {
+	dc.markRegistered("idle-alarm")
+	if dc.deviceID == 0 {
+		dc.ensurePlaceholderDevice("idle-alarm")
+	}
+	if len(pkt.Data) < 3 {
+		return
+	}
+	minutes := binary.BigEndian.Uint16(pkt.Data[0:2])
+	status := pkt.Data[2]
+	emitTCPLog(dc.db, "info", false, "[TCP] Device idle alarm: device=%s minutes=%d status=%d", dc.deviceCode, minutes, status)
+}
+
+func (dc *DeviceConnection) handleOilPrompt(pkt *Packet) {
+	dc.markRegistered("oil-prompt")
+	if dc.deviceID == 0 {
+		dc.ensurePlaceholderDevice("oil-prompt")
+	}
+	if len(pkt.Data) < 1 {
+		return
+	}
+	emitTCPLog(dc.db, "info", false, "[TCP] Device oil prompt: device=%s prompt=%d", dc.deviceCode, pkt.Data[0])
+}
+
 // handleProduction 处理生产数据
 func (dc *DeviceConnection) handleProduction(pkt *Packet) {
+	dc.markRegistered("production-new")
+	if dc.deviceID == 0 {
+		dc.ensurePlaceholderDevice("production-new")
+	}
 	production, err := parseProductionDataNewPayload(pkt.Data)
 	if err != nil {
 		emitTCPLog(dc.db, "warn", true, "[TCP] Production data parse failed: %v data=%s", err, packetDataPreview(pkt.Data, 32))
@@ -421,6 +712,10 @@ func (dc *DeviceConnection) handleProduction(pkt *Packet) {
 	)
 
 	dc.send(buildProtocolReply(pkt, []byte{0x00}))
+	dc.updateDeviceRuntime(map[string]interface{}{
+		"current_pattern_no":   uint(production.PatternID),
+		"current_pattern_name": production.PatternName,
+	})
 
 	if dc.deviceID == 0 {
 		emitTCPLog(dc.db, "warn", true, "[TCP] Production data received before device registration: payloadDeviceId=%d remote=%s",
@@ -459,6 +754,37 @@ func (dc *DeviceConnection) handleProduction(pkt *Packet) {
 	}
 }
 
+func (dc *DeviceConnection) handleProductionOld(pkt *Packet) {
+	dc.markRegistered("production-old")
+	if dc.deviceID == 0 {
+		dc.ensurePlaceholderDevice("production-old")
+	}
+	production, err := parseProductionDataOldPayload(pkt.Data)
+	if err != nil {
+		emitTCPLog(dc.db, "warn", true, "[TCP] Production old data parse failed: %v data=%s", err, packetDataPreview(pkt.Data, 32))
+		return
+	}
+
+	emitTCPLog(dc.db, "info", true,
+		"[TCP] Production old data: device=%s payloadDeviceId=%d patternId=%d patternName=%s start=%s startNeedle=%d end=%s endNeedle=%d stopReason=%d",
+		dc.deviceCode,
+		production.DeviceCode,
+		production.PatternID,
+		production.PatternName,
+		production.StartTime.Format("2006-01-02 15:04:05"),
+		production.StartNeedle,
+		production.EndTime.Format("2006-01-02 15:04:05"),
+		production.EndNeedle,
+		production.StopReason,
+	)
+
+	dc.send(buildProtocolReply(pkt, []byte{0x00}))
+	dc.updateDeviceRuntime(map[string]interface{}{
+		"current_pattern_no":   uint(production.PatternID),
+		"current_pattern_name": production.PatternName,
+	})
+}
+
 // send 发送数据包
 func (dc *DeviceConnection) send(pkt *Packet) {
 	_ = dc.writePacket(pkt)
@@ -475,6 +801,7 @@ func (dc *DeviceConnection) writePacket(pkt *Packet) error {
 
 // cleanup 连接关闭时清理
 func (dc *DeviceConnection) cleanup() {
+	dc.stopHandshakeLoop()
 	dc.conn.Close()
 	if dc.deviceCode != "" {
 		if dc.connMgr != nil && !dc.connMgr.Unregister(dc.deviceCode, dc) {
@@ -537,14 +864,21 @@ func normalizeProtocolText(data []byte) string {
 	}
 
 	if utf8.Valid(raw) {
-		return strings.TrimSpace(string(raw))
+		text := strings.TrimSpace(string(raw))
+		if looksReasonableProtocolText(text) {
+			return text
+		}
 	}
 
 	if decoded := decodeGB18030Text(raw); decoded != "" {
 		return decoded
 	}
 
-	return strings.TrimSpace(trimNullBytes(raw))
+	fallback := strings.TrimSpace(trimNullBytes(raw))
+	if looksReasonableProtocolText(fallback) {
+		return fallback
+	}
+	return ""
 }
 
 func isLikelyUTF16LEText(data []byte) bool {
@@ -720,6 +1054,17 @@ type productionDataNew struct {
 	StopReason  uint16
 }
 
+type productionDataOld struct {
+	DeviceCode  uint32
+	PatternID   uint16
+	PatternName string
+	StartTime   time.Time
+	StartNeedle uint32
+	EndTime     time.Time
+	EndNeedle   uint32
+	StopReason  uint16
+}
+
 func parseProductionDataNewPayload(data []byte) (*productionDataNew, error) {
 	if len(data) < 82 {
 		return nil, fmt.Errorf("payload too short: %d", len(data))
@@ -744,6 +1089,34 @@ func parseProductionDataNewPayload(data []byte) (*productionDataNew, error) {
 		EndNeedle:   binary.BigEndian.Uint32(data[68:72]),
 		UserID:      normalizeProtocolText(data[72:80]),
 		StopReason:  binary.BigEndian.Uint16(data[80:82]),
+	}, nil
+}
+
+func parseProductionDataOldPayload(data []byte) (*productionDataOld, error) {
+	const tailBytes = 7 + 4 + 7 + 4 + 2
+	if len(data) < 6+tailBytes {
+		return nil, fmt.Errorf("payload too short: %d", len(data))
+	}
+
+	patternNameEnd := len(data) - tailBytes
+	startTime, err := parseProtocolBCDDateTime(data[patternNameEnd : patternNameEnd+7])
+	if err != nil {
+		return nil, fmt.Errorf("invalid start time: %w", err)
+	}
+	endTime, err := parseProtocolBCDDateTime(data[patternNameEnd+11 : patternNameEnd+18])
+	if err != nil {
+		return nil, fmt.Errorf("invalid end time: %w", err)
+	}
+
+	return &productionDataOld{
+		DeviceCode:  binary.BigEndian.Uint32(data[0:4]),
+		PatternID:   binary.BigEndian.Uint16(data[4:6]),
+		PatternName: normalizeProtocolText(data[6:patternNameEnd]),
+		StartTime:   startTime,
+		StartNeedle: binary.BigEndian.Uint32(data[patternNameEnd+7 : patternNameEnd+11]),
+		EndTime:     endTime,
+		EndNeedle:   binary.BigEndian.Uint32(data[patternNameEnd+18 : patternNameEnd+22]),
+		StopReason:  binary.BigEndian.Uint16(data[patternNameEnd+22 : patternNameEnd+24]),
 	}, nil
 }
 

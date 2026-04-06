@@ -92,13 +92,13 @@ func (w *DownloadTaskWorker) startWaitingTasks() error {
 		}
 
 		var device model.Device
-		if err := w.db.Select("id", "code", "status").First(&device, task.DeviceID).Error; err != nil {
-			continue
-		}
-		if device.Status == "working" || device.Status == "offline" {
+		if err := w.db.Select("id", "code", "name", "status", "ip", "mainboard_sn").First(&device, task.DeviceID).Error; err != nil {
 			continue
 		}
 		if !w.transfer.IsDeviceConnected(device) {
+			continue
+		}
+		if device.Status == "working" {
 			continue
 		}
 

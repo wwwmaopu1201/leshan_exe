@@ -19,6 +19,11 @@ const (
 	transferTypeDownload = 2
 )
 
+type deleteAttempt struct {
+	label   string
+	options DeletePatternOptions
+}
+
 type PatternTransferService struct {
 	db      *gorm.DB
 	connMgr *ConnectionManager
@@ -32,10 +37,8 @@ func NewPatternTransferService(db *gorm.DB, connMgr *ConnectionManager) *Pattern
 }
 
 func (s *PatternTransferService) IsDeviceConnected(device model.Device) bool {
-	if s == nil || s.connMgr == nil {
-		return false
-	}
-	return s.connMgr.Get(strings.TrimSpace(device.Code)) != nil
+	_, err := s.getDeviceConnection(device)
+	return err == nil
 }
 
 func (s *PatternTransferService) RefreshDevicePatternFiles(device model.Device) ([]model.DevicePatternFile, error) {
@@ -62,7 +65,8 @@ func (s *PatternTransferService) RefreshDevicePatternFiles(device model.Device) 
 	frameEntries := make(map[int][]PatternListEntry)
 	for len(frameEntries) == 0 || len(frameEntries) < totalFrames {
 		pkt, err := waitPatternPacket(ctx, ch, func(pkt *Packet) bool {
-			return pkt.ParamType == PTPattern && pkt.ParamNo == PNReadPatternList
+			return pkt.ParamType == PTPattern &&
+				(pkt.ParamNo == PNReadPatternList || pkt.ParamNo == PNRequestServerList)
 		})
 		if err != nil {
 			return nil, err
@@ -74,7 +78,7 @@ func (s *PatternTransferService) RefreshDevicePatternFiles(device model.Device) 
 				totalFrames = 1
 			}
 		}
-		frameEntries[int(pkt.FrameNo)] = parsePatternListPayload(pkt.Data)
+		frameEntries[int(pkt.FrameNo)] = parsePatternListEntries(pkt)
 	}
 
 	entries := make([]PatternListEntry, 0)
@@ -122,29 +126,47 @@ func (s *PatternTransferService) DeleteDevicePatternFile(device model.Device, fi
 	}
 	defer cleanup()
 
-	if err := dc.writePacket(buildDeletePatternCommand(file.PatternNo, file.FileName)); err != nil {
-		return err
+	attempts := buildDeleteAttempts(file)
+	if len(attempts) == 0 {
+		return fmt.Errorf("device delete request has no usable attempt")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-	defer cancel()
+	var lastResult byte
+	for _, attempt := range attempts {
+		emitTCPLog(s.db, "info", true,
+			"[TCP] Delete device pattern attempt: device=%s patternNo=%d file=%s mode=%s includeId=%t label=%s",
+			device.Code,
+			file.PatternNo,
+			file.FileName,
+			attempt.options.NameEncoding,
+			attempt.options.IncludeID,
+			attempt.label,
+		)
 
-	pkt, err := waitPatternPacket(ctx, ch, func(pkt *Packet) bool {
-		return pkt.ParamType == PTPattern && pkt.ParamNo == PNDeletePatternFile
-	})
-	if err != nil {
-		return err
+		if err := dc.writePacket(buildDeletePatternCommandWithOptions(attempt.options)); err != nil {
+			return err
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		pkt, err := waitPatternPacket(ctx, ch, func(pkt *Packet) bool {
+			return pkt.ParamType == PTPattern && pkt.ParamNo == PNDeletePatternFile
+		})
+		cancel()
+		if err != nil {
+			return err
+		}
+
+		result, ok := parseDeletePatternResult(pkt.Data)
+		if !ok {
+			return fmt.Errorf("device delete response invalid")
+		}
+		lastResult = result
+		if result == 0 {
+			return nil
+		}
 	}
 
-	result, ok := parseDeletePatternResult(pkt.Data)
-	if !ok {
-		return fmt.Errorf("device delete response invalid")
-	}
-	if result != 0 {
-		return fmt.Errorf("device delete rejected with result=%d", result)
-	}
-
-	return nil
+	return fmt.Errorf("device delete failed: %s", describeDeletePatternResult(lastResult))
 }
 
 func (s *PatternTransferService) UploadPatternFromDevice(device model.Device, file model.DevicePatternFile, userID uint) (*model.Pattern, error) {
@@ -210,7 +232,7 @@ func (s *PatternTransferService) UploadPatternFromDevice(device model.Device, fi
 				}
 			}
 			frames[int(pkt.FrameNo)] = append([]byte(nil), pkt.Data...)
-			if err := dc.writePacket(buildPatternResult(PNUploadPatternData, 0, pkt.TotalFrames, pkt.FrameNo)); err != nil {
+			if err := dc.writePacket(buildUploadPatternDataAck(pkt.TotalFrames, pkt.FrameNo, 0)); err != nil {
 				return nil, err
 			}
 		}
@@ -268,6 +290,57 @@ func (s *PatternTransferService) UploadPatternFromDevice(device model.Device, fi
 	}
 
 	return pattern, nil
+}
+
+func buildDeleteAttempts(file model.DevicePatternFile) []deleteAttempt {
+	fileName := strings.TrimSpace(file.FileName)
+	attempts := make([]deleteAttempt, 0, 5)
+
+	push := func(label string, options DeletePatternOptions) {
+		if !options.IncludeID && strings.TrimSpace(options.FileName) == "" {
+			return
+		}
+		if options.IncludeID && options.PatternNo == 0 && strings.TrimSpace(options.FileName) == "" {
+			return
+		}
+		attempts = append(attempts, deleteAttempt{
+			label:   label,
+			options: options,
+		})
+	}
+
+	push("纯名称 Unicode变长", DeletePatternOptions{
+		PatternNo:    file.PatternNo,
+		FileName:     fileName,
+		NameEncoding: "unicode",
+		IncludeID:    false,
+	})
+	push("编号+名称 Unicode变长", DeletePatternOptions{
+		PatternNo:    file.PatternNo,
+		FileName:     fileName,
+		NameEncoding: "unicode",
+		IncludeID:    true,
+	})
+	push("编号+名称 Unicode固定44字节", DeletePatternOptions{
+		PatternNo:    file.PatternNo,
+		FileName:     fileName,
+		NameEncoding: "unicodeFixed",
+		IncludeID:    true,
+	})
+	push("纯名称 Unicode固定44字节", DeletePatternOptions{
+		PatternNo:    file.PatternNo,
+		FileName:     fileName,
+		NameEncoding: "unicodeFixed",
+		IncludeID:    false,
+	})
+	push("纯名称 兼容固定44字节", DeletePatternOptions{
+		PatternNo:    file.PatternNo,
+		FileName:     fileName,
+		NameEncoding: "compatibleFixed",
+		IncludeID:    false,
+	})
+
+	return attempts
 }
 
 func (s *PatternTransferService) ExecuteDownloadTask(taskID uint) error {
@@ -406,12 +479,16 @@ func (s *PatternTransferService) ExecuteDownloadTask(taskID uint) error {
 		return err
 	}
 
-	result, ok := parseSingleByteResult(pkt.Data)
+	result, echoedName, ok := parseDownloadPatternFinalResult(pkt.Data)
 	if !ok {
 		return fmt.Errorf("device final download response invalid")
 	}
 	if result != 0 {
 		return fmt.Errorf("device final download result=%d", result)
+	}
+	if echoedName != "" {
+		emitTCPLog(s.db, "info", true, "[TCP] Device download completed: device=%s pattern=%s echoed=%s",
+			device.Code, patternName, echoedName)
 	}
 
 	return s.updateDownloadTask(task.ID, map[string]interface{}{
@@ -426,16 +503,95 @@ func (s *PatternTransferService) getDeviceConnection(device model.Device) (*Devi
 		return nil, fmt.Errorf("pattern transfer service unavailable")
 	}
 
-	code := strings.TrimSpace(device.Code)
-	if code == "" {
-		return nil, fmt.Errorf("device code is empty")
+	if dc := s.findDeviceConnection(device); dc != nil {
+		return dc, nil
 	}
 
-	dc := s.connMgr.Get(code)
-	if dc == nil {
+	name := strings.TrimSpace(device.Name)
+	code := strings.TrimSpace(device.Code)
+	switch {
+	case name != "" && code != "":
+		return nil, fmt.Errorf("device %s(%s) is not connected", name, code)
+	case name != "":
+		return nil, fmt.Errorf("device %s is not connected", name)
+	case code != "":
 		return nil, fmt.Errorf("device %s is not connected", code)
+	case device.ID > 0:
+		return nil, fmt.Errorf("device #%d is not connected", device.ID)
+	default:
+		return nil, fmt.Errorf("device is not connected")
 	}
-	return dc, nil
+}
+
+func (s *PatternTransferService) findDeviceConnection(device model.Device) *DeviceConnection {
+	if s == nil || s.connMgr == nil {
+		return nil
+	}
+
+	code := strings.TrimSpace(device.Code)
+	mainboardSN := strings.TrimSpace(device.MainboardSN)
+	ip := strings.TrimSpace(device.IP)
+	pendingCode := pendingDeviceCodeForIP(ip)
+
+	if code != "" {
+		if dc := s.connMgr.Get(code); dc != nil {
+			return dc
+		}
+	}
+	if pendingCode != "" && pendingCode != code {
+		if dc := s.connMgr.Get(pendingCode); dc != nil {
+			return dc
+		}
+	}
+
+	var matchedByMainboard *DeviceConnection
+	var matchedByIP *DeviceConnection
+	for _, dc := range s.connMgr.GetAll() {
+		if dc == nil {
+			continue
+		}
+
+		if device.ID > 0 && dc.deviceID == device.ID {
+			return dc
+		}
+
+		dcCode := strings.TrimSpace(dc.deviceCode)
+		if code != "" && dcCode == code {
+			return dc
+		}
+		if pendingCode != "" && dcCode == pendingCode {
+			matchedByIP = dc
+		}
+
+		if mainboardSN != "" && strings.TrimSpace(dc.deviceFlag) == mainboardSN {
+			matchedByMainboard = dc
+		}
+		if ip != "" && extractIP(dc.conn.RemoteAddr().String()) == ip {
+			matchedByIP = dc
+		}
+	}
+
+	if matchedByMainboard != nil {
+		return matchedByMainboard
+	}
+	return matchedByIP
+}
+
+func parsePatternListEntries(pkt *Packet) []PatternListEntry {
+	if pkt == nil {
+		return []PatternListEntry{}
+	}
+
+	includeID := pkt.ParamNo != PNRequestServerList
+	entries := parsePatternListPayloadWithOptions(pkt.Data, includeID)
+	if len(entries) > 0 {
+		return entries
+	}
+
+	if includeID {
+		return parsePatternListPayloadWithOptions(pkt.Data, false)
+	}
+	return parsePatternListPayloadWithOptions(pkt.Data, true)
 }
 
 func waitPatternPacket(ctx context.Context, ch <-chan *Packet, match func(*Packet) bool) (*Packet, error) {

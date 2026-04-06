@@ -1,4 +1,4 @@
-const configFieldIds = ["preferredProtocolPresetId"];
+const configFieldIds = ["verboseProtocolLogs"];
 const controlFieldIds = [
   "selectedSessionId",
   "setHighPointValue",
@@ -73,12 +73,24 @@ function setFieldValue(id, value, skipActive = true) {
     return;
   }
 
-  input.value = value ?? "";
+  if (input.type === "checkbox") {
+    input.checked = Boolean(value);
+  } else {
+    input.value = value ?? "";
+  }
 }
 
 function getFieldValue(id) {
   const input = getInput(id);
-  return input ? input.value : "";
+  if (!input) {
+    return null;
+  }
+
+  if (input.type === "checkbox") {
+    return input.checked;
+  }
+
+  return input.value;
 }
 
 function applyFormValues(values, skipActive = true) {
@@ -111,7 +123,7 @@ function renderSelectOptions(selectId, options, selectedValue) {
 
 function collectConfigPayload() {
   return {
-    preferredProtocolPresetId: String(getFieldValue("preferredProtocolPresetId") || ""),
+    verboseProtocolLogs: Boolean(getFieldValue("verboseProtocolLogs")),
   };
 }
 
@@ -148,7 +160,7 @@ function ensureSelectedSessionId(state) {
     return currentId;
   }
 
-  const fallbackId = state.sessions[0]?.id || "";
+  const fallbackId = state.sessions.find((item) => item.connected)?.id || state.sessions[0]?.id || "";
   setFieldValue("selectedSessionId", fallbackId, false);
   writeStorageJson(storageKeys.controls, collectControlPayload());
   return fallbackId || null;
@@ -197,10 +209,9 @@ function formatProductionData(data) {
 }
 
 function renderStatus(state) {
-  const preset =
-    state.protocolPresets.find((item) => item.id === state.preferredProtocolPresetId)?.name ||
-    state.preferredProtocolPresetId;
-  document.querySelector("#status").textContent = `状态: 在线会话 ${state.sessions.length} | 默认发送协议: ${preset} | 时区: ${state.timeZone}`;
+  const logLevel = state.verboseProtocolLogs ? "详细" : "摘要";
+  document.querySelector("#status").textContent =
+    `状态: 在线会话 ${state.activeSessionCount ?? 0} | 离线判定 ${Math.round((state.inactivityTimeoutMs || 0) / 1000)}秒 | 运行模式: 对接真实上位机 | 协议: 大端 / CRC16 Modbus / 长度含CRC | 协议日志: ${logLevel} | 时区: ${state.timeZone}`;
 }
 
 function renderSessionTable(state, selectedSession) {
@@ -221,7 +232,7 @@ function renderSessionTable(state, selectedSession) {
             <span class="muted">${session.remoteAddress}:${session.remotePort}</span>
           </td>
           <td>
-            ${session.registered ? "已注册" : "未注册"}<br />
+            ${session.connected ? "在线" : "离线"} / ${session.registered ? "已注册" : "未注册"}<br />
             <span class="muted">最后消息: ${session.lastMessageAt || "-"}</span>
           </td>
           <td>${formatPatternInfo(session.deviceInfo.patternInfo)}</td>
@@ -253,7 +264,10 @@ function renderSessionSummary(session) {
   const items = [
     ["会话", `#${session.id}`],
     ["远端地址", `${session.remoteAddress}:${session.remotePort}`],
+    ["连接状态", session.connected ? "在线" : "离线"],
     ["连接时间", session.connectedAt || "-"],
+    ["断开时间", session.disconnectedAt || "-"],
+    ["断开原因", session.disconnectReason || "-"],
     ["注册状态", session.registered ? "已注册" : "未注册"],
     ["最后心跳", session.lastHeartbeatAt || "-"],
     ["最后时间同步", session.lastTimeSyncAt || session.deviceInfo.timeSyncValue || "-"],
@@ -327,6 +341,20 @@ function renderTransferSummary(session) {
   }
 
   const summary = session.transferSummary;
+  const formatLastResult = (result) => {
+    if (!result) {
+      return "无";
+    }
+
+    const directionLabels = {
+      download: "下载",
+      upload: "上传",
+      delete: "删除",
+      list: "列表",
+    };
+
+    return `${directionLabels[result.direction] || result.direction} / ${result.result}<br />${result.detail || ""}`;
+  };
   const items = [
     [
       "下载到客户端",
@@ -341,7 +369,7 @@ function renderTransferSummary(session) {
         : "无",
     ],
     [
-      "客户端花型列表",
+      session?.activeDeviceMode ? "对端全部花型列表" : "客户端花型列表",
       summary.clientPatternList
         ? `${summary.clientPatternList.receivedFrames}/${summary.clientPatternList.totalFrames || "-"}`
         : "无",
@@ -360,9 +388,7 @@ function renderTransferSummary(session) {
     ],
     [
       "最近传输结果",
-      summary.lastResult
-        ? `${summary.lastResult.direction} / ${summary.lastResult.result}<br />${summary.lastResult.detail || ""}`
-        : "无",
+      formatLastResult(summary.lastResult),
     ],
   ];
 
@@ -378,11 +404,29 @@ function renderTransferSummary(session) {
     .join("");
 }
 
-function renderClientPatterns(session) {
+function renderClientPatterns(state, session) {
+  const title = document.querySelector("#clientPatternsTitle");
+  const hint = document.querySelector("#clientPatternsHint");
   const tbody = document.querySelector("#clientPatternsTable");
+  const readListButton = document.querySelector("#readClientPatternListBtn");
+  const isActiveDeviceMode = Boolean(state?.activeDeviceMode);
+
+  if (title) {
+    title.textContent = isActiveDeviceMode ? "对端全部花型列表" : "客户端花型列表";
+  }
+
+  if (hint) {
+    hint.textContent = isActiveDeviceMode
+      ? "当前为“对接真实上位机”模式，这里优先显示通过 0x000F 拉回来的对端完整花型列表；如果对方不支持，则只能看到它实际报上来的当前花型。"
+      : "";
+  }
+
+  if (readListButton) {
+    readListButton.textContent = isActiveDeviceMode ? "获取对端全部花型" : "读取客户端花型列表";
+  }
 
   if (!session || !session.clientPatterns.length) {
-    tbody.innerHTML = `<tr><td colspan="3" class="muted">暂无客户端花型列表</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="3" class="muted">${isActiveDeviceMode ? "暂无对端全部花型列表" : "暂无客户端花型列表"}</td></tr>`;
     return;
   }
 
@@ -390,7 +434,7 @@ function renderClientPatterns(session) {
     .map(
       (pattern) => `
         <tr>
-          <td>${pattern.patternId}</td>
+          <td>${pattern.patternId || "-"}</td>
           <td>${pattern.patternName}</td>
           <td>
             <div class="small-actions">
@@ -510,12 +554,7 @@ function renderLogs(state) {
 
 function renderState(state) {
   renderStatus(state);
-
-  renderSelectOptions(
-    "preferredProtocolPresetId",
-    state.protocolPresets.map((item) => ({ id: item.id, label: item.name })),
-    state.preferredProtocolPresetId
-  );
+  setFieldValue("verboseProtocolLogs", state.verboseProtocolLogs, false);
 
   const selectedSessionId = ensureSelectedSessionId(state);
   renderSelectOptions(
@@ -529,7 +568,7 @@ function renderState(state) {
   renderSessionSummary(selectedSession);
   renderDeviceInfo(selectedSession);
   renderTransferSummary(selectedSession);
-  renderClientPatterns(selectedSession);
+  renderClientPatterns(state, selectedSession);
   renderServerPatterns(state);
   renderLogs(state);
 

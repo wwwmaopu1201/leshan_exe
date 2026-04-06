@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"boer-lan-server/internal/model"
 
@@ -295,7 +296,9 @@ func (h *DeviceHandler) GetDeviceList(c *gin.Context) {
 	if keyword := c.Query("keyword"); keyword != "" {
 		like := "%" + strings.TrimSpace(keyword) + "%"
 		query = query.Where(
-			"name LIKE ? OR initial_name LIKE ? OR code LIKE ? OR type LIKE ? OR model_name LIKE ? OR ip LIKE ? OR employee_code LIKE ? OR employee_name LIKE ? OR mainboard_sn LIKE ? OR remark LIKE ?",
+			"name LIKE ? OR initial_name LIKE ? OR code LIKE ? OR type LIKE ? OR model_name LIKE ? OR ip LIKE ? OR employee_code LIKE ? OR employee_name LIKE ? OR mainboard_sn LIKE ? OR remark LIKE ? OR current_pattern_name LIKE ? OR alarm_code LIKE ?",
+			like,
+			like,
 			like,
 			like,
 			like,
@@ -352,21 +355,37 @@ func (h *DeviceHandler) GetDeviceList(c *gin.Context) {
 	list := make([]gin.H, 0)
 	for _, d := range devices {
 		item := gin.H{
-			"id":           d.ID,
-			"code":         d.Code,
-			"name":         d.Name,
-			"initialName":  d.InitialName,
-			"type":         d.Type,
-			"model":        d.ModelName,
-			"employeeCode": d.EmployeeCode,
-			"employeeName": d.EmployeeName,
-			"mainboardSn":  d.MainboardSN,
-			"remark":       d.Remark,
-			"ip":           d.IP,
-			"status":       d.Status,
-			"groupId":      d.GroupID,
-			"sortOrder":    d.SortOrder,
-			"createTime":   d.CreatedAt.Format("2006-01-02 15:04:05"),
+			"id":                 d.ID,
+			"code":               d.Code,
+			"name":               d.Name,
+			"initialName":        d.InitialName,
+			"type":               d.Type,
+			"model":              d.ModelName,
+			"employeeCode":       d.EmployeeCode,
+			"employeeName":       d.EmployeeName,
+			"mainboardSn":        d.MainboardSN,
+			"identifiedBy":       d.IdentifiedBy,
+			"remark":             d.Remark,
+			"ip":                 d.IP,
+			"status":             d.Status,
+			"currentPatternNo":   d.CurrentPatternNo,
+			"currentPatternName": d.CurrentPatternName,
+			"alarmCode":          d.AlarmCode,
+			"currentSpeed":       d.CurrentSpeed,
+			"maxSpeedValue":      d.MaxSpeedValue,
+			"productionTotal":    d.ProductionTotal,
+			"productionCurrent":  d.ProductionCurrent,
+			"bottomThreadTotal":  d.BottomThreadTotal,
+			"bottomThreadRemain": d.BottomThreadRemain,
+			"needleCountValue":   d.NeedleCountValue,
+			"sewingRangeX":       d.SewingRangeX,
+			"sewingRangeY":       d.SewingRangeY,
+			"highPointValue":     d.HighPointValue,
+			"lowPointValue":      d.LowPointValue,
+			"lastProtocolAt":     formatNullableTime(d.LastProtocolAt),
+			"groupId":            d.GroupID,
+			"sortOrder":          d.SortOrder,
+			"createTime":         d.CreatedAt.Format("2006-01-02 15:04:05"),
 		}
 		if d.Group != nil {
 			item["group"] = d.Group.Name
@@ -1339,4 +1358,11 @@ func (h *DeviceHandler) DeleteDeviceGroup(c *gin.Context) {
 		"code":    0,
 		"message": "success",
 	})
+}
+
+func formatNullableTime(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.Format("2006-01-02 15:04:05")
 }

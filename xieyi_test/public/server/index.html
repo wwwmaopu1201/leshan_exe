@@ -118,6 +118,26 @@
         resize: vertical;
       }
 
+      input[type="checkbox"] {
+        width: auto;
+      }
+
+      .toggle-field {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 44px;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #ffffff;
+      }
+
+      .toggle-field label {
+        margin: 0;
+        color: var(--ink);
+      }
+
       .actions,
       .small-actions {
         display: flex;
@@ -237,8 +257,11 @@
             </div>
             <div class="field-grid">
               <div>
-                <label for="preferredProtocolPresetId">默认发送协议</label>
-                <select id="preferredProtocolPresetId"></select>
+                <label>协议日志</label>
+                <div class="toggle-field">
+                  <input id="verboseProtocolLogs" type="checkbox" />
+                  <label for="verboseProtocolLogs">显示详细协议日志（含心跳）</label>
+                </div>
               </div>
               <div>
                 <label for="selectedSessionId">当前会话</label>
@@ -390,8 +413,9 @@
 
           <div class="card">
             <div class="section-head">
-              <h2>客户端花型列表</h2>
+              <h2 id="clientPatternsTitle">客户端花型列表</h2>
             </div>
+            <div id="clientPatternsHint" class="muted"></div>
             <div class="table-wrap">
               <table>
                 <thead>

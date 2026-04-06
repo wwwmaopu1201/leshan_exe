@@ -83,7 +83,7 @@ func TestEnsureKeepsTrialForSameVersion(t *testing.T) {
 		LastSeenAt:    lastSeenAt,
 		LaunchCount:   3,
 		PolicyVersion: trialPolicyVersion,
-		AppVersion:    "V1.0.10",
+		AppVersion:    "V1.0.11",
 	}); err != nil {
 		t.Fatalf("writeState failed: %v", err)
 	}

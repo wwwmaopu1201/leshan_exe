@@ -674,6 +674,8 @@ const defaultBatchEditForm = () => ({
   }
 })
 
+const connectedDeviceStatuses = ['online', 'idle', 'working', 'alarm']
+
 export default {
   name: 'PatternList',
   components: {
@@ -763,6 +765,54 @@ export default {
       const parts = value.split(/[+＋]/).map(part => part.trim()).filter(Boolean)
       return parts.length === 3
     },
+    getRequestErrorMessage(error, fallback) {
+      return error?.response?.data?.message || error?.message || fallback
+    },
+    isConnectedDeviceStatus(status) {
+      return connectedDeviceStatuses.includes(String(status || '').trim())
+    },
+    getDeviceOptionRank(device) {
+      if (!device) return 99
+      if (this.isConnectedDeviceStatus(device.status)) {
+        if (device.status === 'working') return 1
+        if (device.status === 'alarm') return 2
+        if (device.status === 'idle') return 3
+        return 4
+      }
+      return 99
+    },
+    formatDeviceOptionLabel(device) {
+      const name = device.name || device.deviceName || device.code || `设备${device.id}`
+      const status = this.isConnectedDeviceStatus(device.status) ? '在线' : '离线'
+      const ip = device.ip ? ` · ${device.ip}` : ''
+      const patternName = device.currentPatternName ? ` · ${device.currentPatternName}` : ''
+      return `${name} [${status}]${ip}${patternName}`
+    },
+    resolvePreferredDeviceOptionId(devices = []) {
+      const preferredIds = []
+      if (this.deviceFilter.deviceId) {
+        preferredIds.push(Number(this.deviceFilter.deviceId))
+      }
+      if (Array.isArray(this.deviceFilter.deviceIds)) {
+        this.deviceFilter.deviceIds.forEach(id => preferredIds.push(Number(id)))
+      }
+      if (this.deviceFileQuery.deviceId) {
+        preferredIds.push(Number(this.deviceFileQuery.deviceId))
+      }
+
+      const normalizedPreferredIds = preferredIds.filter(id => Number.isFinite(id) && id > 0)
+      const matchedPreferred = normalizedPreferredIds.find(id => devices.some(item => Number(item.id) === id))
+      if (matchedPreferred) {
+        return matchedPreferred
+      }
+
+      const firstConnected = devices.find(item => this.isConnectedDeviceStatus(item.status))
+      if (firstConnected) {
+        return Number(firstConnected.id)
+      }
+
+      return devices.length ? Number(devices[0].id) : ''
+    },
     formatPrice(value) {
       const num = Number(value || 0)
       return num.toFixed(3)
@@ -829,12 +879,30 @@ export default {
         const res = await getDeviceList({ page: 1, pageSize: 1000 })
         if (res.code === 0) {
           const list = Array.isArray(res.data) ? res.data : (res.data?.list || [])
-          this.deviceOptions = list.map(item => ({
+          const normalizedDevices = list.map(item => ({
             id: item.id || item.ID,
-            name: item.name || item.deviceName || item.code || `设备${item.id || item.ID}`
+            name: item.name || item.deviceName || item.code || `设备${item.id || item.ID}`,
+            code: item.code || '',
+            ip: item.ip || '',
+            status: item.status || '',
+            currentPatternName: item.currentPatternName || ''
           }))
-          if (!this.deviceFileQuery.deviceId && this.deviceOptions.length) {
-            this.deviceFileQuery.deviceId = this.deviceOptions[0].id
+
+          normalizedDevices.sort((a, b) => {
+            const rankDiff = this.getDeviceOptionRank(a) - this.getDeviceOptionRank(b)
+            if (rankDiff !== 0) return rankDiff
+            return String(a.name || '').localeCompare(String(b.name || ''), 'zh-Hans-CN')
+          })
+
+          this.deviceOptions = normalizedDevices.map(item => ({
+            id: item.id,
+            name: this.formatDeviceOptionLabel(item),
+            status: item.status
+          }))
+
+          const preferredId = this.resolvePreferredDeviceOptionId(normalizedDevices)
+          if (preferredId) {
+            this.deviceFileQuery.deviceId = preferredId
             this.fetchDeviceFileList()
           }
         }
@@ -987,7 +1055,7 @@ export default {
         }
       } catch (error) {
         console.error('Failed to fetch device files:', error)
-        this.$message.error('获取设备文件失败')
+        this.$message.error(this.getRequestErrorMessage(error, '获取设备文件失败'))
       } finally {
         this.deviceFileLoading = false
       }
@@ -1006,7 +1074,7 @@ export default {
           }
         } catch (error) {
           console.error('Delete device file failed:', error)
-          this.$message.error('删除设备文件失败')
+          this.$message.error(this.getRequestErrorMessage(error, '删除设备文件失败'))
         }
       }).catch(() => {})
     },
@@ -1062,7 +1130,7 @@ export default {
         }
       } catch (error) {
         console.error('Upload device files failed:', error)
-        this.$message.error('回传设备文件失败')
+        this.$message.error(this.getRequestErrorMessage(error, '回传设备文件失败'))
       } finally {
         this.uploadingFromDevice = false
       }
@@ -1316,7 +1384,7 @@ export default {
         }
       } catch (error) {
         console.error('Download to device failed:', error)
-        this.$message.error('下发失败')
+        this.$message.error(this.getRequestErrorMessage(error, '下发失败'))
       }
     },
     handleDelete(row) {

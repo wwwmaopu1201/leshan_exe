@@ -126,6 +126,55 @@ export function decodeFixedString(buffer, encoding = "utf8") {
   return trimZeroBytes(buffer.toString(encoding));
 }
 
+export function decodeCompatibleText(buffer) {
+  const utf8Text = trimZeroBytes(buffer.toString("utf8"));
+  if (!buffer || buffer.length === 0) {
+    return "";
+  }
+
+  const looksBrokenUtf8 =
+    utf8Text.includes("\ufffd") ||
+    utf8Text.includes("\u0000") ||
+    /[\u0001-\u0008\u000b\u000c\u000e-\u001f]/.test(utf8Text);
+
+  if (looksBrokenUtf8 && buffer.length % 2 === 0) {
+    const unicodeText = decodeUnicodeCString(buffer);
+    if (unicodeText && !unicodeText.includes("\ufffd")) {
+      return unicodeText;
+    }
+  }
+
+  return utf8Text;
+}
+
+function encodeDeletePatternName(value = "", mode = "unicode") {
+  if (mode === "unicodeFixed") {
+    return encodeUnicodeFixed(value, PATTERN_NAME_FIXED_BYTES);
+  }
+
+  if (mode === "compatibleFixed") {
+    return encodeFixedString(value, PATTERN_NAME_FIXED_BYTES, "utf8");
+  }
+
+  return encodeUnicodeString(value);
+}
+
+function encodePatternListName(value = "", encoding = "unicode") {
+  if (encoding === "compatible") {
+    return encodeFixedString(value, PATTERN_NAME_FIXED_BYTES, "utf8");
+  }
+
+  return encodeUnicodeFixed(value, PATTERN_NAME_FIXED_BYTES);
+}
+
+function decodePatternListName(buffer, encoding = "unicode") {
+  if (encoding === "compatible") {
+    return decodeCompatibleText(buffer);
+  }
+
+  return decodeUnicodeString(buffer);
+}
+
 export function commandName(type, code) {
   return COMMAND_NAME_MAP.get(`${type}:${code}`) ?? `0x${type.toString(16)}/0x${code.toString(16)}`;
 }
@@ -319,7 +368,7 @@ export function parsePatternInfoPayload(payload, protocol) {
 
   return {
     patternId: decodeUShort(payload, 0, byteOrder),
-    patternName: decodeString(payload.subarray(2), "utf8"),
+    patternName: decodeCompatibleText(payload.subarray(2)),
   };
 }
 
@@ -487,7 +536,7 @@ export function parseRealtimeStatusPayload(payload, protocol) {
   return {
     status: payload.readUInt8(0),
     patternId: decodeUShort(payload, 1, byteOrder),
-    patternName: decodeString(payload.subarray(3), "utf8"),
+    patternName: decodeCompatibleText(payload.subarray(3)),
   };
 }
 
@@ -715,13 +764,27 @@ export function createUploadPatternStatusFrame(status, protocol) {
   );
 }
 
-export function createDeletePatternCommandFrame({ patternId, patternName }, protocol) {
+export function createDeletePatternCommandFrame(
+  {
+    patternId,
+    patternName,
+    nameEncoding = "unicode",
+    addr1 = 0,
+    addr2 = 0,
+    includeId = true,
+  },
+  protocol
+) {
   const byteOrder = getByteOrder(protocol);
-  const payload = Buffer.concat([
-    encodeUShort(patternId, byteOrder),
-    encodeUnicodeString(patternName),
-  ]);
-  return buildCommandFrame(COMMANDS.DELETE_PATTERN_FILE, { payload }, protocol);
+  const parts = [];
+  if (includeId) {
+    parts.push(encodeUShort(patternId, byteOrder));
+  }
+  if (patternName) {
+    parts.push(encodeDeletePatternName(patternName, nameEncoding));
+  }
+  const payload = Buffer.concat(parts);
+  return buildCommandFrame(COMMANDS.DELETE_PATTERN_FILE, { payload, addr1, addr2 }, protocol);
 }
 
 export function parseDeletePatternCommandPayload(payload, protocol) {
@@ -732,15 +795,18 @@ export function parseDeletePatternCommandPayload(payload, protocol) {
 
   return {
     patternId: decodeUShort(payload, 0, byteOrder),
-    patternName: decodeUnicodeCString(payload.subarray(2)),
+    patternName: decodeCompatibleText(payload.subarray(2)),
   };
 }
 
-export function createDeletePatternResponseFrame({ patternId, patternName, result }, protocol) {
+export function createDeletePatternResponseFrame(
+  { patternId, patternName, result, nameEncoding = "unicode" },
+  protocol
+) {
   const byteOrder = getByteOrder(protocol);
   const payload = Buffer.concat([
     encodeUShort(patternId, byteOrder),
-    encodeUnicodeString(patternName),
+    encodeDeletePatternName(patternName, nameEncoding),
     Buffer.from([Number(result) & 0xff]),
   ]);
   return buildCommandFrame(COMMANDS.DELETE_PATTERN_FILE, { payload }, protocol);
@@ -757,7 +823,8 @@ export function createReadPatternListFrame(protocol) {
 
 function encodePatternListEntry(entry, includeId, protocol) {
   const byteOrder = getByteOrder(protocol);
-  const nameBuffer = encodeUnicodeFixed(entry.patternName ?? entry.name ?? "");
+  const nameEncoding = includeId ? "compatible" : "unicode";
+  const nameBuffer = encodePatternListName(entry.patternName ?? entry.name ?? "", nameEncoding);
   if (!includeId) {
     return nameBuffer;
   }
@@ -804,7 +871,7 @@ export function createPatternListFrames(command, entries, protocol, options = {}
 }
 
 export function parsePatternListPayload(payload, protocol, options = {}) {
-  const { includeId = true } = options;
+  const { includeId = true, nameEncoding = includeId ? "compatible" : "unicode" } = options;
   const byteOrder = getByteOrder(protocol);
   const entrySize = includeId ? PATTERN_NAME_FIXED_BYTES + 2 : PATTERN_NAME_FIXED_BYTES;
   if (payload.length === 0 || payload.length % entrySize !== 0) {
@@ -816,13 +883,17 @@ export function parsePatternListPayload(payload, protocol, options = {}) {
     if (includeId) {
       entries.push({
         patternId: decodeUShort(payload, offset, byteOrder),
-        patternName: decodeUnicodeString(
-          payload.subarray(offset + 2, offset + 2 + PATTERN_NAME_FIXED_BYTES)
+        patternName: decodePatternListName(
+          payload.subarray(offset + 2, offset + 2 + PATTERN_NAME_FIXED_BYTES),
+          nameEncoding
         ),
       });
     } else {
       entries.push({
-        patternName: decodeUnicodeString(payload.subarray(offset, offset + PATTERN_NAME_FIXED_BYTES)),
+        patternName: decodePatternListName(
+          payload.subarray(offset, offset + PATTERN_NAME_FIXED_BYTES),
+          nameEncoding
+        ),
       });
     }
   }
