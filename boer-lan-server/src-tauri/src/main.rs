@@ -44,7 +44,7 @@ struct TrialStatus {
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
-const TRIAL_DURATION_SECONDS: u64 = 3 * 24 * 60 * 60;
+const TRIAL_DURATION_SECONDS: u64 = 4 * 24 * 60 * 60;
 const ROLLBACK_LEEWAY_SECONDS: u64 = 10 * 60;
 const TRIAL_POLICY_VERSION: u32 = 4;
 

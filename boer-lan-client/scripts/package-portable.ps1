@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 
-$appVersion = '1.0.9'
+$appVersion = '1.0.10'
 $appVersionTag = "V$appVersion"
 $appExeName = "Boer-LAN-Manager-$appVersionTag.exe"
 

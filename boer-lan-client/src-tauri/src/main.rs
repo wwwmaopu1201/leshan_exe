@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 
-const TRIAL_DURATION_SECONDS: u64 = 3 * 24 * 60 * 60;
+const TRIAL_DURATION_SECONDS: u64 = 4 * 24 * 60 * 60;
 const ROLLBACK_LEEWAY_SECONDS: u64 = 10 * 60;
 const TRIAL_POLICY_VERSION: u32 = 2;
 

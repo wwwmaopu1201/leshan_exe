@@ -10,7 +10,7 @@ import (
 func TestEnsureResetsTrialWhenVersionChanges(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("DATA_DIR", tempDir)
-	t.Setenv("APP_VERSION", "1.0.9")
+	t.Setenv("APP_VERSION", "1.0.10")
 
 	statePath, err := resolveStatePath()
 	if err != nil {
@@ -62,7 +62,7 @@ func TestEnsureResetsTrialWhenVersionChanges(t *testing.T) {
 func TestEnsureKeepsTrialForSameVersion(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("DATA_DIR", tempDir)
-	t.Setenv("APP_VERSION", "1.0.9")
+	t.Setenv("APP_VERSION", "1.0.10")
 
 	statePath, err := resolveStatePath()
 	if err != nil {
@@ -83,7 +83,7 @@ func TestEnsureKeepsTrialForSameVersion(t *testing.T) {
 		LastSeenAt:    lastSeenAt,
 		LaunchCount:   3,
 		PolicyVersion: trialPolicyVersion,
-		AppVersion:    "V1.0.9",
+		AppVersion:    "V1.0.10",
 	}); err != nil {
 		t.Fatalf("writeState failed: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestEnsureKeepsTrialForSameVersion(t *testing.T) {
 func TestEnsureResetsTrialWhenDowngradingVersion(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("DATA_DIR", tempDir)
-	t.Setenv("APP_VERSION", "1.0.9")
+	t.Setenv("APP_VERSION", "1.0.10")
 
 	statePath, err := resolveStatePath()
 	if err != nil {
