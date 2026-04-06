@@ -5,14 +5,6 @@
         <div class="panel-title">{{ title }}</div>
       </div>
       <div class="panel-actions">
-        <el-button
-          v-if="management"
-          type="primary"
-          size="mini"
-          icon="el-icon-plus"
-          circle
-          @click="openAddRootDialog"
-        />
         <el-button type="text" size="mini" @click="refreshTree">刷新</el-button>
       </div>
     </div>
@@ -41,6 +33,7 @@
         highlight-current
         default-expand-all
         @node-click="handleNodeClick"
+        @node-contextmenu="handleNodeContextMenu"
       >
         <div slot-scope="{ node, data }" class="tree-node">
           <div class="tree-node-main" :class="{ ungrouped: isUngroupedNode(data) }">
@@ -48,23 +41,26 @@
             <span class="tree-node-label" :title="node.label">{{ node.label }}</span>
             <span v-if="data.type === 'device'" :class="['status-dot', data.status]"></span>
           </div>
-          <div v-if="management && isEditableGroup(data)" class="tree-node-tools">
-            <el-button type="text" size="mini" title="新增子组" @click.stop="openAddChildDialog(data)">
-              <i class="el-icon-plus"></i>
-            </el-button>
-            <el-button type="text" size="mini" title="移动分组" @click.stop="openMoveDialog(data)">
-              <i class="el-icon-rank"></i>
-            </el-button>
-            <el-button type="text" size="mini" title="重命名" @click.stop="openEditDialog(data)">
-              <i class="el-icon-edit"></i>
-            </el-button>
-            <el-button type="text" size="mini" class="danger-text" title="删除分组" @click.stop="handleDeleteGroup(data)">
-              <i class="el-icon-delete"></i>
-            </el-button>
-          </div>
         </div>
       </el-tree>
     </div>
+
+    <ul
+      v-if="management && contextMenu.visible"
+      class="tree-context-menu"
+      :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
+      @click.stop
+      @contextmenu.prevent
+    >
+      <li @click="handleContextMenuAction('addRoot')">新增顶层分组</li>
+      <template v-if="contextMenu.node && isEditableGroup(contextMenu.node)">
+        <li @click="handleContextMenuAction('addChild')">新增子组</li>
+        <li @click="handleContextMenuAction('move')">移动分组</li>
+        <li @click="handleContextMenuAction('edit')">重命名</li>
+        <li class="danger" @click="handleContextMenuAction('delete')">删除分组</li>
+      </template>
+      <li @click="handleContextMenuAction('refresh')">刷新</li>
+    </ul>
 
     <el-dialog
       :title="groupDialogTitle"
@@ -157,6 +153,12 @@ export default {
           parentId: null
         }
       },
+      contextMenu: {
+        visible: false,
+        x: 0,
+        y: 0,
+        node: null
+      },
       groupRules: {
         name: [{ required: true, message: '请输入分组名称', trigger: 'blur' }]
       }
@@ -219,7 +221,15 @@ export default {
     }
   },
   mounted() {
+    document.addEventListener('click', this.hideContextMenu)
+    window.addEventListener('blur', this.hideContextMenu)
+    window.addEventListener('resize', this.hideContextMenu)
     this.fetchDeviceTree()
+  },
+  beforeDestroy() {
+    document.removeEventListener('click', this.hideContextMenu)
+    window.removeEventListener('blur', this.hideContextMenu)
+    window.removeEventListener('resize', this.hideContextMenu)
   },
   methods: {
     async fetchDeviceTree() {
@@ -243,6 +253,7 @@ export default {
       }
     },
     refreshTree() {
+      this.hideContextMenu()
       this.fetchDeviceTree()
       this.$emit('refresh')
     },
@@ -301,6 +312,7 @@ export default {
       }
       this.$emit('input', payload)
       this.$emit('change', payload)
+      this.hideContextMenu()
     },
     clearSelection() {
       const payload = defaultValue()
@@ -315,6 +327,62 @@ export default {
       const label = String(data?.label || '')
       const id = String(data?.id || '')
       return label.includes('未分组') || id === 'ungrouped'
+    },
+    handleNodeContextMenu(event, data) {
+      if (!this.management) {
+        return
+      }
+      event.preventDefault()
+      if (data) {
+        this.handleNodeClick(data)
+      }
+      this.contextMenu = {
+        visible: true,
+        x: Math.min(event.clientX, window.innerWidth - 180),
+        y: Math.min(event.clientY, window.innerHeight - 220),
+        node: data || null
+      }
+    },
+    hideContextMenu() {
+      if (!this.contextMenu.visible) {
+        return
+      }
+      this.contextMenu.visible = false
+      this.contextMenu.node = null
+    },
+    handleContextMenuAction(action) {
+      const node = this.contextMenu.node
+      this.hideContextMenu()
+
+      if (action === 'addRoot') {
+        this.openAddRootDialog()
+        return
+      }
+
+      if (action === 'refresh') {
+        this.refreshTree()
+        return
+      }
+
+      if (!node || !this.isEditableGroup(node)) {
+        return
+      }
+
+      if (action === 'addChild') {
+        this.openAddChildDialog(node)
+        return
+      }
+      if (action === 'move') {
+        this.openMoveDialog(node)
+        return
+      }
+      if (action === 'edit') {
+        this.openEditDialog(node)
+        return
+      }
+      if (action === 'delete') {
+        this.handleDeleteGroup(node)
+      }
     },
     openAddRootDialog() {
       this.groupDialog = {
@@ -463,21 +531,25 @@ export default {
 
 <style lang="scss" scoped>
 .device-tree-panel {
-  padding: 18px;
+  padding: 8px 10px;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .panel-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 
 .panel-title {
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 700;
-  color: #243654;
+  color: #4c5768;
 }
 
 .panel-subtitle {
@@ -489,29 +561,30 @@ export default {
 .panel-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .selection-bar {
-  margin-top: 12px;
-  margin-bottom: 10px;
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: #f5f8fd;
+  margin-top: 8px;
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  border-radius: 2px;
+  background: #f7f9fc;
+  border: 1px solid #e0e6ee;
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
 .selection-label {
-  color: #7a8aa3;
-  font-size: 12px;
+  color: #9099a5;
+  font-size: 11px;
 }
 
 .selection-value {
   flex: 1;
   min-width: 0;
-  color: #24416f;
+  color: #4c5768;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -519,12 +592,14 @@ export default {
 }
 
 .tree-wrapper {
-  margin-top: 10px;
-  border: 1px solid #e6edf7;
-  border-radius: 18px;
-  padding: 10px;
+  flex: 1;
+  min-height: 0;
+  margin-top: 6px;
+  border: 1px solid #dfe6ee;
+  border-radius: 2px;
+  padding: 6px;
   overflow: auto;
-  background: #fbfdff;
+  background: #ffffff;
 }
 
 .tree-node {
@@ -532,7 +607,6 @@ export default {
   min-width: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
 }
 
@@ -549,20 +623,13 @@ export default {
 }
 
 .tree-node-icon {
-  color: #4f7bc3;
+  color: #6d7e94;
 }
 
 .tree-node-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.tree-node-tools {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
 }
 
 .danger-text {
@@ -597,18 +664,47 @@ export default {
 }
 
 ::v-deep .el-tree-node__content {
-  height: 38px;
-  border-radius: 12px;
-  margin-bottom: 4px;
-  padding-right: 6px;
+  height: 30px;
+  border-radius: 2px;
+  margin-bottom: 2px;
+  padding-right: 4px;
 }
 
 ::v-deep .el-tree-node__content:hover {
-  background: #f0f5fd;
+  background: #f5f8fc;
 }
 
 ::v-deep .el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content {
-  background: linear-gradient(135deg, rgba(47, 109, 246, 0.14), rgba(77, 168, 255, 0.1));
-  color: #244d97;
+  background: #e8f2ff;
+  color: #3388ff;
+}
+
+.tree-context-menu {
+  position: fixed;
+  z-index: 3000;
+  margin: 0;
+  padding: 6px 0;
+  min-width: 152px;
+  list-style: none;
+  background: #fff;
+  border: 1px solid #dfe6ee;
+  border-radius: 2px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
+
+  li {
+    padding: 6px 12px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #4c5768;
+    cursor: pointer;
+
+    &:hover {
+      background: #f5f8fc;
+    }
+
+    &.danger {
+      color: #ef5a5a;
+    }
+  }
 }
 </style>

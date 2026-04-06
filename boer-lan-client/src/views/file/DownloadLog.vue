@@ -69,7 +69,7 @@
       </el-form>
     </div>
 
-    <div class="card">
+    <el-card ref="tableCard" shadow="never" class="card page-table-card">
       <div class="section-title">
         <div>
           <h3>下发日志</h3>
@@ -88,7 +88,7 @@
         </div>
       </div>
 
-      <el-table :data="logList" border v-loading="loading" empty-text="暂无数据">
+      <el-table ref="tableRef" :data="logList" border v-loading="loading" :height="tableHeight" empty-text="暂无数据">
         <el-table-column type="index" label="序号" width="60" align="center" />
         <el-table-column prop="patternName" label="花型文件" min-width="160">
           <template slot-scope="scope">
@@ -132,7 +132,7 @@
         @size-change="handleSizeChange"
         @current-change="handlePageChange"
       />
-    </div>
+    </el-card>
   </div>
 </template>
 
@@ -158,12 +158,17 @@ export default {
         page: 1,
         pageSize: 10,
         total: 0
-      }
+      },
+      tableHeight: 320
     }
   },
   mounted() {
     this.fetchPatternTypes()
     this.fetchData()
+    window.addEventListener('resize', this.syncTableHeight)
+  },
+  beforeDestroy() {
+    window.removeEventListener('resize', this.syncTableHeight)
   },
   methods: {
     formatPrice(value) {
@@ -197,6 +202,9 @@ export default {
         if (res.code === 0) {
           this.logList = res.data.list || []
           this.pagination.total = res.data.total || 0
+          this.$nextTick(() => {
+            this.syncTableHeight()
+          })
         }
       } catch (error) {
         console.error('Failed to fetch download log:', error)
@@ -226,6 +234,21 @@ export default {
     handlePageChange(page) {
       this.pagination.page = page
       this.fetchData()
+    },
+    syncTableHeight() {
+      this.$nextTick(() => {
+        const card = this.$refs.tableCard && this.$refs.tableCard.$el
+        const table = this.$refs.tableRef && this.$refs.tableRef.$el
+        if (!card || !table) return
+        const body = card.querySelector('.el-card__body')
+        if (!body) return
+        let occupied = 0
+        Array.from(body.children).forEach(child => {
+          if (child === table) return
+          occupied += child.offsetHeight
+        })
+        this.tableHeight = Math.max(240, body.clientHeight - occupied - 16)
+      })
     },
     getStatusText(status) {
       const map = {

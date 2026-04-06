@@ -55,7 +55,7 @@
           </el-form>
         </div>
 
-        <div class="card">
+        <el-card ref="tableCard" shadow="never" class="card page-table-card">
           <div class="table-actions flex-between">
             <div class="action-group">
               <el-button type="primary" icon="el-icon-plus" @click="handleAdd">
@@ -81,9 +81,11 @@
           </div>
 
           <el-table
+            ref="tableRef"
             v-loading="loading"
             :data="pagedTableData"
             border
+            :height="tableHeight"
             :row-class-name="getRowClassName"
             empty-text="暂无数据"
             @selection-change="handleSelectionChange"
@@ -148,7 +150,7 @@
             @size-change="handleSizeChange"
             @current-change="handlePageChange"
           />
-        </div>
+        </el-card>
       </section>
     </div>
 
@@ -304,7 +306,8 @@ export default {
         ip: [{ required: true, message: '请输入IP地址', trigger: 'blur' }]
       },
       showMoveDialog: false,
-      moveTargetGroupId: null
+      moveTargetGroupId: null,
+      tableHeight: 320
     }
   },
   computed: {
@@ -324,6 +327,10 @@ export default {
   mounted() {
     this.fetchGroups()
     this.fetchData()
+    window.addEventListener('resize', this.syncTableHeight)
+  },
+  beforeDestroy() {
+    window.removeEventListener('resize', this.syncTableHeight)
   },
   methods: {
     async fetchGroups() {
@@ -352,6 +359,9 @@ export default {
           const rawList = Array.isArray(res.data) ? res.data : (res.data?.list || [])
           this.tableData = this.applyTreeFilter(rawList)
           this.pagination.total = this.tableData.length
+          this.$nextTick(() => {
+            this.syncTableHeight()
+          })
         }
       } catch (error) {
         console.error('Failed to fetch devices:', error)
@@ -398,9 +408,25 @@ export default {
     },
     handleSizeChange(size) {
       this.pagination.pageSize = size
+      this.syncTableHeight()
     },
     handlePageChange(page) {
       this.pagination.page = page
+    },
+    syncTableHeight() {
+      this.$nextTick(() => {
+        const card = this.$refs.tableCard && this.$refs.tableCard.$el
+        const table = this.$refs.tableRef && this.$refs.tableRef.$el
+        if (!card || !table) return
+        const body = card.querySelector('.el-card__body')
+        if (!body) return
+        let occupied = 0
+        Array.from(body.children).forEach(child => {
+          if (child === table) return
+          occupied += child.offsetHeight
+        })
+        this.tableHeight = Math.max(240, body.clientHeight - occupied - 16)
+      })
     },
     getStatusType(status) {
       const map = {

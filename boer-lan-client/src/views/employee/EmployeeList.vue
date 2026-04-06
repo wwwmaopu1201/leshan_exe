@@ -29,7 +29,7 @@
       </el-form>
     </div>
 
-    <div class="card">
+    <el-card ref="tableCard" shadow="never" class="card page-table-card">
       <div class="section-title">
         <div>
           <h3>员工管理</h3>
@@ -66,10 +66,11 @@
       </div>
 
       <el-table
+        ref="tableRef"
         v-loading="loading"
         :data="pagedTableData"
         border
-        :max-height="tableMaxHeight"
+        :height="tableHeight"
         empty-text="暂无数据"
         @selection-change="handleSelectionChange"
       >
@@ -77,6 +78,7 @@
         <el-table-column prop="code" :label="$t('employee.employeeCode')" width="120" />
         <el-table-column prop="name" :label="$t('employee.employeeName')" width="140" />
         <el-table-column prop="phone" :label="$t('employee.phone')" width="150" />
+        <el-table-column prop="groupName" :label="$t('device.group')" width="160" show-overflow-tooltip />
         <el-table-column prop="createTime" :label="$t('common.createTime')" width="170" />
         <el-table-column :label="$t('common.operation')" width="160" align="center">
           <template slot-scope="scope">
@@ -100,7 +102,7 @@
         @size-change="handleSizeChange"
         @current-change="handlePageChange"
       />
-    </div>
+    </el-card>
 
     <el-dialog
       :title="editForm.id ? $t('employee.editEmployee') : $t('employee.addEmployee')"
@@ -117,6 +119,16 @@
         </el-form-item>
         <el-form-item :label="$t('employee.phone')" prop="phone">
           <el-input v-model="editForm.phone" />
+        </el-form-item>
+        <el-form-item :label="$t('device.group')" prop="groupId">
+          <el-select v-model="editForm.groupId" clearable filterable placeholder="请选择所属分组" style="width: 100%;">
+            <el-option
+              v-for="item in groupOptions"
+              :key="item.id"
+              :label="item.label"
+              :value="item.id"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item :label="$t('common.remark')" prop="remark">
           <el-input
@@ -142,6 +154,17 @@
     >
       <div class="import-tip">
         每行格式：`员工工号,员工姓名,手机号,备注`（前三列必填）
+      </div>
+      <div class="import-toolbar" style="margin-bottom: 12px;">
+        <span class="import-group-label">导入到分组</span>
+        <el-select v-model="importGroupId" clearable filterable placeholder="请选择所属分组" style="width: 260px;">
+          <el-option
+            v-for="item in groupOptions"
+            :key="item.id"
+            :label="item.label"
+            :value="item.id"
+          />
+        </el-select>
       </div>
       <div class="import-toolbar">
         <el-button size="small" icon="el-icon-folder-opened" @click="triggerImportFileSelect">
@@ -172,6 +195,7 @@
 
 <script>
 import {
+  getEmployeeGroups,
   getEmployeeList,
   createEmployee,
   updateEmployee,
@@ -187,6 +211,7 @@ export default {
       loading: false,
       tableData: [],
       selectedRows: [],
+      groupOptions: [],
       searchForm: {
         keyword: '',
         phone: ''
@@ -201,12 +226,14 @@ export default {
       importing: false,
       importText: '',
       importFileName: '',
+      importGroupId: null,
       editForm: {
         id: null,
         code: '',
         name: '',
         phone: '',
-        remark: ''
+        remark: '',
+        groupId: null
       },
       editRules: {
         code: [
@@ -217,23 +244,65 @@ export default {
         phone: [
           { required: true, message: '请输入联系电话', trigger: 'blur' },
           { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号', trigger: 'blur' }
-        ]
-      }
+        ],
+        groupId: [{ required: true, message: '请选择所属分组', trigger: 'change' }]
+      },
+      tableHeight: 320
     }
   },
   computed: {
-    tableMaxHeight() {
-      return 'calc(100vh - 310px)'
-    },
     pagedTableData() {
       const start = (this.pagination.page - 1) * this.pagination.pageSize
       return this.tableData.slice(start, start + this.pagination.pageSize)
     }
   },
   mounted() {
+    this.fetchGroupOptions()
     this.fetchData()
+    window.addEventListener('resize', this.syncTableHeight)
+  },
+  beforeDestroy() {
+    window.removeEventListener('resize', this.syncTableHeight)
   },
   methods: {
+    async fetchGroupOptions() {
+      try {
+        const res = await getEmployeeGroups()
+        if (res.code === 0) {
+          this.groupOptions = this.buildGroupOptions(res.data || [])
+          if (!this.importGroupId && this.groupOptions.length === 1) {
+            this.importGroupId = this.groupOptions[0].id
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch employee group options:', error)
+      }
+    },
+    buildGroupOptions(groups) {
+      const list = Array.isArray(groups) ? groups : []
+      const map = new Map()
+      list.forEach(item => {
+        map.set(item.id, item)
+      })
+      const labelCache = new Map()
+      const resolveLabel = (groupId) => {
+        if (!groupId || !map.has(groupId)) {
+          return ''
+        }
+        if (labelCache.has(groupId)) {
+          return labelCache.get(groupId)
+        }
+        const group = map.get(groupId)
+        const parentLabel = group.parentId ? resolveLabel(group.parentId) : ''
+        const label = parentLabel ? `${parentLabel} / ${group.name}` : group.name
+        labelCache.set(groupId, label)
+        return label
+      }
+      return list.map(item => ({
+        id: item.id,
+        label: resolveLabel(item.id)
+      }))
+    },
     async fetchData() {
       this.loading = true
       try {
@@ -247,6 +316,9 @@ export default {
           const rawList = Array.isArray(res.data) ? res.data : (res.data?.list || [])
           this.tableData = this.applyLocalFilters(rawList)
           this.pagination.total = this.tableData.length
+          this.$nextTick(() => {
+            this.syncTableHeight()
+          })
         }
       } catch (error) {
         console.error('Failed to fetch employees:', error)
@@ -284,9 +356,25 @@ export default {
     },
     handleSizeChange(size) {
       this.pagination.pageSize = size
+      this.syncTableHeight()
     },
     handlePageChange(page) {
       this.pagination.page = page
+    },
+    syncTableHeight() {
+      this.$nextTick(() => {
+        const card = this.$refs.tableCard && this.$refs.tableCard.$el
+        if (!card) return
+        const body = card.querySelector('.el-card__body')
+        const table = this.$refs.tableRef && this.$refs.tableRef.$el
+        if (!body || !table) return
+        let occupied = 0
+        Array.from(body.children).forEach(child => {
+          if (child === table) return
+          occupied += child.offsetHeight
+        })
+        this.tableHeight = Math.max(240, body.clientHeight - occupied - 16)
+      })
     },
     handleAdd() {
       this.editForm = {
@@ -294,7 +382,8 @@ export default {
         code: '',
         name: '',
         phone: '',
-        remark: ''
+        remark: '',
+        groupId: this.groupOptions.length === 1 ? this.groupOptions[0].id : null
       }
       this.showEditDialog = true
     },
@@ -304,7 +393,8 @@ export default {
         code: row.code || '',
         name: row.name || '',
         phone: row.phone || '',
-        remark: row.remark || ''
+        remark: row.remark || '',
+        groupId: row.groupId || null
       }
       this.showEditDialog = true
     },
@@ -314,6 +404,7 @@ export default {
     resetImportDialog() {
       this.importText = ''
       this.importFileName = ''
+      this.importGroupId = this.groupOptions.length === 1 ? this.groupOptions[0].id : null
       if (this.$refs.importFileInput) {
         this.$refs.importFileInput.value = ''
       }
@@ -487,7 +578,8 @@ export default {
         if (this.editForm.id) {
           const updatePayload = {
             name: this.editForm.name,
-            phone: this.editForm.phone
+            phone: this.editForm.phone,
+            groupId: this.editForm.groupId
           }
           res = await updateEmployee(this.editForm.id, updatePayload)
         } else {
@@ -495,7 +587,8 @@ export default {
             code: this.editForm.code,
             name: this.editForm.name,
             phone: this.editForm.phone,
-            remark: this.editForm.remark || ''
+            remark: this.editForm.remark || '',
+            groupId: this.editForm.groupId
           }
           res = await createEmployee(createPayload)
         }
@@ -550,6 +643,10 @@ export default {
       }).catch(() => {})
     },
     async handleImport() {
+      if (!this.importGroupId) {
+        this.$message.warning('请选择导入所属分组')
+        return
+      }
       if (!this.importText.trim()) {
         this.$message.warning('请输入导入内容')
         return
@@ -568,7 +665,7 @@ export default {
 
       try {
         this.importing = true
-        const res = await importEmployees(employees)
+        const res = await importEmployees(employees, this.importGroupId)
         if (res.code === 0) {
           const successCount = res.data?.successCount || 0
           const errors = res.data?.errors || []
@@ -598,13 +695,14 @@ export default {
           return
         }
 
-        const headers = ['员工工号', '员工姓名', '手机号', '备注', '创建时间']
+        const headers = ['员工工号', '员工姓名', '手机号', '所属分组', '备注', '创建时间']
         const rows = (Array.isArray(res.data) ? res.data : [])
           .filter(item => this.applyLocalFilters([item]).length > 0)
           .map(item => ([
             item.code || '',
             item.name || '',
             item.phone || '',
+            item.groupName || '',
             item.remark || '',
             item.createTime || ''
           ]))

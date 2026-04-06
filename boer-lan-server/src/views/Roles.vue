@@ -34,7 +34,7 @@
       </el-form>
     </div>
 
-    <div class="surface-card">
+    <el-card shadow="never" class="surface-card">
       <div class="action-row">
         <div class="soft-note">
           <i class="el-icon-info"></i>
@@ -46,7 +46,7 @@
         </div>
       </div>
 
-      <el-table :data="roles" v-loading="loading" border style="width: 100%; margin-top: 18px;">
+      <el-table :data="roles" v-loading="loading" border class="roles-table">
         <el-table-column label="序号" width="70" align="center">
           <template slot-scope="{ $index }">
             {{ $index + 1 }}
@@ -82,7 +82,7 @@
         </el-table-column>
         <el-table-column prop="remark" label="备注" min-width="200" show-overflow-tooltip />
       </el-table>
-    </div>
+    </el-card>
 
     <el-dialog
       :title="form.id ? '编辑角色' : '新增角色'"
@@ -488,30 +488,45 @@ export default {
 </script>
 
 <style scoped>
+.page-shell > .surface-card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .filter-panel ::v-deep .el-input {
-  width: 220px;
+  width: 180px;
 }
 
 .filter-panel ::v-deep .el-date-editor--daterange {
-  width: 260px;
+  width: 220px;
+}
+
+.roles-table {
+  width: 100%;
+  margin-top: 8px;
+  flex: 1;
+  min-height: 0;
 }
 
 .permission-toolbar {
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  font-size: 12px;
 }
 
 .permission-tree-wrap {
-  margin-top: 12px;
+  margin-top: 8px;
   border: 1px solid rgba(219, 228, 240, 0.92);
-  border-radius: 18px;
-  padding: 12px;
-  max-height: 320px;
+  border-radius: 2px;
+  padding: 8px;
+  max-height: 280px;
   overflow: auto;
-  background: #f9fbff;
+  background: #ffffff;
 }
 
 @media (max-width: 768px) {

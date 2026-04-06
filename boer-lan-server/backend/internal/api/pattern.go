@@ -77,6 +77,110 @@ func (h *PatternHandler) queryScopedDeviceIDs(scope userGroupScope) ([]uint, err
 	return normalizeGroupIDs(ids), nil
 }
 
+func (h *PatternHandler) queryScopedPatternIDs(scope userGroupScope, userID uint) ([]uint, error) {
+	if scope.All {
+		return nil, nil
+	}
+
+	patternIDs := make([]uint, 0)
+	appendIDs := func(ids []uint) {
+		patternIDs = append(patternIDs, ids...)
+	}
+
+	if userID != 0 {
+		uploadedPatternIDs := make([]uint, 0)
+		if err := h.db.Model(&model.Pattern{}).
+			Where("uploaded_by = ?", userID).
+			Pluck("id", &uploadedPatternIDs).Error; err != nil {
+			return nil, err
+		}
+		appendIDs(uploadedPatternIDs)
+	}
+
+	allowedDeviceIDs, err := h.queryScopedDeviceIDs(scope)
+	if err != nil {
+		return nil, err
+	}
+	if len(allowedDeviceIDs) == 0 {
+		return normalizeGroupIDs(patternIDs), nil
+	}
+
+	queryPatternIDs := func(model interface{}, extra func(*gorm.DB) *gorm.DB) error {
+		ids := make([]uint, 0)
+		query := h.db.Model(model).Where("device_id IN ?", allowedDeviceIDs)
+		if extra != nil {
+			query = extra(query)
+		}
+		if err := query.Distinct("pattern_id").Pluck("pattern_id", &ids).Error; err != nil {
+			return err
+		}
+		appendIDs(ids)
+		return nil
+	}
+
+	if err := queryPatternIDs(&model.DownloadTask{}, func(query *gorm.DB) *gorm.DB {
+		return query.Where("pattern_id > 0")
+	}); err != nil {
+		return nil, err
+	}
+	if err := queryPatternIDs(&model.ProductionRecord{}, func(query *gorm.DB) *gorm.DB {
+		return query.Where("pattern_id > 0")
+	}); err != nil {
+		return nil, err
+	}
+	if err := queryPatternIDs(&model.UploadTask{}, func(query *gorm.DB) *gorm.DB {
+		return query.Where("pattern_id IS NOT NULL")
+	}); err != nil {
+		return nil, err
+	}
+
+	return normalizeGroupIDs(patternIDs), nil
+}
+
+func containsUint(list []uint, target uint) bool {
+	for _, id := range list {
+		if id == target {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *PatternHandler) canAccessPatternID(scope userGroupScope, userID, patternID uint) (bool, error) {
+	if scope.All {
+		return true, nil
+	}
+
+	patternIDs, err := h.queryScopedPatternIDs(scope, userID)
+	if err != nil {
+		return false, err
+	}
+	return containsUint(patternIDs, patternID), nil
+}
+
+func (h *PatternHandler) filterAccessiblePatternIDs(scope userGroupScope, userID uint, patternIDs []uint) ([]uint, error) {
+	if scope.All {
+		return normalizeGroupIDs(patternIDs), nil
+	}
+
+	accessiblePatternIDs, err := h.queryScopedPatternIDs(scope, userID)
+	if err != nil {
+		return nil, err
+	}
+	accessibleSet := make(map[uint]struct{}, len(accessiblePatternIDs))
+	for _, id := range accessiblePatternIDs {
+		accessibleSet[id] = struct{}{}
+	}
+
+	filtered := make([]uint, 0, len(patternIDs))
+	for _, id := range normalizeGroupIDs(patternIDs) {
+		if _, ok := accessibleSet[id]; ok {
+			filtered = append(filtered, id)
+		}
+	}
+	return filtered, nil
+}
+
 func (h *PatternHandler) canAccessDeviceID(scope userGroupScope, deviceID uint) (bool, error) {
 	if scope.All {
 		return true, nil
@@ -205,6 +309,30 @@ func (h *PatternHandler) validateAndBuildPatternUpdates(req PatternUpdateRequest
 func (h *PatternHandler) GetPatternList(c *gin.Context) {
 	var patterns []model.Pattern
 	query := h.db.Model(&model.Pattern{})
+	scope := h.getCurrentUserScope(c)
+
+	if !scope.All {
+		patternIDs, err := h.queryScopedPatternIDs(scope, c.GetUint("userId"))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "查询花型范围失败",
+			})
+			return
+		}
+		if len(patternIDs) == 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"code": 0,
+				"data": gin.H{
+					"list":  []gin.H{},
+					"total": 0,
+				},
+				"message": "success",
+			})
+			return
+		}
+		query = query.Where("id IN ?", patternIDs)
+	}
 
 	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
 		like := "%" + keyword + "%"
@@ -300,8 +428,29 @@ func (h *PatternHandler) GetPatternList(c *gin.Context) {
 
 func (h *PatternHandler) GetPatternTypes(c *gin.Context) {
 	types := make([]string, 0)
-	if err := h.db.Model(&model.Pattern{}).
-		Where("pattern_type <> ''").
+	query := h.db.Model(&model.Pattern{}).Where("pattern_type <> ''")
+	scope := h.getCurrentUserScope(c)
+
+	if !scope.All {
+		patternIDs, err := h.queryScopedPatternIDs(scope, c.GetUint("userId"))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "查询花型范围失败",
+			})
+			return
+		}
+		if len(patternIDs) == 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"code": 0,
+				"data": []string{},
+			})
+			return
+		}
+		query = query.Where("id IN ?", patternIDs)
+	}
+
+	if err := query.
 		Distinct("pattern_type").
 		Order("pattern_type ASC").
 		Pluck("pattern_type", &types).Error; err != nil {
@@ -338,6 +487,9 @@ func (h *PatternHandler) UploadPattern(c *gin.Context) {
 
 	filename := time.Now().Format("20060102150405.000") + "_" + file.Filename
 	savePath := filepath.Join("uploads", "patterns", filename)
+	cleanupSavedFile := func() {
+		_ = os.Remove(savePath)
+	}
 
 	if err := c.SaveUploadedFile(file, savePath); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -351,6 +503,7 @@ func (h *PatternHandler) UploadPattern(c *gin.Context) {
 	if name == "" {
 		name = file.Filename
 	} else if !isValidPatternName(name) {
+		cleanupSavedFile()
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": "花型名称需为“款式+部位+尺码”格式",
@@ -364,6 +517,7 @@ func (h *PatternHandler) UploadPattern(c *gin.Context) {
 	if stitchesStr := strings.TrimSpace(c.PostForm("stitches")); stitchesStr != "" {
 		parsed, err := strconv.Atoi(stitchesStr)
 		if err != nil || parsed < 0 {
+			cleanupSavedFile()
 			c.JSON(http.StatusBadRequest, gin.H{
 				"code":    400,
 				"message": "针数必须是非负整数",
@@ -377,6 +531,7 @@ func (h *PatternHandler) UploadPattern(c *gin.Context) {
 	if unitPriceStr := strings.TrimSpace(c.PostForm("unitPrice")); unitPriceStr != "" {
 		parsed, err := strconv.ParseFloat(unitPriceStr, 64)
 		if err != nil || parsed < 0 {
+			cleanupSavedFile()
 			c.JSON(http.StatusBadRequest, gin.H{
 				"code":    400,
 				"message": "工价必须是非负数字",
@@ -400,7 +555,7 @@ func (h *PatternHandler) UploadPattern(c *gin.Context) {
 	}
 
 	if err := h.db.Create(&pattern).Error; err != nil {
-		_ = os.Remove(savePath)
+		cleanupSavedFile()
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
 			"message": "保存花型记录失败",
@@ -434,6 +589,23 @@ func (h *PatternHandler) UpdatePattern(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{
 			"code":    404,
 			"message": "花型不存在",
+		})
+		return
+	}
+
+	scope := h.getCurrentUserScope(c)
+	allowed, err := h.canAccessPatternID(scope, c.GetUint("userId"), pattern.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "校验花型权限失败",
+		})
+		return
+	}
+	if !allowed {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    403,
+			"message": "无权修改该花型",
 		})
 		return
 	}
@@ -567,6 +739,23 @@ func (h *PatternHandler) BatchUpdatePatterns(c *gin.Context) {
 		return
 	}
 
+	scope := h.getCurrentUserScope(c)
+	accessiblePatternIDs, err := h.filterAccessiblePatternIDs(scope, c.GetUint("userId"), req.IDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "校验花型权限失败",
+		})
+		return
+	}
+	if len(accessiblePatternIDs) != len(req.IDs) {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    403,
+			"message": "包含无权修改的花型",
+		})
+		return
+	}
+
 	result := h.db.Model(&model.Pattern{}).Where("id IN ?", req.IDs).Updates(updates)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -593,6 +782,23 @@ func (h *PatternHandler) DeletePattern(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{
 			"code":    404,
 			"message": "花型不存在",
+		})
+		return
+	}
+
+	scope := h.getCurrentUserScope(c)
+	allowed, err := h.canAccessPatternID(scope, c.GetUint("userId"), pattern.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "校验花型权限失败",
+		})
+		return
+	}
+	if !allowed {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    403,
+			"message": "无权删除该花型",
 		})
 		return
 	}
@@ -653,6 +859,23 @@ func (h *PatternHandler) DownloadToDevice(c *gin.Context) {
 		return
 	}
 
+	scope := h.getCurrentUserScope(c)
+	allowed, err := h.canAccessPatternID(scope, c.GetUint("userId"), req.PatternID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "校验花型权限失败",
+		})
+		return
+	}
+	if !allowed {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    403,
+			"message": "无权下发该花型",
+		})
+		return
+	}
+
 	existingDeviceIDs := make([]uint, 0)
 	if err := h.db.Model(&model.Device{}).
 		Where("id IN ?", req.DeviceIDs).
@@ -671,7 +894,6 @@ func (h *PatternHandler) DownloadToDevice(c *gin.Context) {
 		return
 	}
 
-	scope := h.getCurrentUserScope(c)
 	if !scope.All {
 		accessibleDeviceIDs := make([]uint, 0)
 		if len(scope.GroupIDs) > 0 {
@@ -761,6 +983,23 @@ func (h *PatternHandler) BatchDownload(c *gin.Context) {
 		return
 	}
 
+	scope := h.getCurrentUserScope(c)
+	accessiblePatternIDs, err := h.filterAccessiblePatternIDs(scope, c.GetUint("userId"), req.PatternIDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "校验花型权限失败",
+		})
+		return
+	}
+	if len(accessiblePatternIDs) != len(req.PatternIDs) {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    403,
+			"message": "包含无权下发的花型",
+		})
+		return
+	}
+
 	existingDeviceIDs := make([]uint, 0)
 	if err := h.db.Model(&model.Device{}).
 		Where("id IN ?", req.DeviceIDs).
@@ -779,7 +1018,6 @@ func (h *PatternHandler) BatchDownload(c *gin.Context) {
 		return
 	}
 
-	scope := h.getCurrentUserScope(c)
 	if !scope.All {
 		accessibleDeviceIDs := make([]uint, 0)
 		if len(scope.GroupIDs) > 0 {

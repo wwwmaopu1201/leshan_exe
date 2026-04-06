@@ -1,62 +1,49 @@
 <template>
   <div class="app-shell">
-    <aside class="app-sidebar">
-      <div class="sidebar-brand">
-        <div class="sidebar-brand__icon">
-          <i class="el-icon-office-building"></i>
-        </div>
-        <div class="sidebar-brand__copy">
-          <strong>博尔局域网服务器</strong>
-          <span>管理后台</span>
-        </div>
+    <header class="app-topbar">
+      <div class="app-topbar__left">
+        <i class="el-icon-office-building"></i>
+        <span class="app-topbar__title">局域网管理软件服务端</span>
       </div>
 
-      <el-menu
-        :default-active="currentPath"
-        class="sidebar-menu"
-        background-color="transparent"
-        text-color="#d8e6ff"
-        active-text-color="#ffffff"
-        @select="handleMenuSelect"
-      >
-        <el-menu-item v-for="item in menuItems" :key="item.path" :index="item.path">
-          <i :class="item.icon"></i>
-          <span>{{ item.label }}</span>
-        </el-menu-item>
-      </el-menu>
-
-      <div class="sidebar-footer">
-        <div class="sidebar-footer__title">运行版本</div>
-        <div class="sidebar-footer__value">{{ serverInfo.version || '1.0.9' }}</div>
+      <div class="app-topbar__actions">
+        <div class="server-chip">
+          <span class="server-chip__label">服务器 IP</span>
+          <strong>{{ serverIpText }}</strong>
+        </div>
+        <div class="server-chip">
+          <span class="server-chip__label">管理端口</span>
+          <strong>{{ serverInfo.port || '-' }}</strong>
+        </div>
+        <div class="server-chip">
+          <span class="server-chip__label">设备 TCP 端口</span>
+          <strong>{{ serverInfo.tcpPort || '-' }}</strong>
+        </div>
+        <el-button size="small" @click="logout">退出登录</el-button>
       </div>
-    </aside>
+    </header>
 
-    <div class="app-main">
-      <header class="app-header">
-        <div class="app-header__title">
-          <h1>{{ currentTitle }}</h1>
-        </div>
-
-        <div class="app-header__actions">
-          <div class="server-chip">
-            <span class="server-chip__label">服务器 IP</span>
-            <strong>{{ serverIpText }}</strong>
-          </div>
-          <div class="server-chip">
-            <span class="server-chip__label">管理端口</span>
-            <strong>{{ serverInfo.port || '-' }}</strong>
-          </div>
-          <div class="server-chip">
-            <span class="server-chip__label">设备 TCP 端口</span>
-            <strong>{{ serverInfo.tcpPort || '-' }}</strong>
-          </div>
-          <el-button size="small" @click="logout">退出登录</el-button>
-        </div>
-      </header>
-
-      <main class="app-content">
-        <router-view />
-      </main>
+    <div class="app-body">
+      <aside class="app-sidebar">
+        <el-menu
+          :default-active="currentPath"
+          class="sidebar-menu"
+          background-color="transparent"
+          text-color="#4c5768"
+          active-text-color="#3388ff"
+          @select="handleMenuSelect"
+        >
+          <el-menu-item v-for="item in menuItems" :key="item.path" :index="item.path">
+            <i :class="item.icon"></i>
+            <span>{{ item.label }}</span>
+          </el-menu-item>
+        </el-menu>
+      </aside>
+      <div class="app-main">
+        <main class="app-content">
+          <router-view />
+        </main>
+      </div>
     </div>
   </div>
 </template>
@@ -89,10 +76,6 @@ export default {
   computed: {
     currentPath() {
       return this.$route.path
-    },
-    currentTitle() {
-      const matched = this.menuItems.find(item => item.path === this.$route.path)
-      return matched ? matched.label : '服务器后台'
     },
     serverIpText() {
       const ips = Array.isArray(this.serverInfo.ips) ? this.serverInfo.ips.filter(Boolean) : []
@@ -132,107 +115,79 @@ export default {
 
 <style lang="scss" scoped>
 .app-shell {
-  display: flex;
-  width: 100%;
   height: 100%;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
   background: #f5f7fa;
 }
 
-.app-sidebar {
-  width: 240px;
-  padding: 12px 0;
+.app-topbar {
+  height: 46px;
+  padding: 0 12px;
+  background: linear-gradient(180deg, #338cf9 0%, #287de8 100%);
+  color: #ffffff;
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.app-topbar__left,
+.app-topbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.app-topbar__title {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.app-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.app-sidebar {
+  width: 206px;
   background: #ffffff;
-  border-right: 1px solid #e6e6e6;
+  border-right: 1px solid #dbe3ec;
   color: #303133;
 }
 
-.sidebar-brand {
-  min-height: 64px;
-  padding: 0 16px 12px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  border-bottom: 1px solid #ebeef5;
-}
-
-.sidebar-brand__icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 4px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: #ecf5ff;
-  color: #409eff;
-  font-size: 18px;
-}
-
-.sidebar-brand__copy {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-
-  strong {
-    font-size: 16px;
-    font-weight: 600;
-  }
-
-  span {
-    color: #909399;
-    font-size: 12px;
-  }
-}
-
 .sidebar-menu {
-  margin-top: 12px;
+  padding-top: 8px;
   border: none;
-  flex: 1;
+  height: 100%;
 }
 
 .sidebar-menu ::v-deep .el-menu-item {
-  height: 44px;
-  line-height: 44px;
-  margin: 0 12px 4px;
-  border-radius: 4px;
-  color: #303133 !important;
+  height: 38px;
+  line-height: 38px;
+  margin: 0 8px 4px;
+  border-radius: 2px;
+  color: #4d596a !important;
+  font-size: 12px;
 }
 
 .sidebar-menu ::v-deep .el-menu-item i {
-  width: 24px;
-  margin-right: 10px;
-  font-size: 16px;
+  width: 18px;
+  margin-right: 8px;
+  font-size: 14px;
   color: inherit;
 }
 
 .sidebar-menu ::v-deep .el-menu-item:hover {
-  background: #ecf5ff !important;
-  color: #409eff !important;
+  background: #edf5ff !important;
+  color: #3388ff !important;
 }
 
 .sidebar-menu ::v-deep .el-menu-item.is-active {
-  background: #ecf5ff !important;
-  color: #409eff !important;
-}
-
-.sidebar-footer {
-  margin: 12px 16px 0;
-  padding: 12px;
-  border-radius: 4px;
-  background: #f5f7fa;
-  border: 1px solid #ebeef5;
-}
-
-.sidebar-footer__title {
-  color: #909399;
-  font-size: 12px;
-}
-
-.sidebar-footer__value {
-  margin-top: 6px;
-  font-size: 14px;
-  font-weight: 500;
+  background: #e8f2ff !important;
+  color: #3388ff !important;
 }
 
 .app-main {
@@ -243,75 +198,38 @@ export default {
   overflow: hidden;
 }
 
-.app-header {
-  min-height: 60px;
-  padding: 12px 20px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  background: #ffffff;
-  border-bottom: 1px solid #ebeef5;
-}
-
-.app-header__title {
-  min-width: 0;
-
-  h1 {
-    margin: 0;
-    font-size: 20px;
-    color: #303133;
-    font-weight: 500;
-  }
-}
-
-.app-header__actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
 .server-chip {
-  min-height: 40px;
-  padding: 8px 12px;
-  border-radius: 4px;
-  border: 1px solid #dcdfe6;
-  background: #ffffff;
+  min-height: 26px;
+  padding: 0 8px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.14);
   display: inline-flex;
   flex-direction: column;
   justify-content: center;
-  gap: 4px;
+  gap: 1px;
 
   strong {
-    color: #303133;
-    font-size: 14px;
+    color: #ffffff;
+    font-size: 12px;
     font-weight: 500;
   }
 }
 
 .server-chip__label {
-  color: #909399;
-  font-size: 12px;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 11px;
 }
 
 .app-content {
   flex: 1;
   min-height: 0;
-  padding: 0;
+  padding: 8px;
   overflow-y: auto;
 }
 
 @media (max-width: 1120px) {
-  .app-header {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .app-header__actions {
-    width: 100%;
-    justify-content: flex-start;
+  .app-topbar__actions {
+    gap: 6px;
   }
 }
 

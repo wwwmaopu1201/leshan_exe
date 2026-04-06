@@ -9,7 +9,7 @@
 
     <div class="tool-layout">
       <div class="tool-main">
-        <div class="surface-card">
+        <el-card shadow="never" class="surface-card">
           <div class="section-title">
             <div>
               <h3>网络诊断工具</h3>
@@ -22,9 +22,9 @@
             <el-button :loading="commandLoading" icon="el-icon-share" @click="showArpCache">查看 ARP 缓存</el-button>
             <el-button :loading="commandLoading" icon="el-icon-monitor" @click="showHostname">查看主机名</el-button>
           </div>
-        </div>
+        </el-card>
 
-        <div class="surface-card">
+        <el-card shadow="never" class="surface-card">
           <div class="section-title">
             <div>
               <h3>端口占用诊断</h3>
@@ -57,9 +57,9 @@
             <i class="el-icon-warning-outline"></i>
             <span>端口修改后需要重启服务器程序生效；Windows 下会自动补充 tasklist 进程信息。</span>
           </div>
-        </div>
+        </el-card>
 
-        <div class="surface-card">
+        <el-card shadow="never" class="surface-card">
           <div class="section-title">
             <div>
               <h3>防火墙快捷操作</h3>
@@ -80,11 +80,11 @@
               关闭防火墙
             </el-button>
           </div>
-        </div>
+        </el-card>
       </div>
 
       <div class="tool-side">
-        <div class="surface-card">
+        <el-card shadow="never" class="surface-card">
           <div class="section-title">
             <div>
               <h3>服务器配置</h3>
@@ -121,9 +121,9 @@
             <el-button type="primary" :loading="settingsLoading" @click="saveSettings">保存配置</el-button>
             <el-button type="warning" plain @click="clearDebugLogs">清空调试日志</el-button>
           </div>
-        </div>
+        </el-card>
 
-        <div class="surface-card">
+        <el-card shadow="never" class="surface-card">
           <div class="section-title">
             <div>
               <h3>运行环境信息</h3>
@@ -159,7 +159,7 @@
               <el-button type="text" size="mini" @click="copyText(serverInfo.dataDir)">复制</el-button>
             </div>
           </div>
-        </div>
+        </el-card>
       </div>
     </div>
 
@@ -541,28 +541,36 @@ export default {
 .tool-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.18fr) minmax(320px, 0.82fr);
-  gap: 18px;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
 }
 
 .tool-main,
 .tool-side {
   display: grid;
-  gap: 18px;
+  gap: 8px;
+  min-height: 0;
+}
+
+.tool-main .surface-card,
+.tool-side .surface-card {
+  min-height: 0;
 }
 
 .tool-button-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
+  gap: 8px;
 }
 
 .tool-port-row {
   display: grid;
-  gap: 14px;
+  gap: 8px;
 }
 
 .tool-form ::v-deep .el-form-item {
-  margin-bottom: 18px;
+  margin-bottom: 8px;
 }
 
 .full-width {

@@ -236,20 +236,20 @@ export default {
 
 .debug-list {
   display: grid;
-  gap: 12px;
+  gap: 8px;
 }
 
 .debug-item {
-  padding: 16px 18px;
-  border-radius: 20px;
-  border: 1px solid rgba(219, 228, 240, 0.92);
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  padding: 10px 12px;
+  border-radius: 2px;
+  border: 1px solid #dfe6ee;
+  background: #ffffff;
 }
 
 .debug-item__meta {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
@@ -260,9 +260,9 @@ export default {
 }
 
 .debug-source {
-  min-height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
+  min-height: 20px;
+  padding: 0 8px;
+  border-radius: 2px;
   background: rgba(47, 109, 246, 0.08);
   color: #2f6df6;
   display: inline-flex;
@@ -272,9 +272,9 @@ export default {
 }
 
 .debug-item__message {
-  margin-top: 10px;
-  color: #22324d;
-  line-height: 1.8;
+  margin-top: 6px;
+  color: #303133;
+  line-height: 1.6;
   word-break: break-word;
 }
 </style>

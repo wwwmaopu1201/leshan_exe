@@ -77,7 +77,7 @@
       </div>
     </div>
 
-    <div class="card profile-log-card">
+    <div ref="logCard" class="card profile-log-card page-table-card">
       <div class="section-title">
         <div>
           <h3>登录记录</h3>
@@ -85,7 +85,7 @@
         </div>
       </div>
 
-      <el-table v-loading="logLoading" :data="loginLogs" border empty-text="暂无登录记录">
+      <el-table ref="logTableRef" v-loading="logLoading" :data="loginLogs" border :height="tableHeight" empty-text="暂无登录记录">
         <el-table-column prop="time" label="登录时间" width="180" />
         <el-table-column prop="ip" label="IP地址" width="150" />
         <el-table-column prop="device" label="设备" min-width="200" />
@@ -130,7 +130,8 @@ export default {
       },
       loginLogs: [],
       submitting: false,
-      logLoading: false
+      logLoading: false,
+      tableHeight: 260
     }
   },
   computed: {
@@ -139,6 +140,10 @@ export default {
   mounted() {
     this.syncUserInfo()
     this.fetchLoginLogs()
+    window.addEventListener('resize', this.syncTableHeight)
+  },
+  beforeDestroy() {
+    window.removeEventListener('resize', this.syncTableHeight)
   },
   methods: {
     syncUserInfo() {
@@ -166,6 +171,9 @@ export default {
         const res = await getLoginLogs()
         if (res.code === 0) {
           this.loginLogs = Array.isArray(res.data) ? res.data : []
+          this.$nextTick(() => {
+            this.syncTableHeight()
+          })
         }
       } catch (error) {
         console.error('Failed to fetch login logs:', error)
@@ -177,6 +185,19 @@ export default {
       this.syncUserInfo()
       this.$nextTick(() => {
         this.$refs.formRef?.clearValidate()
+      })
+    },
+    syncTableHeight() {
+      this.$nextTick(() => {
+        const card = this.$refs.logCard
+        const table = this.$refs.logTableRef && this.$refs.logTableRef.$el
+        if (!card || !table) return
+        let occupied = 0
+        Array.from(card.children).forEach(child => {
+          if (child === table) return
+          occupied += child.offsetHeight
+        })
+        this.tableHeight = Math.max(220, card.clientHeight - occupied - 16)
       })
     },
     async handleSave() {
@@ -341,6 +362,10 @@ export default {
 
 .profile-log-card {
   margin-top: 18px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 @media (max-width: 1080px) {

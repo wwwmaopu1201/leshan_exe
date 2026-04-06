@@ -1,0 +1,10 @@
+{
+  "name": "leshan-protocol-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "server": "node src/server/app.js",
+    "client": "node src/client/app.js"
+  }
+}

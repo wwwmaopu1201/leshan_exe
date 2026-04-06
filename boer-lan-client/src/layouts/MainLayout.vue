@@ -1,159 +1,142 @@
 <template>
   <div class="main-layout">
-    <aside class="sidebar" :class="{ collapsed: isCollapsed }">
-      <div class="logo">
-        <img src="@/assets/images/logo.png" alt="Logo" class="logo-img" />
-        <div v-if="!isCollapsed" class="logo-copy">
-          <span class="logo-title">博尔管理系统</span>
-          <span class="logo-subtitle">Boer LAN Client</span>
-        </div>
+    <header class="topbar">
+      <div class="topbar-left">
+        <img src="@/assets/images/logo.png" alt="Logo" class="topbar-logo" />
+        <span class="topbar-title">局域网管理软件客户端</span>
+        <button class="collapse-btn" type="button" @click="toggleSidebar">
+          <i :class="isCollapsed ? 'el-icon-s-unfold' : 'el-icon-s-fold'"></i>
+        </button>
       </div>
-
-      <el-menu
-        :default-active="activeMenu"
-        class="sidebar-menu"
-        background-color="transparent"
-        text-color="#d8e4ff"
-        active-text-color="#ffffff"
-        :collapse="isCollapsed"
-        :unique-opened="true"
-        router
-      >
-        <el-menu-item v-if="canAccess.home" index="/home">
-          <span class="menu-icon"><i class="el-icon-s-home"></i></span>
-          <span slot="title">{{ $t('menu.home') }}</span>
-        </el-menu-item>
-
-        <el-menu-item v-if="canAccess.dashboard" index="/dashboard">
-          <span class="menu-icon"><i class="el-icon-data-board"></i></span>
-          <span slot="title">{{ $t('menu.dashboard') }}</span>
-        </el-menu-item>
-
-        <el-submenu v-if="canAccess.deviceSection" index="/device">
-          <template slot="title">
-            <span class="menu-icon"><i class="el-icon-monitor"></i></span>
-            <span>{{ $t('menu.device') }}</span>
-          </template>
-          <el-menu-item v-if="canAccess.deviceManagement" index="/device/list">
-            {{ $t('menu.deviceList') }}
-          </el-menu-item>
-          <el-menu-item v-if="canAccess.remoteMonitoring" index="/device/monitor">
-            {{ $t('menu.remoteMonitor') }}
-          </el-menu-item>
-        </el-submenu>
-
-        <el-submenu v-if="canAccess.fileManagement" index="/file">
-          <template slot="title">
-            <span class="menu-icon"><i class="el-icon-folder"></i></span>
-            <span>{{ $t('menu.file') }}</span>
-          </template>
-          <el-menu-item index="/file/pattern">{{ $t('menu.patternList') }}</el-menu-item>
-          <el-menu-item index="/file/queue">{{ $t('menu.downloadQueue') }}</el-menu-item>
-          <el-menu-item index="/file/log">{{ $t('menu.downloadLog') }}</el-menu-item>
-        </el-submenu>
-
-        <el-submenu v-if="canAccess.statistics" index="/statistics">
-          <template slot="title">
-            <span class="menu-icon"><i class="el-icon-s-data"></i></span>
-            <span>{{ $t('menu.statistics') }}</span>
-          </template>
-          <el-menu-item index="/statistics/salary">{{ $t('menu.salaryStats') }}</el-menu-item>
-          <el-menu-item index="/statistics/process">{{ $t('menu.processOverview') }}</el-menu-item>
-          <el-menu-item index="/statistics/duration">{{ $t('menu.durationStats') }}</el-menu-item>
-          <el-menu-item index="/statistics/alarm">{{ $t('menu.alarmStats') }}</el-menu-item>
-        </el-submenu>
-
-        <el-submenu v-if="canAccess.employeeManagement" index="/employee">
-          <template slot="title">
-            <span class="menu-icon"><i class="el-icon-user"></i></span>
-            <span>{{ $t('menu.employee') }}</span>
-          </template>
-          <el-menu-item index="/employee/list">{{ $t('menu.employeeList') }}</el-menu-item>
-        </el-submenu>
-
-        <el-submenu index="/profile">
-          <template slot="title">
-            <span class="menu-icon"><i class="el-icon-user-solid"></i></span>
-            <span>{{ $t('menu.profile') }}</span>
-          </template>
-          <el-menu-item index="/profile/info">{{ $t('menu.basicInfo') }}</el-menu-item>
-          <el-menu-item index="/profile/password">{{ $t('menu.changePassword') }}</el-menu-item>
-        </el-submenu>
-
-        <el-submenu index="/support">
-          <template slot="title">
-            <span class="menu-icon"><i class="el-icon-service"></i></span>
-            <span>{{ $t('menu.support') }}</span>
-          </template>
-          <el-menu-item index="/support/contact">{{ $t('menu.contact') }}</el-menu-item>
-          <el-menu-item index="/support/manual">{{ $t('menu.manual') }}</el-menu-item>
-        </el-submenu>
-      </el-menu>
-    </aside>
-
-    <div class="main-container">
-      <header class="header">
-        <div class="header-left">
-          <button class="collapse-btn" type="button" @click="toggleSidebar">
-            <i :class="isCollapsed ? 'el-icon-s-unfold' : 'el-icon-s-fold'"></i>
+      <div class="topbar-right">
+        <div class="server-tag" v-if="serverAddress">
+          <i class="el-icon-link"></i>
+          <span>{{ serverAddress }}</span>
+        </div>
+        <div class="lang-switch" role="group" aria-label="language switch">
+          <button
+            v-for="item in languageOptions"
+            :key="item.value"
+            type="button"
+            :class="{ active: currentLang === item.value }"
+            @click="changeLang(item.value)"
+          >
+            {{ item.label }}
           </button>
-          <div class="header-info">
-            <el-breadcrumb separator="/">
-              <el-breadcrumb-item
-                v-for="(item, index) in breadcrumbs"
-                :key="`${item.title}-${index}`"
-                :to="item.path || undefined"
-              >
-                {{ item.title }}
-              </el-breadcrumb-item>
-            </el-breadcrumb>
-            <div class="server-tag" v-if="serverAddress">
-              <i class="el-icon-link"></i>
-              <span>{{ serverAddress }}</span>
-            </div>
-          </div>
         </div>
 
-        <div class="header-right">
-          <div class="lang-switch" role="group" aria-label="language switch">
-            <button
-              v-for="item in languageOptions"
-              :key="item.value"
-              type="button"
-              :class="{ active: currentLang === item.value }"
-              @click="changeLang(item.value)"
-            >
-              {{ item.label }}
-            </button>
-          </div>
-
-          <el-dropdown trigger="click" @command="handleCommand">
-            <div class="user-info">
-              <el-avatar :size="34" icon="el-icon-user-solid"></el-avatar>
-              <div class="user-copy">
-                <span class="username">{{ user?.username || 'Admin' }}</span>
-                <span class="user-role">{{ currentLangLabel }}</span>
-              </div>
-              <i class="el-icon-arrow-down"></i>
+        <el-dropdown trigger="click" @command="handleCommand">
+          <div class="user-info">
+            <el-avatar :size="24" icon="el-icon-user-solid"></el-avatar>
+            <div class="user-copy">
+              <span class="username">{{ user?.username || 'Admin' }}</span>
             </div>
-            <el-dropdown-menu slot="dropdown">
-              <el-dropdown-item command="profile">
-                <i class="el-icon-user"></i> {{ $t('menu.profile') }}
-              </el-dropdown-item>
-              <el-dropdown-item command="password">
-                <i class="el-icon-lock"></i> {{ $t('menu.changePassword') }}
-              </el-dropdown-item>
-              <el-dropdown-item divided command="logout">
-                <i class="el-icon-switch-button"></i> 退出登录
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </el-dropdown>
-        </div>
-      </header>
+            <i class="el-icon-arrow-down"></i>
+          </div>
+          <el-dropdown-menu slot="dropdown">
+            <el-dropdown-item command="profile">
+              <i class="el-icon-user"></i> {{ $t('menu.profile') }}
+            </el-dropdown-item>
+            <el-dropdown-item command="password">
+              <i class="el-icon-lock"></i> {{ $t('menu.changePassword') }}
+            </el-dropdown-item>
+            <el-dropdown-item divided command="logout">
+              <i class="el-icon-switch-button"></i> 退出登录
+            </el-dropdown-item>
+          </el-dropdown-menu>
+        </el-dropdown>
+      </div>
+    </header>
 
-      <main class="content">
-        <router-view />
-      </main>
+    <div class="shell-body">
+      <aside class="sidebar" :class="{ collapsed: isCollapsed }">
+        <el-menu
+          :default-active="activeMenu"
+          class="sidebar-menu"
+          background-color="transparent"
+          text-color="#4c5768"
+          active-text-color="#3388ff"
+          :collapse="isCollapsed"
+          :unique-opened="true"
+          router
+        >
+          <el-menu-item v-if="canAccess.home" index="/home">
+            <span class="menu-icon"><i class="el-icon-s-home"></i></span>
+            <span slot="title">{{ $t('menu.home') }}</span>
+          </el-menu-item>
+
+          <el-menu-item v-if="canAccess.dashboard" index="/dashboard">
+            <span class="menu-icon"><i class="el-icon-data-board"></i></span>
+            <span slot="title">{{ $t('menu.dashboard') }}</span>
+          </el-menu-item>
+
+          <el-submenu v-if="canAccess.deviceSection" index="/device">
+            <template slot="title">
+              <span class="menu-icon"><i class="el-icon-monitor"></i></span>
+              <span>{{ $t('menu.device') }}</span>
+            </template>
+            <el-menu-item v-if="canAccess.deviceManagement" index="/device/list">
+              {{ $t('menu.deviceList') }}
+            </el-menu-item>
+            <el-menu-item v-if="canAccess.remoteMonitoring" index="/device/monitor">
+              {{ $t('menu.remoteMonitor') }}
+            </el-menu-item>
+          </el-submenu>
+
+          <el-submenu v-if="canAccess.fileManagement" index="/file">
+            <template slot="title">
+              <span class="menu-icon"><i class="el-icon-folder"></i></span>
+              <span>{{ $t('menu.file') }}</span>
+            </template>
+            <el-menu-item index="/file/pattern">{{ $t('menu.patternList') }}</el-menu-item>
+            <el-menu-item index="/file/queue">{{ $t('menu.downloadQueue') }}</el-menu-item>
+            <el-menu-item index="/file/log">{{ $t('menu.downloadLog') }}</el-menu-item>
+          </el-submenu>
+
+          <el-submenu v-if="canAccess.statistics" index="/statistics">
+            <template slot="title">
+              <span class="menu-icon"><i class="el-icon-s-data"></i></span>
+              <span>{{ $t('menu.statistics') }}</span>
+            </template>
+            <el-menu-item index="/statistics/salary">{{ $t('menu.salaryStats') }}</el-menu-item>
+            <el-menu-item index="/statistics/process">{{ $t('menu.processOverview') }}</el-menu-item>
+            <el-menu-item index="/statistics/duration">{{ $t('menu.durationStats') }}</el-menu-item>
+            <el-menu-item index="/statistics/alarm">{{ $t('menu.alarmStats') }}</el-menu-item>
+          </el-submenu>
+
+          <el-submenu v-if="canAccess.employeeManagement" index="/employee">
+            <template slot="title">
+              <span class="menu-icon"><i class="el-icon-user"></i></span>
+              <span>{{ $t('menu.employee') }}</span>
+            </template>
+            <el-menu-item index="/employee/list">{{ $t('menu.employeeList') }}</el-menu-item>
+          </el-submenu>
+
+          <el-submenu index="/profile">
+            <template slot="title">
+              <span class="menu-icon"><i class="el-icon-user-solid"></i></span>
+              <span>{{ $t('menu.profile') }}</span>
+            </template>
+            <el-menu-item index="/profile/info">{{ $t('menu.basicInfo') }}</el-menu-item>
+            <el-menu-item index="/profile/password">{{ $t('menu.changePassword') }}</el-menu-item>
+          </el-submenu>
+
+          <el-submenu index="/support">
+            <template slot="title">
+              <span class="menu-icon"><i class="el-icon-service"></i></span>
+              <span>{{ $t('menu.support') }}</span>
+            </template>
+            <el-menu-item index="/support/contact">{{ $t('menu.contact') }}</el-menu-item>
+            <el-menu-item index="/support/manual">{{ $t('menu.manual') }}</el-menu-item>
+          </el-submenu>
+        </el-menu>
+      </aside>
+
+      <div class="main-container">
+        <main class="content">
+          <router-view />
+        </main>
+      </div>
     </div>
   </div>
 </template>
@@ -196,9 +179,6 @@ export default {
     },
     currentLang() {
       return this.language || 'zh-CN'
-    },
-    currentLangLabel() {
-      return this.currentLang === 'zh-CN' ? '简体中文' : 'English'
     },
     serverAddress() {
       const ip = String(this.serverConfig?.ip || '').trim()
@@ -268,73 +248,65 @@ export default {
 
 <style lang="scss" scoped>
 .main-layout {
-  display: flex;
-  width: 100%;
   height: 100vh;
-  background: #f5f7fa;
+  display: flex;
+  flex-direction: column;
+  background: #eef2f6;
+}
+
+.topbar {
+  height: 46px;
+  padding: 0 12px;
+  background: linear-gradient(180deg, #338cf9 0%, #287de8 100%);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.08);
+}
+
+.topbar-left,
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.topbar-logo {
+  width: 18px;
+  height: 18px;
+}
+
+.topbar-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.shell-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
 }
 
 .sidebar {
-  width: 248px;
-  height: 100%;
-  padding: 12px 0;
+  width: 206px;
   background: #ffffff;
-  border-right: 1px solid #e6e6e6;
+  border-right: 1px solid #dbe3ec;
   transition: width 0.28s ease;
   overflow: hidden;
 
   &.collapsed {
-    width: 84px;
-
-    .logo {
-      justify-content: center;
-      padding: 12px 0;
-    }
-
-    .logo-img {
-      margin-right: 0;
-    }
-  }
-}
-
-.logo {
-  display: flex;
-  align-items: center;
-  min-height: 68px;
-  padding: 0 16px 12px;
-  border-bottom: 1px solid #ebeef5;
-
-  .logo-img {
-    width: 36px;
-    height: 36px;
-    margin-right: 12px;
-    border-radius: 4px;
-  }
-
-  .logo-copy {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-  }
-
-  .logo-title {
-    font-size: 16px;
-    font-weight: 600;
-    color: #303133;
-  }
-
-  .logo-subtitle {
-    font-size: 11px;
-    color: #909399;
+    width: 58px;
   }
 }
 
 .sidebar-menu {
-  height: calc(100% - 80px);
+  height: 100%;
   border: none;
   overflow-y: auto;
-  padding: 12px 0;
+  padding: 8px 0;
 
   &:not(.el-menu--collapse) {
     width: 100%;
@@ -342,25 +314,26 @@ export default {
 
   ::v-deep .el-submenu__title,
   ::v-deep .el-menu-item {
-    height: 44px;
-    line-height: 44px;
-    margin: 0 12px 4px;
-    border-radius: 4px;
-    padding-left: 16px !important;
-    color: #303133 !important;
+    height: 38px;
+    line-height: 38px;
+    margin: 0 8px 4px;
+    border-radius: 2px;
+    padding-left: 12px !important;
+    color: #4d596a !important;
+    font-size: 12px;
     transition: background-color 0.2s ease;
   }
 
   ::v-deep .el-submenu__title:hover,
   ::v-deep .el-menu-item:hover {
-    background: #ecf5ff !important;
-    color: #409eff !important;
+    background: #edf5ff !important;
+    color: #3388ff !important;
   }
 
   ::v-deep .el-submenu.is-opened > .el-submenu__title,
   ::v-deep .el-menu-item.is-active {
-    background: #ecf5ff !important;
-    color: #409eff !important;
+    background: #e8f2ff !important;
+    color: #3388ff !important;
   }
 
   ::v-deep .el-menu--inline {
@@ -368,11 +341,11 @@ export default {
   }
 
   ::v-deep .el-menu--inline .el-menu-item {
-    height: 40px;
-    line-height: 40px;
-    margin: 0 12px 4px 24px;
-    padding-left: 28px !important;
-    border-radius: 4px;
+    height: 34px;
+    line-height: 34px;
+    margin: 0 8px 3px 18px;
+    padding-left: 20px !important;
+    border-radius: 2px;
     background: transparent;
   }
 
@@ -384,14 +357,14 @@ export default {
 }
 
 .menu-icon {
-  width: 20px;
-  height: 20px;
-  margin-right: 10px;
+  width: 18px;
+  height: 18px;
+  margin-right: 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: currentColor;
-  font-size: 16px;
+  font-size: 14px;
   vertical-align: middle;
 }
 
@@ -402,87 +375,54 @@ export default {
   min-width: 0;
 }
 
-.header {
-  min-height: 60px;
-  padding: 0 20px;
-  background: #ffffff;
-  border-bottom: 1px solid #ebeef5;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  min-width: 0;
-}
-
 .collapse-btn {
-  width: 32px;
-  height: 32px;
-  border: 1px solid #dcdfe6;
-  border-radius: 4px;
-  background: #ffffff;
-  color: #606266;
-  font-size: 16px;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  font-size: 14px;
   cursor: pointer;
-  transition: border-color 0.2s ease, color 0.2s ease;
+  transition: background-color 0.2s ease;
 
   &:hover {
-    color: #409eff;
-    border-color: #c6e2ff;
+    background: rgba(255, 255, 255, 0.2);
   }
-}
-
-.header-info {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
 }
 
 .server-tag {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  width: fit-content;
-  max-width: 100%;
-  padding: 4px 10px;
-  border-radius: 12px;
-  background: #f4f4f5;
-  color: #606266;
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
   font-size: 12px;
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 14px;
 }
 
 .lang-switch {
   display: inline-flex;
   padding: 2px;
-  background: #f5f7fa;
-  border: 1px solid #dcdfe6;
-  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 2px;
 
   button {
-    min-width: 44px;
-    height: 28px;
+    min-width: 38px;
+    height: 22px;
     border: none;
-    border-radius: 4px;
+    border-radius: 2px;
     background: transparent;
-    color: #606266;
+    color: rgba(255, 255, 255, 0.86);
     font-size: 12px;
-    font-weight: 500;
+    font-weight: 600;
     cursor: pointer;
     transition: all 0.2s ease;
 
     &.active {
-      background: #409eff;
+      background: rgba(255, 255, 255, 0.24);
       color: #ffffff;
     }
   }
@@ -491,54 +431,29 @@ export default {
 .user-info {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 10px 6px 8px;
-  border: 1px solid #dcdfe6;
-  border-radius: 4px;
-  background: #ffffff;
-  color: #303133;
+  gap: 6px;
+  padding: 2px 8px 2px 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
   cursor: pointer;
 }
 
 .user-copy {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.username {
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.user-role {
-  font-size: 11px;
-  color: #909399;
+  align-items: center;
 }
 
 .content {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 0;
-}
-
-::v-deep .el-breadcrumb {
-  line-height: 1;
-}
-
-::v-deep .el-breadcrumb__inner,
-::v-deep .el-breadcrumb__separator {
-  color: #909399;
-}
-
-::v-deep .el-breadcrumb__inner.is-link:hover {
-  color: #409eff;
+  padding: 8px;
 }
 
 @media (max-width: 1200px) {
-  .header {
-    padding: 0 16px;
+  .server-tag {
+    display: none;
   }
 
   .lang-switch {
@@ -549,30 +464,14 @@ export default {
 @media (max-width: 768px) {
   .sidebar {
     position: fixed;
-    z-index: 20;
+    top: 46px;
     left: 0;
-    top: 0;
     bottom: 0;
-  }
-
-  .header {
-    height: auto;
-    min-height: 72px;
-    padding: 14px;
-    align-items: flex-start;
-  }
-
-  .header-left,
-  .header-right {
-    width: 100%;
-  }
-
-  .header-right {
-    justify-content: flex-end;
+    z-index: 20;
   }
 
   .content {
-    padding: 10px;
+    padding: 6px;
   }
 }
 </style>

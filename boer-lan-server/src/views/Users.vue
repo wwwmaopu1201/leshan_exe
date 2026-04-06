@@ -56,7 +56,7 @@
           </el-form>
         </div>
 
-        <div class="surface-card">
+        <el-card shadow="never" class="surface-card">
           <div class="action-row">
             <div class="action-group">
               <el-button
@@ -142,7 +142,7 @@
               </template>
             </el-table-column>
           </el-table>
-        </div>
+        </el-card>
       </div>
     </div>
 
@@ -595,6 +595,13 @@ export default {
       if (!role) return []
       return this.getPermissionTags(role.permissions)
     },
+    resolvePermissionsPayload() {
+      const rolePermissions = this.getRoleByName(this.form.role)?.permissions
+      if (rolePermissions) {
+        return rolePermissions
+      }
+      return this.buildPermissionJSON(this.form.permissionKeys)
+    },
     applyRolePermissions(roleName) {
       const role = this.getRoleByName(roleName)
       if (!role) return
@@ -669,6 +676,8 @@ export default {
     },
     openEditDialog(row) {
       const groupIds = this.normalizeGroupIds(row.groupIds, row.groupId)
+      const currentPermissionKeys = row.permissions ? this.toPermissionKeys(row.permissions) : []
+      const rolePermissionKeys = this.toPermissionKeys(this.getRoleByName(row.role || 'user')?.permissions)
       this.dialogVisible = true
       this.form = {
         id: row.id || row.ID,
@@ -681,10 +690,7 @@ export default {
         groupId: groupIds[0] || null,
         groupIds,
         disabled: !!row.disabled,
-        permissionKeys: this.toPermissionKeys(row.permissions)
-      }
-      if (this.form.role) {
-        this.applyRolePermissions(this.form.role)
+        permissionKeys: currentPermissionKeys.length ? currentPermissionKeys : rolePermissionKeys
       }
     },
     resetForm() {
@@ -706,7 +712,7 @@ export default {
           email: this.form.email,
           phone: String(this.form.phone || '').trim(),
           disabled: this.form.disabled,
-          permissions: this.getRoleByName(this.form.role)?.permissions || this.buildPermissionJSON(this.form.permissionKeys)
+          permissions: this.resolvePermissionsPayload()
         }
 
         if (this.isAdminRole(this.form.role)) {

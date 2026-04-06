@@ -92,22 +92,6 @@
           class="login-form"
           @submit.native.prevent="login"
         >
-          <el-form-item prop="serverIp">
-            <el-input
-              v-model.trim="loginForm.serverIp"
-              :placeholder="texts.serverIpPlaceholder"
-              prefix-icon="el-icon-s-promotion"
-            />
-          </el-form-item>
-
-          <el-form-item prop="port">
-            <el-input
-              v-model.trim="loginForm.port"
-              :placeholder="texts.portPlaceholder"
-              prefix-icon="el-icon-connection"
-            />
-          </el-form-item>
-
           <el-form-item prop="username">
             <el-input
               v-model.trim="loginForm.username"
@@ -155,16 +139,14 @@
 const REMEMBER_KEY = 'server_login_remember'
 const USERNAME_KEY = 'server_login_username'
 const PASSWORD_KEY = 'server_login_password'
+const LANGUAGE_KEY = 'server_login_language'
 const SERVER_IP_KEY = 'server_login_server_ip'
 const SERVER_PORT_KEY = 'server_login_server_port'
-const LANGUAGE_KEY = 'server_login_language'
 
 const LOCALES = {
   'zh-CN': {
     brand: '博尔局域网管理软件',
     title: '博尔局域网管理软件',
-    serverIpPlaceholder: '请输入IP地址',
-    portPlaceholder: '请输入端口号',
     usernamePlaceholder: '请输入账号',
     passwordPlaceholder: '请输入密码',
     remember: '记住密码',
@@ -172,13 +154,13 @@ const LOCALES = {
     company: '苏州博尔科技有限公司',
     usernameRequired: '请输入账号',
     passwordRequired: '请输入密码',
-    loginSuccess: '登录成功'
+    loginSuccess: '登录成功',
+    adminOnly: '仅管理员可登录服务端',
+    loginFailed: '登录失败，请检查账号密码'
   },
   'en-US': {
     brand: 'Boer LAN Management System',
     title: 'Boer LAN Management System',
-    serverIpPlaceholder: 'Enter IP Address',
-    portPlaceholder: 'Enter Port',
     usernamePlaceholder: 'Enter Username',
     passwordPlaceholder: 'Enter Password',
     remember: 'Remember Password',
@@ -186,7 +168,9 @@ const LOCALES = {
     company: 'Suzhou Boer Technology Co., Ltd.',
     usernameRequired: 'Please enter username',
     passwordRequired: 'Please enter password',
-    loginSuccess: 'Login successful'
+    loginSuccess: 'Login successful',
+    adminOnly: 'Only administrators can access the server console',
+    loginFailed: 'Login failed. Check username and password'
   }
 }
 
@@ -199,8 +183,6 @@ export default {
       loading: false,
       currentLanguage: LOCALES[language] ? language : 'zh-CN',
       loginForm: {
-        serverIp: localStorage.getItem(SERVER_IP_KEY) || '127.0.0.1',
-        port: localStorage.getItem(SERVER_PORT_KEY) || '8088',
         username: remembered ? (localStorage.getItem(USERNAME_KEY) || '') : '',
         password: remembered ? (localStorage.getItem(PASSWORD_KEY) || '') : '',
         remember: remembered
@@ -218,6 +200,11 @@ export default {
   },
   created() {
     this.applyRules()
+  },
+  mounted() {
+    localStorage.removeItem(SERVER_IP_KEY)
+    localStorage.removeItem(SERVER_PORT_KEY)
+    this.restoreSession()
   },
   methods: {
     applyRules() {
@@ -253,8 +240,6 @@ export default {
       return styles[index - 1] || {}
     },
     persistRememberState() {
-      localStorage.setItem(SERVER_IP_KEY, this.loginForm.serverIp || '')
-      localStorage.setItem(SERVER_PORT_KEY, this.loginForm.port || '')
       if (this.loginForm.remember) {
         localStorage.setItem(REMEMBER_KEY, '1')
         localStorage.setItem(USERNAME_KEY, this.loginForm.username || '')
@@ -265,6 +250,27 @@ export default {
       localStorage.removeItem(USERNAME_KEY)
       localStorage.removeItem(PASSWORD_KEY)
     },
+    async restoreSession() {
+      const token = localStorage.getItem('token')
+      if (!token) {
+        return
+      }
+
+      try {
+        const res = await this.$axios.get('/auth/userinfo', {
+          skipAuthRedirect: true,
+          suppressErrorMessage: true
+        })
+        if (res.code === 0 && String(res.data?.role || '').trim().toLowerCase() === 'admin') {
+          this.$router.replace('/home')
+          return
+        }
+      } catch (error) {
+        console.error('恢复登录态失败', error)
+      }
+
+      localStorage.removeItem('token')
+    },
     async login() {
       const valid = await this.$refs.loginFormRef.validate().catch(() => false)
       if (!valid) {
@@ -273,17 +279,41 @@ export default {
 
       this.loading = true
       try {
+        localStorage.removeItem('token')
+
         const res = await this.$axios.post('/auth/login', {
           username: this.loginForm.username,
           password: this.loginForm.password
+        }, {
+          skipAuthRedirect: true,
+          suppressErrorMessage: true
         })
-        if (res.code === 0) {
-          this.persistRememberState()
-          localStorage.setItem('token', res.data.token)
-          this.$message.success(this.texts.loginSuccess)
-          this.$router.push('/home')
+        if (res.code !== 0 || !res.data?.token) {
+          throw new Error(res.message || this.texts.loginFailed)
         }
+
+        localStorage.setItem('token', res.data.token)
+
+        const userInfo = await this.$axios.get('/auth/userinfo', {
+          skipAuthRedirect: true,
+          suppressErrorMessage: true
+        })
+        const roleName = String(userInfo.data?.role || res.data?.user?.role || '').trim().toLowerCase()
+        if (roleName !== 'admin') {
+          localStorage.removeItem('token')
+          this.$message.error(this.texts.adminOnly)
+          return
+        }
+
+        this.persistRememberState()
+        this.$message.success(this.texts.loginSuccess)
+        this.$router.push('/home')
       } catch (error) {
+        localStorage.removeItem('token')
+        const message = error?.response?.data?.message || error?.message
+        if (message) {
+          this.$message.error(message)
+        }
         console.error('登录失败', error)
       } finally {
         this.loading = false

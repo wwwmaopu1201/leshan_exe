@@ -44,61 +44,73 @@
 
         <el-row :gutter="20" class="stat-row">
           <el-col :span="6">
-            <div class="stat-card blue">
-              <div class="stat-icon"><i class="el-icon-time"></i></div>
-              <div class="stat-info">
+            <el-card shadow="never" class="stat-card blue" :body-style="{ padding: '0' }">
+              <div class="stat-card__body">
+                <div class="stat-icon"><i class="el-icon-time"></i></div>
+                <div class="stat-info stat-card__content">
                 <div class="stat-value">{{ summary.totalTime }}</div>
                 <div class="stat-label">总时长(h)</div>
+                </div>
               </div>
-            </div>
+            </el-card>
           </el-col>
           <el-col :span="6">
-            <div class="stat-card green">
-              <div class="stat-icon"><i class="el-icon-video-play"></i></div>
-              <div class="stat-info">
+            <el-card shadow="never" class="stat-card green" :body-style="{ padding: '0' }">
+              <div class="stat-card__body">
+                <div class="stat-icon"><i class="el-icon-video-play"></i></div>
+                <div class="stat-info stat-card__content">
                 <div class="stat-value">{{ summary.runningTime }}</div>
                 <div class="stat-label">{{ $t('statistics.processingTime') }}(h)</div>
+                </div>
               </div>
-            </div>
+            </el-card>
           </el-col>
           <el-col :span="6">
-            <div class="stat-card orange">
-              <div class="stat-icon"><i class="el-icon-video-pause"></i></div>
-              <div class="stat-info">
+            <el-card shadow="never" class="stat-card orange" :body-style="{ padding: '0' }">
+              <div class="stat-card__body">
+                <div class="stat-icon"><i class="el-icon-video-pause"></i></div>
+                <div class="stat-info stat-card__content">
                 <div class="stat-value">{{ summary.idleTime }}</div>
                 <div class="stat-label">{{ $t('statistics.idleTime') }}(h)</div>
+                </div>
               </div>
-            </div>
+            </el-card>
           </el-col>
           <el-col :span="6">
-            <div class="stat-card danger">
-              <div class="stat-icon"><i class="el-icon-warning"></i></div>
-              <div class="stat-info">
+            <el-card shadow="never" class="stat-card danger" :body-style="{ padding: '0' }">
+              <div class="stat-card__body">
+                <div class="stat-icon"><i class="el-icon-warning"></i></div>
+                <div class="stat-info stat-card__content">
                 <div class="stat-value">{{ summary.alarmTime }}</div>
                 <div class="stat-label">{{ $t('statistics.alarmTime') }}(h)</div>
+                </div>
               </div>
-            </div>
+            </el-card>
           </el-col>
         </el-row>
 
         <el-row :gutter="20" class="chart-row">
           <el-col :span="10">
-            <div class="chart-card">
-              <div class="chart-title">时长分布</div>
-              <div class="chart-subtitle">运行、空闲、报警时长分布</div>
+            <el-card shadow="never" class="chart-card">
+              <div slot="header" class="chart-card__header">
+                <div class="chart-title">时长分布</div>
+                <div class="chart-subtitle">运行、空闲、报警时长分布</div>
+              </div>
               <div ref="durationPieChart" class="chart-container"></div>
-            </div>
+            </el-card>
           </el-col>
           <el-col :span="14">
-            <div class="chart-card">
-              <div class="chart-title">日运行时长趋势</div>
-              <div class="chart-subtitle">用于观察日常运行负载变化</div>
+            <el-card shadow="never" class="chart-card">
+              <div slot="header" class="chart-card__header">
+                <div class="chart-title">日运行时长趋势</div>
+                <div class="chart-subtitle">用于观察日常运行负载变化</div>
+              </div>
               <div ref="durationTrendChart" class="chart-container"></div>
-            </div>
+            </el-card>
           </el-col>
         </el-row>
 
-        <div class="card">
+        <el-card ref="detailTableCard" shadow="never" class="card page-table-card">
           <div class="card-header flex-between">
             <span>设备时长明细</span>
             <el-button type="primary" size="small" icon="el-icon-download" @click="handleExport">
@@ -109,7 +121,7 @@
             :data="pagedTableData"
             border
             v-loading="loading"
-            :max-height="tableMaxHeight"
+            :height="tableHeight"
             empty-text="暂无数据"
           >
             <el-table-column type="index" label="序号" width="60" align="center" />
@@ -140,7 +152,7 @@
             @size-change="handleSizeChange"
             @current-change="handlePageChange"
           />
-        </div>
+        </el-card>
       </section>
     </div>
   </div>
@@ -201,13 +213,11 @@ export default {
         pageSize: 10,
         total: 0
       },
-      charts: {}
+      charts: {},
+      tableHeight: 320
     }
   },
   computed: {
-    tableMaxHeight() {
-      return 'calc(100vh - 390px)'
-    },
     pagedTableData() {
       const start = (this.pagination.page - 1) * this.pagination.pageSize
       return this.tableData.slice(start, start + this.pagination.pageSize)
@@ -244,6 +254,7 @@ export default {
           }
           this.$nextTick(() => {
             this.initCharts()
+            this.syncTableHeight()
           })
         }
       } catch (error) {
@@ -271,6 +282,7 @@ export default {
     },
     handleSizeChange(size) {
       this.pagination.pageSize = size
+      this.syncTableHeight()
     },
     handlePageChange(page) {
       this.pagination.page = page
@@ -398,8 +410,21 @@ export default {
         ]
       }, true)
     },
+    syncTableHeight() {
+      this.$nextTick(() => {
+        const card = this.$refs.detailTableCard && this.$refs.detailTableCard.$el
+        if (!card) return
+        const body = card.querySelector('.el-card__body')
+        const header = card.querySelector('.card-header')
+        const pagination = card.querySelector('.el-pagination')
+        if (!body || !header || !pagination) return
+        const nextHeight = body.clientHeight - header.offsetHeight - pagination.offsetHeight - 16
+        this.tableHeight = Math.max(240, nextHeight)
+      })
+    },
     handleResize() {
       Object.values(this.charts).forEach(chart => chart && chart.resize())
+      this.syncTableHeight()
     }
   }
 }

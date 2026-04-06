@@ -61,7 +61,7 @@
       </aside>
 
       <section class="monitor-content">
-        <div class="hero-card card">
+        <el-card shadow="never" class="hero-card card">
           <div class="hero-meta">
             <div class="hero-badge" :class="selectedDevice?.status || 'offline'">
               {{ selectedDevice ? getStatusText(selectedDevice.status) : '未选择设备' }}
@@ -117,10 +117,10 @@
               <el-button icon="el-icon-refresh" @click="refreshData">刷新数据</el-button>
             </div>
           </div>
-        </div>
+        </el-card>
 
         <template v-if="selectedDevice">
-          <el-row :gutter="20" class="status-row">
+          <el-row :gutter="8" class="status-row">
             <el-col :span="6">
               <div class="status-card">
                 <div class="status-label">运行状态</div>
@@ -150,7 +150,7 @@
           </el-row>
 
           <div class="monitor-grid">
-            <div class="card monitor-screen-card">
+            <el-card shadow="never" class="card monitor-screen-card">
               <div class="card-header flex-between">
                 <span>设备监控画面（VNC）</span>
                 <el-tag :type="getConnectionTagType()" size="small">
@@ -165,10 +165,10 @@
                   <p class="hint">{{ vnc.status }}</p>
                 </div>
               </div>
-            </div>
+            </el-card>
 
             <div class="side-stack">
-              <div class="card">
+              <el-card shadow="never" class="card">
                 <div class="card-header">连接信息</div>
                 <div class="connection-meta">
                   <div class="meta-row">
@@ -202,9 +202,9 @@
                   show-icon
                   :closable="false"
                 />
-              </div>
+              </el-card>
 
-              <div class="card">
+              <el-card shadow="never" class="card">
                 <div class="card-header">报警信息</div>
                 <div class="alarm-list">
                   <div v-if="alarms.length === 0" class="no-alarm">
@@ -219,21 +219,21 @@
                     </div>
                   </div>
                 </div>
-              </div>
+              </el-card>
             </div>
           </div>
 
-          <div class="card mt-20">
+          <el-card shadow="never" class="card mt-20">
             <div class="card-header">实时数据趋势</div>
             <div ref="realtimeChart" class="chart-container"></div>
-          </div>
+          </el-card>
         </template>
 
         <template v-else>
-          <div class="empty-state panel-shell">
+          <el-card shadow="never" class="empty-state panel-shell">
             <i class="el-icon-monitor"></i>
             <p>请选择要监控的设备</p>
-          </div>
+          </el-card>
         </template>
       </section>
     </div>
@@ -931,14 +931,14 @@ export default {
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 18px;
-  margin-bottom: 20px;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 
 .hero-meta {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
   min-width: 0;
 }
@@ -947,14 +947,14 @@ export default {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 88px;
-  height: 32px;
-  padding: 0 14px;
-  border-radius: 999px;
+  min-width: 72px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 2px;
   background: rgba(138, 152, 173, 0.14);
   color: #8a98ad;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 600;
 
   &.online,
   &.idle {
@@ -974,32 +974,32 @@ export default {
 }
 
 .hero-device-name {
-  color: #22324d;
-  font-size: 18px;
+  color: #303133;
+  font-size: 14px;
   line-height: 1.2;
 }
 
 .hero-device-ip {
-  color: #7b8da6;
-  font-size: 13px;
+  color: #909399;
+  font-size: 12px;
 }
 
 .hero-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  align-items: flex-end;
+  gap: 8px;
+  align-items: center;
 }
 
 .toolbar-field {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
 
   span {
     color: #7b8da6;
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 500;
   }
 
   .el-input-number {
@@ -1017,7 +1017,7 @@ export default {
 
 .hero-buttons {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
@@ -1042,30 +1042,34 @@ export default {
 }
 
 .status-row {
-  margin-bottom: 20px;
+  margin-bottom: 8px;
 }
 
 .status-card {
   background: #fff;
-  border-radius: 22px;
-  padding: 20px;
+  border-radius: 2px;
+  padding: 10px 12px;
   text-align: center;
-  border: 1px solid rgba(221, 229, 240, 0.92);
-  box-shadow: 0 18px 30px rgba(59, 87, 132, 0.08);
+  border: 1px solid #dfe6ee;
+  box-shadow: none;
+  min-height: 76px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 
   .status-label {
     color: #909399;
-    font-size: 14px;
-    margin-bottom: 10px;
+    font-size: 12px;
+    margin-bottom: 6px;
   }
 
   .status-value {
-    font-size: 28px;
-    font-weight: bold;
+    font-size: 18px;
+    font-weight: 600;
     color: #303133;
 
     small {
-      font-size: 14px;
+      font-size: 12px;
       font-weight: normal;
       color: #909399;
     }
@@ -1083,7 +1087,7 @@ export default {
     }
 
     &.pattern {
-      font-size: 16px;
+      font-size: 14px;
     }
   }
 }
@@ -1091,7 +1095,7 @@ export default {
 .monitor-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.75fr);
-  gap: 18px;
+  gap: 8px;
 }
 
 .side-stack {

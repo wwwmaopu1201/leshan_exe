@@ -112,6 +112,7 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, se
 
 		// Employee
 		employeeHandler := NewEmployeeHandler(db)
+		protected.GET("/employee/groups", permEmployee, employeeHandler.GetEmployeeGroups)
 		protected.GET("/employee/list", permEmployee, employeeHandler.GetEmployeeList)
 		protected.GET("/employee/:id", permEmployee, employeeHandler.GetEmployee)
 		protected.POST("/employee", permEmployee, employeeHandler.CreateEmployee)

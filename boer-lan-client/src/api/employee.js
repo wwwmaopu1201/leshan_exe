@@ -9,6 +9,14 @@ export function getEmployeeList(params) {
   })
 }
 
+// 获取员工可选分组
+export function getEmployeeGroups() {
+  return request({
+    url: '/employee/groups',
+    method: 'get'
+  })
+}
+
 // 获取员工详情
 export function getEmployeeDetail(id) {
   return request({
@@ -44,11 +52,11 @@ export function deleteEmployee(id) {
 }
 
 // 批量导入员工
-export function importEmployees(employees) {
+export function importEmployees(employees, groupId) {
   return request({
     url: '/employee/import',
     method: 'post',
-    data: { employees }
+    data: { employees, groupId }
   })
 }
 

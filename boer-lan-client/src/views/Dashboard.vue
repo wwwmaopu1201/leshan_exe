@@ -12,8 +12,8 @@
       </aside>
 
       <section class="dashboard-main">
-        <div class="scope-card card">
-          <div class="scope-meta">
+        <el-card shadow="never" class="scope-card">
+          <div class="scope-meta scope-card__body">
             <div class="scope-badge" :class="selectedScope.nodeType || 'all'">
               {{ scopeBadgeText }}
             </div>
@@ -35,81 +35,99 @@
             </div>
             <el-button icon="el-icon-refresh" circle @click="reloadCurrentScope" />
           </div>
-        </div>
+        </el-card>
 
-        <el-row :gutter="20" class="stat-row">
+        <el-row :gutter="8" class="stat-row">
           <el-col :span="6">
-            <div class="stat-card blue">
-              <div class="stat-icon"><i class="el-icon-s-goods"></i></div>
-              <div class="stat-info">
+            <el-card shadow="never" class="stat-card blue" :body-style="{ padding: '0' }">
+              <div class="stat-card__body">
+                <div class="stat-icon"><i class="el-icon-s-goods"></i></div>
+                <div class="stat-info stat-card__content">
                 <div class="stat-value">{{ dashboardData.totalPieces }}</div>
                 <div class="stat-extra">今日 {{ dashboardData.todayPieces }} 件</div>
                 <div class="stat-label">{{ $t('dashboard.totalPieces') }}</div>
+                </div>
               </div>
-            </div>
+            </el-card>
           </el-col>
           <el-col :span="6">
-            <div class="stat-card green">
-              <div class="stat-icon"><i class="el-icon-sort"></i></div>
-              <div class="stat-info">
+            <el-card shadow="never" class="stat-card green" :body-style="{ padding: '0' }">
+              <div class="stat-card__body">
+                <div class="stat-icon"><i class="el-icon-sort"></i></div>
+                <div class="stat-info stat-card__content">
                 <div class="stat-value">{{ dashboardData.totalThreadLength }}<small>m</small></div>
                 <div class="stat-extra">{{ threadExtraText }}</div>
                 <div class="stat-label">{{ $t('dashboard.threadLength') }}</div>
+                </div>
               </div>
-            </div>
+            </el-card>
           </el-col>
           <el-col :span="6">
-            <div class="stat-card orange">
-              <div class="stat-icon"><i class="el-icon-time"></i></div>
-              <div class="stat-info">
+            <el-card shadow="never" class="stat-card orange" :body-style="{ padding: '0' }">
+              <div class="stat-card__body">
+                <div class="stat-icon"><i class="el-icon-time"></i></div>
+                <div class="stat-info stat-card__content">
                 <div class="stat-value">{{ dashboardData.runningTime }}<small>h</small></div>
                 <div class="stat-extra">{{ runtimeExtraText }}</div>
                 <div class="stat-label">{{ $t('dashboard.runningTime') }}</div>
+                </div>
               </div>
-            </div>
+            </el-card>
           </el-col>
           <el-col :span="6">
-            <div class="stat-card">
-              <div class="stat-icon"><i class="el-icon-data-line"></i></div>
-              <div class="stat-info">
+            <el-card shadow="never" class="stat-card" :body-style="{ padding: '0' }">
+              <div class="stat-card__body">
+                <div class="stat-icon"><i class="el-icon-data-line"></i></div>
+                <div class="stat-info stat-card__content">
                 <div class="stat-value">{{ dashboardData.utilizationRate }}<small>%</small></div>
                 <div class="stat-extra">当前范围综合使用率</div>
                 <div class="stat-label">{{ $t('dashboard.utilizationRate') }}</div>
+                </div>
               </div>
-            </div>
+            </el-card>
           </el-col>
         </el-row>
 
         <div class="dashboard-grid">
-          <div class="chart-card gauge-card">
-            <div class="chart-title">{{ $t('dashboard.spindleSpeed') }}</div>
-            <div class="chart-subtitle">当前设备或所选范围的主轴转速</div>
+          <el-card shadow="never" class="chart-card gauge-card">
+            <div slot="header" class="chart-card__header">
+              <div class="chart-title">{{ $t('dashboard.spindleSpeed') }}</div>
+              <div class="chart-subtitle">当前设备或所选范围的主轴转速</div>
+            </div>
             <div ref="gaugeChart" class="chart-container gauge"></div>
-          </div>
+          </el-card>
 
-          <div class="chart-card">
-            <div class="chart-title">加工总件数（近7天）</div>
-            <div class="chart-subtitle">用于观察每日产量波动</div>
+          <el-card shadow="never" class="chart-card">
+            <div slot="header" class="chart-card__header">
+              <div class="chart-title">加工总件数（近7天）</div>
+              <div class="chart-subtitle">用于观察每日产量波动</div>
+            </div>
             <div ref="pieces7dChart" class="chart-container"></div>
-          </div>
+          </el-card>
 
-          <div class="chart-card">
-            <div class="chart-title">加工产量统计</div>
-            <div class="chart-subtitle">展示接口返回的时序产量数据</div>
+          <el-card shadow="never" class="chart-card">
+            <div slot="header" class="chart-card__header">
+              <div class="chart-title">加工产量统计</div>
+              <div class="chart-subtitle">展示接口返回的时序产量数据</div>
+            </div>
             <div ref="productionChart" class="chart-container"></div>
-          </div>
+          </el-card>
 
-          <div class="chart-card chart-wide">
-            <div class="chart-title">运行 / 加工时长（近7天）</div>
-            <div class="chart-subtitle">运行时长与加工时长对照查看</div>
+          <el-card shadow="never" class="chart-card chart-wide">
+            <div slot="header" class="chart-card__header">
+              <div class="chart-title">运行 / 加工时长（近7天）</div>
+              <div class="chart-subtitle">运行时长与加工时长对照查看</div>
+            </div>
             <div ref="runtimeChart" class="chart-container"></div>
-          </div>
+          </el-card>
 
-          <div class="chart-card chart-wide">
-            <div class="chart-title">设备使用率（近7天）</div>
-            <div class="chart-subtitle">按日查看使用率变化趋势</div>
+          <el-card shadow="never" class="chart-card chart-wide">
+            <div slot="header" class="chart-card__header">
+              <div class="chart-title">设备使用率（近7天）</div>
+              <div class="chart-subtitle">按日查看使用率变化趋势</div>
+            </div>
             <div ref="utilizationChart" class="chart-container"></div>
-          </div>
+          </el-card>
         </div>
       </section>
     </div>
@@ -601,22 +619,22 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
-  margin-bottom: 18px;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 
 .scope-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 88px;
-  height: 32px;
-  padding: 0 14px;
-  border-radius: 999px;
+  min-width: 72px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 2px;
   background: #eef4ff;
   color: #2f6df6;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 600;
 
   &.device {
     background: rgba(47, 180, 110, 0.12);
@@ -632,34 +650,36 @@ export default {
 .scope-meta {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
   min-width: 0;
 }
 
 .meta-chip {
   min-width: 120px;
-  padding: 12px 14px;
-  border-radius: 18px;
-  background: #f7faff;
+  padding: 8px 10px;
+  border-radius: 2px;
+  border: 1px solid #dfe6ee;
+  background: #f7f9fc;
 
   span {
     display: block;
     color: #8a98ad;
     font-size: 12px;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
   }
 
   strong {
-    color: #22324d;
-    font-size: 15px;
+    color: #303133;
+    font-size: 13px;
+    line-height: 1.4;
   }
 }
 
 .dashboard-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
+  gap: 8px;
 }
 
 .gauge-card {

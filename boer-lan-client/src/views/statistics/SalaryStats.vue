@@ -81,50 +81,60 @@
 
         <el-row :gutter="20" class="stat-cards">
           <el-col :span="8">
-            <div class="stat-card blue">
-              <div class="stat-icon"><i class="el-icon-money"></i></div>
-              <div class="stat-info">
+            <el-card shadow="never" class="stat-card blue" :body-style="{ padding: '0' }">
+              <div class="stat-card__body">
+                <div class="stat-icon"><i class="el-icon-money"></i></div>
+                <div class="stat-info stat-card__content">
                 <div class="stat-value">{{ effectiveSummary.totalSalary.toFixed(2) }}</div>
                 <div class="stat-label">{{ $t('statistics.totalSalary') }} (元)</div>
+                </div>
               </div>
-            </div>
+            </el-card>
           </el-col>
           <el-col :span="8">
-            <div class="stat-card green">
-              <div class="stat-icon"><i class="el-icon-s-goods"></i></div>
-              <div class="stat-info">
+            <el-card shadow="never" class="stat-card green" :body-style="{ padding: '0' }">
+              <div class="stat-card__body">
+                <div class="stat-icon"><i class="el-icon-s-goods"></i></div>
+                <div class="stat-info stat-card__content">
                 <div class="stat-value">{{ effectiveSummary.totalPieces }}</div>
                 <div class="stat-label">{{ $t('statistics.totalPieces') }} (件)</div>
+                </div>
               </div>
-            </div>
+            </el-card>
           </el-col>
           <el-col :span="8">
-            <div class="stat-card orange">
-              <div class="stat-icon"><i class="el-icon-s-marketing"></i></div>
-              <div class="stat-info">
+            <el-card shadow="never" class="stat-card orange" :body-style="{ padding: '0' }">
+              <div class="stat-card__body">
+                <div class="stat-icon"><i class="el-icon-s-marketing"></i></div>
+                <div class="stat-info stat-card__content">
                 <div class="stat-value">{{ effectiveSummary.averageSalary.toFixed(2) }}</div>
                 <div class="stat-label">{{ $t('statistics.averageSalary') }} (元/人)</div>
+                </div>
               </div>
-            </div>
+            </el-card>
           </el-col>
         </el-row>
 
         <el-row :gutter="20" class="chart-row">
           <el-col :span="12">
-            <div class="chart-card">
-              <div class="chart-title">员工工资排行</div>
+            <el-card shadow="never" class="chart-card">
+              <div slot="header" class="chart-card__header">
+                <div class="chart-title">员工工资排行</div>
+              </div>
               <div ref="salaryRankChart" class="chart-container"></div>
-            </div>
+            </el-card>
           </el-col>
           <el-col :span="12">
-            <div class="chart-card">
-              <div class="chart-title">日工资趋势</div>
+            <el-card shadow="never" class="chart-card">
+              <div slot="header" class="chart-card__header">
+                <div class="chart-title">日工资趋势</div>
+              </div>
               <div ref="salaryTrendChart" class="chart-container"></div>
-            </div>
+            </el-card>
           </el-col>
         </el-row>
 
-        <div class="card">
+        <el-card ref="detailTableCard" shadow="never" class="card page-table-card">
           <div class="card-header flex-between">
             <span>{{ $t('statistics.salaryDetail') }}</span>
             <el-dropdown @command="handleExportCommand">
@@ -144,7 +154,7 @@
             border
             v-loading="loading"
             show-summary
-            :max-height="tableMaxHeight"
+            :height="tableHeight"
             empty-text="暂无数据"
           >
             <el-table-column prop="employeeName" label="员工姓名" width="120" />
@@ -196,7 +206,7 @@
             @size-change="handleSizeChange"
             @current-change="handlePageChange"
           />
-        </div>
+        </el-card>
       </section>
     </div>
 
@@ -205,8 +215,14 @@
       :visible.sync="detailDialog.visible"
       width="980px"
       append-to-body
+      @opened="syncDetailDialogTableHeight"
     >
-      <el-table :data="detailDialog.rows" border v-loading="detailDialog.loading" max-height="460">
+      <el-table
+        :data="detailDialog.rows"
+        border
+        v-loading="detailDialog.loading"
+        :max-height="detailDialogTableMaxHeight"
+      >
         <el-table-column type="index" label="序号" width="60" align="center" />
         <el-table-column prop="deviceName" label="设备名称" min-width="120" />
         <el-table-column prop="patternName" label="花型名称" min-width="150" />
@@ -291,6 +307,8 @@ export default {
         total: 0
       },
       charts: {},
+      tableHeight: 320,
+      detailDialogTableMaxHeight: 460,
       detailDialog: {
         visible: false,
         loading: false,
@@ -300,9 +318,6 @@ export default {
     }
   },
   computed: {
-    tableMaxHeight() {
-      return 'calc(100vh - 410px)'
-    },
     pagedTableData() {
       const start = (this.pagination.page - 1) * this.pagination.pageSize
       return this.tableData.slice(start, start + this.pagination.pageSize)
@@ -375,6 +390,7 @@ export default {
           }
           this.$nextTick(() => {
             this.initCharts()
+            this.syncTableHeight()
           })
         }
       } catch (error) {
@@ -414,6 +430,7 @@ export default {
     },
     handleSizeChange(size) {
       this.pagination.pageSize = size
+      this.syncTableHeight()
     },
     handlePageChange(page) {
       this.pagination.page = page
@@ -423,6 +440,7 @@ export default {
       this.detailDialog.loading = true
       this.detailDialog.rows = []
       this.detailDialog.title = `${row.employeeName || '-'} ${row.date || ''} 工资明细`
+      this.syncDetailDialogTableHeight()
       try {
         const res = await getSalaryDetail({
           date: row.date,
@@ -434,6 +452,9 @@ export default {
         })
         if (res.code === 0) {
           this.detailDialog.rows = Array.isArray(res.data) ? res.data : []
+          this.$nextTick(() => {
+            this.syncDetailDialogTableHeight()
+          })
         }
       } catch (error) {
         console.error('Failed to fetch salary detail:', error)
@@ -561,8 +582,29 @@ export default {
         }]
       }, true)
     },
+    syncTableHeight() {
+      this.$nextTick(() => {
+        const card = this.$refs.detailTableCard && this.$refs.detailTableCard.$el
+        if (!card) return
+        const body = card.querySelector('.el-card__body')
+        const header = card.querySelector('.card-header')
+        const pagination = card.querySelector('.el-pagination')
+        if (!body || !header || !pagination) return
+        const nextHeight = body.clientHeight - header.offsetHeight - pagination.offsetHeight - 16
+        this.tableHeight = Math.max(240, nextHeight)
+      })
+    },
+    syncDetailDialogTableHeight() {
+      this.$nextTick(() => {
+        if (!this.detailDialog.visible) return
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 900
+        this.detailDialogTableMaxHeight = Math.max(240, viewportHeight - 320)
+      })
+    },
     handleResize() {
       Object.values(this.charts).forEach(chart => chart && chart.resize())
+      this.syncTableHeight()
+      this.syncDetailDialogTableHeight()
     }
   }
 }

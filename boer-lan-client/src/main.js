@@ -24,6 +24,27 @@ let trialMonitorTimer = null
 let trialExpiredHandled = false
 const isDevMode = import.meta.env.DEV || !import.meta.env.PROD
 
+function installInteractionGuards() {
+  document.addEventListener('contextmenu', event => {
+    event.preventDefault()
+  })
+
+  document.addEventListener('copy', event => {
+    event.preventDefault()
+  })
+
+  document.addEventListener('cut', event => {
+    event.preventDefault()
+  })
+
+  document.addEventListener('keydown', event => {
+    const key = String(event.key || '').toLowerCase()
+    if ((event.ctrlKey || event.metaKey) && (key === 'c' || key === 'x')) {
+      event.preventDefault()
+    }
+  })
+}
+
 function renderTrialMessage(message) {
   const app = document.getElementById('app')
   if (!app) {
@@ -78,6 +99,8 @@ function startTrialMonitor() {
 }
 
 async function initApp() {
+  installInteractionGuards()
+
   if (!isDevMode) {
     renderTrialMessage('正在检查试用状态...')
     const trialOk = await ensureTrialAvailable()

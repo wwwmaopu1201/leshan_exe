@@ -35,7 +35,7 @@
     </div>
 
     <div class="database-layout">
-      <div class="surface-card">
+      <el-card shadow="never" class="surface-card">
         <div class="section-title">
           <div>
             <h3>连接说明</h3>
@@ -65,9 +65,9 @@
             <span class="info-item__value">{{ serverInfo.workDir || '-' }}</span>
           </div>
         </div>
-      </div>
+      </el-card>
 
-      <div class="surface-card">
+      <el-card shadow="never" class="surface-card">
         <div class="section-title">
           <div>
             <h3>外部数据库连接配置</h3>
@@ -132,7 +132,7 @@
           <i class="el-icon-info"></i>
           <span>同步时间显示为空时，说明当前尚未执行过同步或外部数据库连接尚未启用。</span>
         </div>
-      </div>
+      </el-card>
     </div>
   </div>
 </template>
@@ -327,19 +327,34 @@ export default {
 .database-layout {
   display: grid;
   grid-template-columns: minmax(320px, 0.82fr) minmax(0, 1.18fr);
-  gap: 18px;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+}
+
+.database-layout > .surface-card {
+  min-height: 0;
+}
+
+.database-layout > .surface-card:last-child {
+  display: flex;
+  flex-direction: column;
 }
 
 .database-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0 18px;
+  gap: 0 8px;
 }
 
 .summary-card__value--small {
-  font-size: 24px;
-  line-height: 1.3;
+  font-size: 18px;
+  line-height: 1.2;
   word-break: break-word;
+}
+
+.database-form {
+  margin-top: 2px;
 }
 
 .full-row {

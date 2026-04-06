@@ -10,6 +10,9 @@ const request = axios.create({
     timeout: 10000
 });
 
+let authRedirecting = false;
+let appVm = null;
+
 // 请求拦截器
 request.interceptors.request.use(config => {
     const token = localStorage.getItem('token');
@@ -23,11 +26,22 @@ request.interceptors.request.use(config => {
 request.interceptors.response.use(
     response => response.data,
     error => {
+        const message = error.response?.data?.message || error.response?.data?.error || '请求失败';
         if (error.response?.status === 401) {
             localStorage.removeItem('token');
-            location.reload();
+            if (!error.config?.skipAuthRedirect && !authRedirecting) {
+                authRedirecting = true;
+                if (appVm) {
+                    appVm.isLoggedIn = false;
+                }
+                setTimeout(() => {
+                    authRedirecting = false;
+                }, 0);
+            }
         }
-        ElMessage.error(error.response?.data?.error || '请求失败');
+        if (!error.config?.suppressErrorMessage) {
+            ElMessage.error(message);
+        }
         return Promise.reject(error);
     }
 );
@@ -64,25 +78,66 @@ const app = createApp({
         };
     },
     mounted() {
-        // 检查是否已登录
-        const token = localStorage.getItem('token');
-        if (token) {
-            this.isLoggedIn = true;
-            this.loadData();
-        }
+        this.restoreSession();
     },
     methods: {
+        async restoreSession() {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                this.isLoggedIn = false;
+                return;
+            }
+
+            try {
+                const res = await request.get('/auth/userinfo', {
+                    skipAuthRedirect: true,
+                    suppressErrorMessage: true
+                });
+                if (res.code === 0 && String(res.data?.role || '').trim().toLowerCase() === 'admin') {
+                    this.isLoggedIn = true;
+                    await this.loadData();
+                    return;
+                }
+            } catch (error) {
+                console.error('恢复登录态失败', error);
+            }
+
+            localStorage.removeItem('token');
+            this.isLoggedIn = false;
+        },
+
         // 登录
         async login() {
             try {
-                const res = await request.post('/auth/login', this.loginForm);
-                if (res.code === 0) {
-                    localStorage.setItem('token', res.data.token);
-                    this.isLoggedIn = true;
-                    ElMessage.success('登录成功');
-                    this.loadData();
+                localStorage.removeItem('token');
+                const res = await request.post('/auth/login', this.loginForm, {
+                    skipAuthRedirect: true,
+                    suppressErrorMessage: true
+                });
+                if (res.code !== 0 || !res.data?.token) {
+                    throw new Error(res.message || '登录失败');
                 }
+
+                localStorage.setItem('token', res.data.token);
+                const userInfo = await request.get('/auth/userinfo', {
+                    skipAuthRedirect: true,
+                    suppressErrorMessage: true
+                });
+                if (String(userInfo.data?.role || res.data?.user?.role || '').trim().toLowerCase() !== 'admin') {
+                    localStorage.removeItem('token');
+                    ElMessage.error('仅管理员可登录服务端');
+                    return;
+                }
+
+                this.isLoggedIn = true;
+                ElMessage.success('登录成功');
+                this.loadData();
             } catch (error) {
+                localStorage.removeItem('token');
+                const message = error.response?.data?.message || error.message;
+                if (message) {
+                    ElMessage.error(message);
+                }
                 console.error('登录失败', error);
             }
         },
@@ -380,4 +435,4 @@ const app = createApp({
 });
 
 app.use(ElementPlus);
-app.mount('#app');
+appVm = app.mount('#app');

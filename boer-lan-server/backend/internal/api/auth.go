@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -29,6 +30,20 @@ func NewAuthHandler(db *gorm.DB, jwtSecret string, jwtExpire int) *AuthHandler {
 type LoginRequest struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
+}
+
+func encodeEffectivePermissionsJSON(db *gorm.DB, user model.User) string {
+	permissionMap, err := loadUserPermissionMap(db, user.ID, user.Role)
+	if err != nil || len(permissionMap) == 0 {
+		return user.Permissions
+	}
+
+	encoded, err := json.Marshal(permissionMap)
+	if err != nil {
+		return user.Permissions
+	}
+
+	return string(encoded)
 }
 
 func (h *AuthHandler) Login(c *gin.Context) {
@@ -66,6 +81,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	groupIDs := collectUserGroupIDs(user)
+	effectivePermissions := encodeEffectivePermissionsJSON(h.db, user)
 
 	// Generate token
 	token, err := utils.GenerateToken(user.ID, user.Username, user.Role)
@@ -100,7 +116,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 				"groupId":     user.GroupID,
 				"groupIds":    groupIDs,
 				"disabled":    user.Disabled,
-				"permissions": user.Permissions,
+				"permissions": effectivePermissions,
 				"createTime":  user.CreatedAt.Format("2006-01-02 15:04:05"),
 			},
 		},
@@ -128,6 +144,7 @@ func (h *AuthHandler) GetUserInfo(c *gin.Context) {
 	}
 
 	groupIDs := collectUserGroupIDs(user)
+	effectivePermissions := encodeEffectivePermissionsJSON(h.db, user)
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
@@ -141,7 +158,7 @@ func (h *AuthHandler) GetUserInfo(c *gin.Context) {
 			"groupId":     user.GroupID,
 			"groupIds":    groupIDs,
 			"disabled":    user.Disabled,
-			"permissions": user.Permissions,
+			"permissions": effectivePermissions,
 			"createTime":  user.CreatedAt.Format("2006-01-02 15:04:05"),
 		},
 		"message": "success",

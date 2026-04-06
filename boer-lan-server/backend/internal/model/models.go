@@ -139,6 +139,8 @@ type Employee struct {
 	Position   string `gorm:"size:50" json:"position"`
 	Phone      string `gorm:"size:20" json:"phone"`
 	Remark     string `gorm:"size:255" json:"remark"`
+	GroupID    *uint  `gorm:"index" json:"groupId"`
+	Group      *Group `gorm:"foreignKey:GroupID" json:"group,omitempty"`
 }
 
 // EmployeeDevice 员工设备绑定

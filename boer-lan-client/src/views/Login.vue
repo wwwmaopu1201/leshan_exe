@@ -1,65 +1,89 @@
 <template>
-  <div class="login-container">
-    <div class="login-bg">
-      <div class="bg-orb orb-a"></div>
-      <div class="bg-orb orb-b"></div>
-      <div class="bg-grid"></div>
+  <div class="login-shell">
+    <div class="login-background">
+      <span v-for="n in 7" :key="`scan-${n}`" class="scan-line" :style="{ left: `${10 + n * 12}%` }"></span>
+      <span v-for="n in 10" :key="`spark-${n}`" class="light-dot" :style="sparkStyle(n)"></span>
     </div>
 
-    <div class="login-shell">
-      <section class="login-showcase">
-        <div class="brand-chip">
-          <img src="@/assets/images/logo.png" alt="Logo" class="brand-logo" />
-          <div class="brand-copy">
-            <span class="brand-name">BOER LAN</span>
-            <span class="brand-caption">工业绣花设备联网管理</span>
-          </div>
+    <div class="login-topbar">
+      <div class="brand-mark">
+        <span class="brand-mark__bohr">Bohr</span>
+        <span>{{ $t('login.title') }}</span>
+      </div>
+      <el-dropdown class="lang-dropdown" trigger="click" @command="changeLang">
+        <div class="lang-chip">
+          <i class="el-icon-world"></i>
+          <span>{{ currentLanguageLabel }}</span>
+          <i class="el-icon-arrow-down"></i>
+        </div>
+        <el-dropdown-menu slot="dropdown">
+          <el-dropdown-item command="zh-CN">简体中文</el-dropdown-item>
+          <el-dropdown-item command="en-US">English</el-dropdown-item>
+        </el-dropdown-menu>
+      </el-dropdown>
+    </div>
+
+    <div class="login-stage">
+      <section class="login-visual" aria-hidden="true">
+        <div class="scene-card scene-card--a">
+          <div class="scene-card__bar"></div>
+        </div>
+        <div class="scene-card scene-card--b">
+          <div class="scene-card__wave"></div>
+        </div>
+        <div class="scene-card scene-card--c"></div>
+
+        <div class="cube-stack">
+          <span class="cube cube--1"></span>
+          <span class="cube cube--2"></span>
+          <span class="cube cube--3"></span>
+          <span class="cube cube--4"></span>
         </div>
 
-        <div class="showcase-copy">
-          <h1>{{ $t('login.title') }}</h1>
-          <p>{{ $t('login.subtitle') }}</p>
+        <div class="network-base"></div>
+        <span class="node node--1"></span>
+        <span class="node node--2"></span>
+        <span class="node node--3"></span>
+        <span class="node node--4"></span>
+        <span class="node node--5"></span>
+        <span class="node-link node-link--1"></span>
+        <span class="node-link node-link--2"></span>
+        <span class="node-link node-link--3"></span>
+
+        <div class="screen-shell">
+          <div class="screen-frame">
+            <div class="screen-display">
+              <span class="display-line display-line--1"></span>
+              <span class="display-line display-line--2"></span>
+              <span class="display-circle"></span>
+              <span class="display-ring display-ring--1"></span>
+              <span class="display-ring display-ring--2"></span>
+            </div>
+          </div>
+          <div class="screen-stand"></div>
         </div>
 
-        <div class="feature-list">
-          <div class="feature-card">
-            <i class="el-icon-monitor"></i>
-            <div>
-              <strong>设备一屏总览</strong>
-              <span>状态、生产、报警数据统一呈现</span>
-            </div>
-          </div>
-          <div class="feature-card">
-            <i class="el-icon-folder-opened"></i>
-            <div>
-              <strong>花型统一管理</strong>
-              <span>上传、回传、下发进度清晰可查</span>
-            </div>
-          </div>
-          <div class="feature-card">
-            <i class="el-icon-data-analysis"></i>
-            <div>
-              <strong>统计闭环追踪</strong>
-              <span>工资、效率、时长和报警联动分析</span>
-            </div>
-          </div>
+        <div class="operator operator--left">
+          <span class="operator-head"></span>
+          <span class="operator-body"></span>
+          <span class="operator-arm"></span>
+          <span class="operator-leg operator-leg--left"></span>
+          <span class="operator-leg operator-leg--right"></span>
         </div>
+
+        <div class="operator operator--right">
+          <span class="operator-head"></span>
+          <span class="operator-body"></span>
+          <span class="operator-arm"></span>
+          <span class="operator-leg operator-leg--left"></span>
+          <span class="operator-leg operator-leg--right"></span>
+        </div>
+
+        <div class="mouse-shape"></div>
       </section>
 
-      <section class="login-panel">
-        <div class="panel-toolbar">
-          <div class="toolbar-title">客户端登录</div>
-          <el-select v-model="currentLang" size="mini" class="lang-select" @change="changeLang">
-            <el-option label="中文" value="zh-CN" />
-            <el-option label="English" value="en-US" />
-          </el-select>
-        </div>
-
-        <div class="panel-head">
-          <img src="@/assets/images/logo.png" alt="Logo" class="panel-logo" />
-          <h2>连接服务器</h2>
-          <p>请输入服务端地址和账号信息</p>
-        </div>
+      <section class="login-card">
+        <h1 class="login-title">{{ $t('login.title') }}</h1>
 
         <el-form
           ref="loginForm"
@@ -68,28 +92,23 @@
           class="login-form"
           @submit.native.prevent="handleLogin"
         >
-          <div class="server-row">
-            <el-form-item prop="serverIp" class="server-field ip-field">
-              <label class="field-label">{{ $t('login.serverIp') }}</label>
-              <el-input
-                v-model="loginForm.serverIp"
-                :placeholder="$t('login.serverIp')"
-                prefix-icon="el-icon-link"
-              />
-            </el-form-item>
+          <el-form-item prop="serverIp">
+            <el-input
+              v-model="loginForm.serverIp"
+              :placeholder="$t('login.serverIpPlaceholder')"
+              prefix-icon="el-icon-s-promotion"
+            />
+          </el-form-item>
 
-            <el-form-item prop="port" class="server-field port-field">
-              <label class="field-label">{{ $t('login.port') }}</label>
-              <el-input
-                v-model="loginForm.port"
-                :placeholder="$t('login.port')"
-                prefix-icon="el-icon-connection"
-              />
-            </el-form-item>
-          </div>
+          <el-form-item prop="port">
+            <el-input
+              v-model="loginForm.port"
+              :placeholder="$t('login.portPlaceholder')"
+              prefix-icon="el-icon-connection"
+            />
+          </el-form-item>
 
           <el-form-item prop="username">
-            <label class="field-label">{{ $t('login.username') }}</label>
             <el-input
               v-model="loginForm.username"
               :placeholder="$t('login.username')"
@@ -98,7 +117,6 @@
           </el-form-item>
 
           <el-form-item prop="password">
-            <label class="field-label">{{ $t('login.password') }}</label>
             <el-input
               v-model="loginForm.password"
               type="password"
@@ -109,23 +127,27 @@
             />
           </el-form-item>
 
-          <div class="form-actions">
-            <el-checkbox v-model="loginForm.remember">
-              {{ $t('login.rememberPassword') }}
-            </el-checkbox>
-            <span class="port-tip">默认管理端口 {{ loginForm.port || '8088' }}</span>
-          </div>
-
           <el-button
             type="primary"
             :loading="loading"
-            class="login-btn"
+            class="login-submit"
             @click="handleLogin"
           >
             {{ loading ? $t('login.connecting') : $t('login.login') }}
           </el-button>
+
+          <div class="login-actions">
+            <el-checkbox v-model="loginForm.remember">
+              {{ $t('login.rememberPassword') }}
+            </el-checkbox>
+          </div>
         </el-form>
       </section>
+    </div>
+
+    <div class="login-footer">
+      <div>{{ $t('login.companyName') }}</div>
+      <div>{{ $t('login.companyNameEn') }}</div>
     </div>
   </div>
 </template>
@@ -150,7 +172,23 @@ export default {
       const port = String(value || '').trim()
       const portNum = Number(port)
       if (!port || Number.isNaN(portNum) || !Number.isInteger(portNum) || portNum < 1 || portNum > 65535) {
-        callback(new Error('端口号需为1-65535的整数'))
+        callback(new Error(this.$t('login.portInvalid')))
+        return
+      }
+      callback()
+    }
+
+    const validateUsername = (rule, value, callback) => {
+      if (!String(value || '').trim()) {
+        callback(new Error(this.$t('login.usernameRequired')))
+        return
+      }
+      callback()
+    }
+
+    const validatePassword = (rule, value, callback) => {
+      if (!String(value || '').trim()) {
+        callback(new Error(this.$t('login.passwordRequired')))
         return
       }
       callback()
@@ -167,15 +205,35 @@ export default {
       loginRules: {
         serverIp: [{ validator: validateServerIp, trigger: 'blur' }],
         port: [{ validator: validatePort, trigger: 'blur' }],
-        username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
-        password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
+        username: [{ validator: validateUsername, trigger: 'blur' }],
+        password: [{ validator: validatePassword, trigger: 'blur' }]
       },
       loading: false,
       currentLang: localStorage.getItem('language') || 'zh-CN'
     }
   },
+  computed: {
+    currentLanguageLabel() {
+      return this.currentLang === 'en-US' ? 'English' : '简体中文'
+    }
+  },
   methods: {
     ...mapActions(['login', 'updateServerConfig']),
+    sparkStyle(index) {
+      const styles = [
+        { left: '6%', top: '76%' },
+        { left: '17%', top: '56%' },
+        { left: '24%', top: '18%' },
+        { left: '34%', top: '72%' },
+        { left: '48%', top: '12%' },
+        { left: '59%', top: '67%' },
+        { left: '71%', top: '34%' },
+        { left: '83%', top: '79%' },
+        { left: '89%', top: '48%' },
+        { left: '94%', top: '23%' }
+      ]
+      return styles[index - 1] || {}
+    },
     async handleLogin() {
       try {
         await this.$refs.loginForm.validate()
@@ -200,7 +258,7 @@ export default {
         })
 
         if (res.data.user && res.data.user.disabled) {
-          this.$message.error('您的账号已被禁用，请联系管理员')
+          this.$message.error(this.$t('login.accountDisabled'))
           this.loading = false
           return
         }
@@ -228,6 +286,7 @@ export default {
       }
     },
     changeLang(lang) {
+      this.currentLang = lang
       this.$i18n.locale = lang
       localStorage.setItem('language', lang)
       this.$store.commit('SET_LANGUAGE', lang)
@@ -237,273 +296,633 @@ export default {
 </script>
 
 <style lang="scss" scoped>
-.login-container {
-  width: 100%;
-  min-height: 100vh;
-  background: #f5f7fa;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 32px;
-}
-
-.login-bg {
-  display: none;
-}
-
 .login-shell {
-  width: min(1120px, 100%);
-  min-height: 620px;
-  display: grid;
-  grid-template-columns: 1.08fr 0.92fr;
-  gap: 24px;
+  position: relative;
+  min-height: 100%;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(117, 169, 244, 0.95) 0%, rgba(117, 203, 251, 0.9) 48%, rgba(209, 241, 255, 0.9) 100%),
+    radial-gradient(circle at 20% 18%, rgba(255, 255, 255, 0.28), transparent 28%);
 }
 
-.login-showcase {
-  padding: 32px;
-  background: #ffffff;
-  border: 1px solid #ebeef5;
-  border-radius: 4px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
+.login-background {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 22%),
+    linear-gradient(155deg, transparent 62%, rgba(255, 255, 255, 0.18) 62%, rgba(255, 255, 255, 0.18) 64%, transparent 64%),
+    linear-gradient(25deg, transparent 68%, rgba(255, 255, 255, 0.14) 68%, rgba(255, 255, 255, 0.14) 70%, transparent 70%);
 }
 
-.brand-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  padding: 0;
-  width: fit-content;
-  margin-bottom: 36px;
+.scan-line {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 84px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.55), transparent);
+  opacity: 0.45;
 }
 
-.brand-logo {
-  width: 40px;
-  height: 40px;
-  border-radius: 4px;
+.scan-line::before {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: 10px;
+  width: 24px;
+  height: 60px;
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.72) 0 1px, transparent 1px);
+  background-size: 6px 9px;
+  opacity: 0.3;
 }
 
-.brand-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.light-dot {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 0 18px rgba(255, 255, 255, 0.9);
 }
 
-.brand-name {
-  font-size: 13px;
-  letter-spacing: 0.14em;
-  font-weight: 600;
-  color: #303133;
-}
-
-.brand-caption {
-  font-size: 12px;
-  color: #909399;
-}
-
-.showcase-copy {
-  max-width: 420px;
-  margin-bottom: 28px;
-
-  h1 {
-    font-size: 30px;
-    line-height: 1.3;
-    margin-bottom: 12px;
-    color: #303133;
-  }
-
-  p {
-    font-size: 14px;
-    line-height: 1.8;
-    color: #606266;
-  }
-}
-
-.feature-list {
-  display: grid;
-  gap: 12px;
-  margin-top: 8px;
-}
-
-.feature-card {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 14px 16px;
-  border-radius: 4px;
-  background: #fafafa;
-  border: 1px solid #ebeef5;
-
-  i {
-    width: 36px;
-    height: 36px;
-    border-radius: 4px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: #ecf5ff;
-    color: #409eff;
-    font-size: 18px;
-  }
-
-  strong {
-    display: block;
-    margin-bottom: 6px;
-    font-size: 14px;
-    color: #303133;
-  }
-
-  span {
-    display: block;
-    color: #909399;
-    line-height: 1.6;
-    font-size: 13px;
-  }
-}
-
-.login-panel {
-  background: #ffffff;
-  border: 1px solid #dcdfe6;
-  border-radius: 4px;
-  padding: 24px 28px 28px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-
-.panel-toolbar {
+.login-topbar {
+  position: relative;
+  z-index: 2;
+  height: 60px;
+  padding: 0 12px 0 10px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 28px;
 }
 
-.toolbar-title {
-  color: #909399;
-  font-size: 13px;
+.brand-mark {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 12px;
+  color: #4a4a4a;
+}
+
+.brand-mark__bohr {
+  color: #d74242;
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.lang-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.lang-dropdown ::v-deep .el-dropdown-selfdefine:focus {
+  outline: none;
+}
+
+.login-stage {
+  position: relative;
+  z-index: 2;
+  min-height: calc(100vh - 98px);
+  padding: 18px 84px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 48px;
+}
+
+.login-visual {
+  position: relative;
+  flex: 1;
+  min-height: 520px;
+}
+
+.scene-card {
+  position: absolute;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(105, 144, 255, 0.9), rgba(77, 241, 243, 0.72));
+  box-shadow: 0 28px 50px rgba(45, 111, 206, 0.18);
+}
+
+.scene-card--a {
+  left: 118px;
+  top: 112px;
+  width: 94px;
+  height: 138px;
+}
+
+.scene-card--b {
+  left: 194px;
+  top: 136px;
+  width: 128px;
+  height: 98px;
+  transform: skew(-14deg);
+  opacity: 0.82;
+}
+
+.scene-card--c {
+  left: 72px;
+  top: 236px;
+  width: 118px;
+  height: 70px;
+  opacity: 0.68;
+}
+
+.scene-card__bar,
+.scene-card__wave {
+  position: absolute;
+  inset: 16px;
+}
+
+.scene-card__bar::before,
+.scene-card__bar::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  width: 18px;
+  border-radius: 10px 10px 0 0;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.scene-card__bar::before {
+  left: 8px;
+  height: 42px;
+}
+
+.scene-card__bar::after {
+  left: 38px;
+  height: 72px;
+}
+
+.scene-card__wave::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 26px;
+  height: 24px;
+  border-top: 3px solid rgba(130, 255, 239, 0.95);
+  border-radius: 18px;
+  transform: skew(14deg);
+}
+
+.cube-stack {
+  position: absolute;
+  left: 86px;
+  top: 140px;
+  width: 118px;
+  height: 156px;
+}
+
+.cube {
+  position: absolute;
+  width: 38px;
+  border-radius: 8px 8px 0 0;
+  background: linear-gradient(180deg, rgba(108, 118, 252, 0.9), rgba(91, 229, 255, 0.95));
+}
+
+.cube--1 {
+  left: 0;
+  bottom: 0;
+  height: 42px;
+  background: linear-gradient(180deg, #fc7a75, #f85d74);
+}
+
+.cube--2 {
+  left: 24px;
+  bottom: 0;
+  height: 70px;
+}
+
+.cube--3 {
+  left: 48px;
+  bottom: 0;
+  height: 106px;
+}
+
+.cube--4 {
+  left: 72px;
+  bottom: 0;
+  height: 138px;
+}
+
+.network-base {
+  position: absolute;
+  left: 42px;
+  bottom: 26px;
+  width: 392px;
+  height: 164px;
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(32, 112, 214, 0.34), rgba(25, 141, 214, 0.48)),
+    repeating-linear-gradient(0deg, rgba(112, 214, 255, 0.24), rgba(112, 214, 255, 0.24) 1px, transparent 1px, transparent 23px),
+    repeating-linear-gradient(90deg, rgba(112, 214, 255, 0.24), rgba(112, 214, 255, 0.24) 1px, transparent 1px, transparent 23px);
+  transform: perspective(380px) rotateX(64deg);
+  box-shadow: 0 24px 48px rgba(31, 109, 202, 0.2);
+}
+
+.node,
+.node::before {
+  position: absolute;
+  border-radius: 50%;
+}
+
+.node {
+  width: 14px;
+  height: 14px;
+  background: #69fff4;
+  box-shadow: 0 0 0 6px rgba(102, 255, 243, 0.18);
+}
+
+.node::before {
+  content: '';
+  inset: -8px;
+  border: 2px solid rgba(105, 255, 244, 0.3);
+}
+
+.node--1 { left: 38px; bottom: 84px; }
+.node--2 { left: 72px; bottom: 40px; }
+.node--3 { left: 146px; bottom: 88px; }
+.node--4 { left: 242px; bottom: 42px; }
+.node--5 { left: 322px; bottom: 104px; }
+
+.node-link {
+  position: absolute;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(78, 255, 242, 0.12), rgba(78, 255, 242, 0.92), rgba(78, 255, 242, 0.12));
+}
+
+.node-link--1 {
+  left: 48px;
+  bottom: 89px;
+  width: 106px;
+  transform: rotate(-10deg);
+}
+
+.node-link--2 {
+  left: 148px;
+  bottom: 77px;
+  width: 106px;
+  transform: rotate(14deg);
+}
+
+.node-link--3 {
+  left: 248px;
+  bottom: 74px;
+  width: 88px;
+  transform: rotate(-20deg);
+}
+
+.screen-shell {
+  position: absolute;
+  left: 198px;
+  top: 110px;
+  width: 340px;
+  height: 262px;
+}
+
+.screen-frame {
+  position: absolute;
+  inset: 0;
+  padding: 16px;
+  border-radius: 10px;
+  background: linear-gradient(145deg, #3e456b, #576286 48%, #343d5b);
+  box-shadow: 0 28px 44px rgba(37, 75, 148, 0.28);
+}
+
+.screen-display {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 4px;
+  background:
+    radial-gradient(circle at 65% 44%, rgba(140, 104, 255, 0.7), transparent 18%),
+    radial-gradient(circle at 42% 30%, rgba(61, 255, 240, 0.26), transparent 34%),
+    linear-gradient(180deg, #42ebf4 0%, #2fc6ee 56%, #18b0e7 100%);
+}
+
+.display-line {
+  position: absolute;
+  left: 24px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.54);
+}
+
+.display-line--1 {
+  top: 24px;
+  width: 80px;
+}
+
+.display-line--2 {
+  top: 38px;
+  width: 52px;
+}
+
+.display-circle,
+.display-ring {
+  position: absolute;
+  border-radius: 50%;
+}
+
+.display-circle {
+  left: 144px;
+  top: 74px;
+  width: 46px;
+  height: 46px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.display-ring {
+  left: 126px;
+  top: 56px;
+  border: 3px solid rgba(168, 95, 255, 0.68);
+}
+
+.display-ring--1 {
+  width: 82px;
+  height: 82px;
+}
+
+.display-ring--2 {
+  left: 138px;
+  top: 68px;
+  width: 58px;
+  height: 58px;
+  border-color: rgba(83, 238, 255, 0.8);
+}
+
+.screen-stand {
+  position: absolute;
+  left: 90px;
+  right: 90px;
+  bottom: -32px;
+  height: 42px;
+  border-radius: 0 0 18px 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(220, 232, 244, 0.92));
+  box-shadow: 0 16px 28px rgba(84, 131, 206, 0.22);
+}
+
+.screen-stand::before {
+  content: '';
+  position: absolute;
+  left: 102px;
+  right: 102px;
+  bottom: -18px;
+  height: 18px;
+  border-radius: 0 0 999px 999px;
+  background: rgba(225, 236, 246, 0.96);
+}
+
+.operator {
+  position: absolute;
+  width: 48px;
+  height: 116px;
+}
+
+.operator--left {
+  left: 246px;
+  top: 264px;
+}
+
+.operator--right {
+  left: 312px;
+  top: 252px;
+}
+
+.operator-head {
+  position: absolute;
+  left: 14px;
+  top: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffd3c5;
+}
+
+.operator-body {
+  position: absolute;
+  left: 10px;
+  top: 18px;
+  width: 24px;
+  height: 42px;
+  border-radius: 12px 12px 8px 8px;
+  background: linear-gradient(180deg, #ff8572, #ff625d);
+}
+
+.operator--right .operator-body {
+  background: linear-gradient(180deg, #56ddff, #3ec5ff);
+}
+
+.operator-arm {
+  position: absolute;
+  left: 28px;
+  top: 30px;
+  width: 22px;
+  height: 4px;
+  border-radius: 999px;
+  background: #ffd3c5;
+  transform: rotate(-32deg);
+  transform-origin: left center;
+}
+
+.operator--right .operator-arm {
+  left: -2px;
+  transform: rotate(-118deg);
+}
+
+.operator-leg {
+  position: absolute;
+  top: 56px;
+  width: 4px;
+  height: 46px;
+  border-radius: 999px;
+  background: #45558a;
+}
+
+.operator-leg--left {
+  left: 16px;
+  transform: rotate(10deg);
+}
+
+.operator-leg--right {
+  left: 28px;
+  transform: rotate(-8deg);
+}
+
+.operator--right .operator-leg--left {
+  transform: rotate(18deg);
+}
+
+.operator--right .operator-leg--right {
+  transform: rotate(-20deg);
+}
+
+.mouse-shape {
+  position: absolute;
+  right: 102px;
+  bottom: 102px;
+  width: 82px;
+  height: 38px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(221, 235, 248, 0.94));
+  box-shadow: 0 12px 22px rgba(95, 141, 209, 0.18);
+  transform: rotate(-12deg);
+}
+
+.login-card {
+  width: 100%;
+  max-width: 320px;
+  padding: 22px 34px 28px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 14px 34px rgba(68, 120, 194, 0.18);
+}
+
+.login-title {
+  margin: 8px 0 22px;
+  text-align: center;
+  font-size: 18px;
+  line-height: 1.4;
+  color: #4c8bd8;
+  font-weight: 700;
   letter-spacing: 0.08em;
 }
 
-.lang-select {
-  width: 110px;
+.login-form ::v-deep .el-form-item {
+  margin-bottom: 16px;
 }
 
-.panel-head {
-  margin-bottom: 24px;
-
-  .panel-logo {
-    width: 52px;
-    height: 52px;
-    border-radius: 4px;
-    margin-bottom: 16px;
-  }
-
-  h2 {
-    font-size: 24px;
-    color: #303133;
-    margin-bottom: 8px;
-  }
-
-  p {
-    color: #909399;
-    font-size: 14px;
-  }
+.login-form ::v-deep .el-input__inner {
+  height: 34px;
+  line-height: 34px;
+  border-radius: 0;
+  border-color: #cfd8e3;
+  background: rgba(255, 255, 255, 0.92);
+  font-size: 12px;
+  color: #6d7785;
 }
 
-.login-form {
+.login-form ::v-deep .el-input__prefix {
+  left: 8px;
+  color: #a0acb9;
+}
+
+.login-form ::v-deep .el-input__icon {
+  line-height: 34px;
+}
+
+.login-form ::v-deep .el-input__inner::-webkit-input-placeholder {
+  color: #b6bec9;
+}
+
+.login-form ::v-deep .el-form-item.is-error .el-input__inner {
+  border-color: #f56c6c;
+}
+
+.login-actions {
   display: flex;
-  flex-direction: column;
-  gap: 18px;
-  flex: 1;
-
-  .el-form-item {
-    margin-bottom: 0;
-  }
-}
-
-.server-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 172px;
-  gap: 14px;
-}
-
-.server-field {
+  justify-content: flex-end;
+  margin-top: -2px;
   margin-bottom: 0;
 }
 
-.field-label {
-  display: block;
-  margin-bottom: 8px;
-  color: #606266;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.form-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  color: #909399;
+.login-actions ::v-deep .el-checkbox {
+  color: #7d8ea2;
   font-size: 12px;
 }
 
-.port-tip {
-  white-space: nowrap;
+.login-actions ::v-deep .el-checkbox__label {
+  font-size: 12px;
+  padding-left: 4px;
 }
 
-.login-btn {
+.login-submit {
   width: 100%;
-  height: 40px;
-  margin-top: 4px;
-  border-radius: 4px;
-  font-size: 15px;
-  font-weight: 500;
+  height: 36px;
+  margin-bottom: 10px;
+  border-radius: 0;
+  font-size: 13px;
+  letter-spacing: 0.2em;
+  background: #4a9cf7;
+  border-color: #4a9cf7;
 }
 
-::v-deep .el-input__inner {
-  height: 40px;
-  line-height: 40px;
-  border-radius: 4px;
+.login-submit:hover,
+.login-submit:focus {
+  background: #63a9f8;
+  border-color: #63a9f8;
 }
 
-::v-deep .el-input__prefix {
-  display: flex;
-  align-items: center;
+.login-footer {
+  position: relative;
+  z-index: 2;
+  padding-bottom: 8px;
+  text-align: center;
+  color: #4f5968;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+@media (max-width: 1180px) {
+  .login-stage {
+    padding: 12px 40px 0;
+    gap: 24px;
+  }
+
+  .login-visual {
+    min-height: 460px;
+    transform: scale(0.88);
+    transform-origin: center;
+  }
 }
 
 @media (max-width: 980px) {
-  .login-container {
-    padding: 16px;
+  .login-stage {
+    min-height: calc(100vh - 110px);
+    padding: 12px 24px 0;
+    flex-direction: column;
+    justify-content: center;
   }
 
-  .login-shell {
-    grid-template-columns: 1fr;
-    min-height: auto;
-  }
-
-  .login-showcase {
-    padding: 24px;
-  }
-
-  .login-panel {
-    padding: 20px;
+  .login-visual {
+    width: 100%;
+    min-height: 360px;
+    transform: scale(0.72);
   }
 }
 
 @media (max-width: 640px) {
-  .server-row {
-    grid-template-columns: 1fr;
+  .login-topbar {
+    padding: 0 12px;
   }
 
-  .showcase-copy h1 {
-    font-size: 26px;
+  .brand-mark {
+    font-size: 11px;
   }
 
-  .form-actions {
-    flex-direction: column;
-    align-items: flex-start;
+  .brand-mark__bohr {
+    font-size: 16px;
+  }
+
+  .lang-chip {
+    font-size: 11px;
+  }
+
+  .login-stage {
+    padding: 8px 12px 0;
+  }
+
+  .login-visual {
+    display: none;
+  }
+
+  .login-card {
+    max-width: 100%;
+    padding: 18px 18px 22px;
   }
 }
 </style>

@@ -100,11 +100,13 @@ CREATE TABLE IF NOT EXISTS employees (
     department VARCHAR(50),
     position VARCHAR(50),
     phone VARCHAR(20),
+    group_id BIGINT UNSIGNED,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     deleted_at DATETIME,
     INDEX idx_code (code),
     INDEX idx_department (department),
+    INDEX idx_group_id (group_id),
     INDEX idx_deleted_at (deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -195,7 +197,7 @@ CREATE TABLE IF NOT EXISTS login_logs (
 
 -- 插入默认管理员用户 (密码: admin123)
 INSERT INTO users (username, password, nickname, role) VALUES
-('admin', '$2a$10$N9qo8uLOickgx2ZMRZoMye/1qZVJR6jLqJE5fBIVGRV0cTvK7mPGK', '管理员', 'admin')
+('admin', '$2a$10$.DrZeVbIDBVkY2jV3Hi8x.c2TdzX1B7wPkRMpGNVIGbRXTFr2hluK', '管理员', 'admin')
 ON DUPLICATE KEY UPDATE nickname = '管理员';
 
 -- 插入默认设备分组

@@ -14,6 +14,8 @@ const child = spawn('go', ['run', 'cmd/server/main.go'], {
   stdio: 'inherit',
   env: {
     ...process.env,
+    APP_ENV: process.env.APP_ENV || 'development',
+    BOERLAN_SKIP_TRIAL: process.env.BOERLAN_SKIP_TRIAL || 'true',
     DATA_DIR: dataDir,
     PORT_FILE: portFile,
     LOG_TO_STDOUT: 'true',

@@ -59,7 +59,7 @@
           </el-form>
         </div>
 
-        <div class="card">
+        <el-card ref="serverPatternSection" shadow="never" class="card page-table-card">
           <div class="section-title">
             <div>
               <h3>服务器花型文件</h3>
@@ -112,9 +112,11 @@
           </div>
 
           <el-table
+            ref="serverTableRef"
             v-loading="loading"
             :data="tableData"
             border
+            :height="serverTableHeight"
             empty-text="暂无数据"
             @selection-change="handleSelectionChange"
           >
@@ -163,9 +165,9 @@
             @size-change="handleSizeChange"
             @current-change="handlePageChange"
           />
-        </div>
+        </el-card>
 
-        <div ref="deviceFileSection" class="card device-file-card">
+        <el-card ref="deviceFileSection" shadow="never" class="card device-file-card page-table-card">
           <div class="section-title">
             <div>
               <h3>设备花型文件</h3>
@@ -234,9 +236,11 @@
           </div>
 
           <el-table
+            ref="deviceFileTableRef"
             v-loading="deviceFileLoading"
             :data="deviceFileList"
             border
+            :height="deviceFileTableHeight"
             empty-text="暂无数据"
             @selection-change="handleDeviceFileSelectionChange"
           >
@@ -276,7 +280,7 @@
             @size-change="handleDeviceFileSizeChange"
             @current-change="handleDeviceFilePageChange"
           />
-        </div>
+        </el-card>
       </section>
     </div>
 
@@ -514,6 +518,7 @@
       title="上传队列"
       :visible.sync="showUploadQueueDialog"
       width="920px"
+      @opened="syncUploadQueueDialogTableHeight"
     >
       <div class="upload-queue-actions">
         <el-button size="small" icon="el-icon-refresh" @click="fetchUploadQueue">
@@ -524,9 +529,11 @@
         </el-button>
       </div>
       <el-table
+        ref="uploadQueueTableRef"
         v-loading="uploadQueueLoading"
         :data="uploadQueueList"
         border
+        :max-height="uploadQueueTableMaxHeight"
       >
         <el-table-column type="index" label="序号" width="60" align="center" />
         <el-table-column prop="deviceName" label="设备" width="140" />
@@ -733,7 +740,10 @@ export default {
         total: 0
       },
       showPreviewDialog: false,
-      previewPattern: {}
+      previewPattern: {},
+      serverTableHeight: 320,
+      deviceFileTableHeight: 320,
+      uploadQueueTableMaxHeight: 460
     }
   },
   mounted() {
@@ -741,6 +751,10 @@ export default {
     this.fetchPatternTypes()
     this.fetchDeviceTree()
     this.fetchDeviceOptions()
+    window.addEventListener('resize', this.syncTableHeights)
+  },
+  beforeDestroy() {
+    window.removeEventListener('resize', this.syncTableHeights)
   },
   methods: {
     isValidPatternName(name) {
@@ -768,6 +782,9 @@ export default {
         if (res.code === 0) {
           this.tableData = res.data.list || []
           this.pagination.total = res.data.total || 0
+          this.$nextTick(() => {
+            this.syncTableHeights()
+          })
         }
       } catch (error) {
         console.error('Failed to fetch patterns:', error)
@@ -964,6 +981,9 @@ export default {
         if (res.code === 0) {
           this.deviceFileList = res.data.list || []
           this.deviceFilePagination.total = res.data.total || 0
+          this.$nextTick(() => {
+            this.syncTableHeights()
+          })
         }
       } catch (error) {
         console.error('Failed to fetch device files:', error)
@@ -989,6 +1009,34 @@ export default {
           this.$message.error('删除设备文件失败')
         }
       }).catch(() => {})
+    },
+    syncTableHeights() {
+      this.$nextTick(() => {
+        const syncHeight = (cardRefName, tableRefName, stateKey, minHeight = 220) => {
+          const card = this.$refs[cardRefName] && this.$refs[cardRefName].$el
+          const table = this.$refs[tableRefName] && this.$refs[tableRefName].$el
+          if (!card || !table) return
+          const body = card.querySelector('.el-card__body')
+          if (!body) return
+          let occupied = 0
+          Array.from(body.children).forEach(child => {
+            if (child === table) return
+            occupied += child.offsetHeight
+          })
+          this[stateKey] = Math.max(minHeight, body.clientHeight - occupied - 16)
+        }
+
+        syncHeight('serverPatternSection', 'serverTableRef', 'serverTableHeight', 240)
+        syncHeight('deviceFileSection', 'deviceFileTableRef', 'deviceFileTableHeight', 220)
+        this.syncUploadQueueDialogTableHeight()
+      })
+    },
+    syncUploadQueueDialogTableHeight() {
+      this.$nextTick(() => {
+        if (!this.showUploadQueueDialog) return
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 900
+        this.uploadQueueTableMaxHeight = Math.max(240, viewportHeight - 320)
+      })
     },
     async handleUploadFromDevice() {
       if (!this.deviceFileQuery.deviceId) {
@@ -1022,6 +1070,7 @@ export default {
     openUploadQueueDialog() {
       this.showUploadQueueDialog = true
       this.uploadQueuePagination.page = 1
+      this.syncUploadQueueDialogTableHeight()
       this.fetchUploadQueue()
     },
     handleUploadQueueSizeChange(size) {
@@ -1046,6 +1095,9 @@ export default {
         if (res.code === 0) {
           this.uploadQueueList = res.data.list || []
           this.uploadQueuePagination.total = res.data.total || 0
+          this.$nextTick(() => {
+            this.syncUploadQueueDialogTableHeight()
+          })
         }
       } catch (error) {
         console.error('Failed to fetch upload queue:', error)

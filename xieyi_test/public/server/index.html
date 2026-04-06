@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>协议服务端控制台</title>
+    <style>
+      :root {
+        --bg: #f3efe6;
+        --panel: rgba(255, 252, 246, 0.94);
+        --ink: #1d2a38;
+        --line: #d8cdbb;
+        --accent: #9b3d2f;
+        --accent-soft: #efe0dc;
+        --muted: #6a7884;
+        --ghost: #d9e1e8;
+        --warn: #8f4d1a;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "PingFang SC", "Hiragino Sans GB", sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, #f8d9c7 0, transparent 26%),
+          linear-gradient(135deg, #efe5d3, var(--bg));
+      }
+
+      main {
+        max-width: 1520px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+
+      .hero,
+      .card {
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        background: var(--panel);
+        backdrop-filter: blur(6px);
+      }
+
+      .hero {
+        margin-bottom: 18px;
+      }
+
+      .status {
+        display: inline-block;
+        margin-top: 12px;
+        padding: 10px 14px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-weight: 600;
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+      }
+
+      .layout {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: 1.2fr 1fr;
+      }
+
+      .left,
+      .right {
+        display: grid;
+        gap: 16px;
+      }
+
+      .section-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+
+      .field-grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .field-grid.tight {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      label {
+        display: block;
+        font-size: 13px;
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+
+      input,
+      select,
+      textarea {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #ffffff;
+        color: var(--ink);
+      }
+
+      textarea {
+        min-height: 120px;
+        resize: vertical;
+      }
+
+      .actions,
+      .small-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .actions {
+        margin-top: 14px;
+      }
+
+      button {
+        padding: 10px 14px;
+        border: 0;
+        border-radius: 12px;
+        background: var(--accent);
+        color: #fff;
+        cursor: pointer;
+      }
+
+      button.secondary {
+        background: #8f7967;
+      }
+
+      button.ghost {
+        background: var(--ghost);
+        color: var(--ink);
+      }
+
+      button.warn {
+        background: var(--warn);
+      }
+
+      .summary-grid {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .summary-item {
+        padding: 12px;
+        border-radius: 14px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.82);
+      }
+
+      .summary-item strong {
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th,
+      td {
+        padding: 10px 8px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      .table-wrap,
+      .logs {
+        max-height: 360px;
+        overflow: auto;
+      }
+
+      .logs {
+        font-family: ui-monospace, monospace;
+        font-size: 13px;
+      }
+
+      .log {
+        padding: 10px 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .active-row {
+        background: rgba(239, 224, 220, 0.52);
+      }
+
+      @media (max-width: 1160px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 760px) {
+        .field-grid,
+        .field-grid.tight,
+        .summary-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <h1>协议服务端控制台</h1>
+        <p>完整的上位机联调面板，支持参数下发、花型传输、列表读取、删除、续传和状态接收。</p>
+        <div id="status" class="status">服务端已启动</div>
+      </section>
+
+      <section class="layout">
+        <div class="left">
+          <div class="card">
+            <div class="section-head">
+              <h2>服务配置</h2>
+            </div>
+            <div class="field-grid">
+              <div>
+                <label for="preferredProtocolPresetId">默认发送协议</label>
+                <select id="preferredProtocolPresetId"></select>
+              </div>
+              <div>
+                <label for="selectedSessionId">当前会话</label>
+                <select id="selectedSessionId"></select>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="section-head">
+              <h2>会话列表</h2>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>会话</th>
+                    <th>状态</th>
+                    <th>当前花型</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="sessionsTable"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="section-head">
+              <h2>参数与指令</h2>
+            </div>
+            <div class="actions">
+              <button id="syncTimeBtn" type="button">下发时间同步</button>
+              <button id="queryRealtimeStatusBtn" type="button" class="ghost">查询实时状态</button>
+              <button id="readHighPointBtn" type="button" class="ghost">读取高点</button>
+              <button id="readLowPointBtn" type="button" class="ghost">读取低点</button>
+              <button id="readClientPatternListBtn" type="button" class="ghost">读取客户端花型列表</button>
+            </div>
+            <div class="field-grid tight" style="margin-top: 16px">
+              <div>
+                <label for="setHighPointValue">设置高点</label>
+                <input id="setHighPointValue" type="number" />
+              </div>
+              <div>
+                <label for="setLowPointValue">设置低点</label>
+                <input id="setLowPointValue" type="number" />
+              </div>
+              <div>
+                <label for="setSpeedValue">设置速度</label>
+                <input id="setSpeedValue" type="number" />
+              </div>
+              <div style="grid-column: 1 / -1">
+                <label for="setDeviceFlagValue">设置设备标志符</label>
+                <input id="setDeviceFlagValue" />
+              </div>
+            </div>
+            <div class="actions">
+              <button id="setHighPointBtn" type="button">下发高点</button>
+              <button id="setLowPointBtn" type="button" class="ghost">下发低点</button>
+              <button id="setSpeedBtn" type="button" class="ghost">下发速度</button>
+              <button id="setDeviceFlagBtn" type="button" class="secondary">下发设备标志符</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="section-head">
+              <h2>客户端花型操作</h2>
+            </div>
+            <div class="field-grid">
+              <div>
+                <label for="targetPatternId">客户端花型编号</label>
+                <input id="targetPatternId" type="number" />
+              </div>
+              <div>
+                <label for="resumeUploadFrame">上传续传帧号</label>
+                <input id="resumeUploadFrame" type="number" value="1" />
+              </div>
+              <div style="grid-column: 1 / -1">
+                <label for="targetPatternName">客户端花型名称</label>
+                <input id="targetPatternName" />
+              </div>
+            </div>
+            <div class="actions">
+              <button id="requestUploadPatternBtn" type="button">请求客户端上传花型</button>
+              <button id="deleteClientPatternBtn" type="button" class="warn">删除客户端花型</button>
+              <button id="resumeUploadBtn" type="button" class="ghost">请求上传续传</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="section-head">
+              <h2>服务器花型库</h2>
+            </div>
+            <div class="field-grid">
+              <div>
+                <label for="serverPatternDraftId">花型编号</label>
+                <input id="serverPatternDraftId" type="number" />
+              </div>
+              <div>
+                <label for="serverPatternDraftName">花型名称</label>
+                <input id="serverPatternDraftName" />
+              </div>
+              <div style="grid-column: 1 / -1">
+                <label for="serverPatternDraftData">花型数据文本</label>
+                <textarea id="serverPatternDraftData"></textarea>
+              </div>
+            </div>
+            <div class="actions">
+              <button id="saveServerPatternBtn" type="button">保存服务器花型</button>
+              <button id="deleteServerPatternBtn" type="button" class="warn">删除服务器花型</button>
+            </div>
+            <div class="table-wrap" style="margin-top: 16px">
+              <table>
+                <thead>
+                  <tr>
+                    <th>编号</th>
+                    <th>名称</th>
+                    <th>大小</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="serverPatternsTable"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="right">
+          <div class="card">
+            <div class="section-head">
+              <h2>当前会话摘要</h2>
+            </div>
+            <div id="sessionSummary" class="summary-grid"></div>
+          </div>
+
+          <div class="card">
+            <div class="section-head">
+              <h2>客户端设备信息</h2>
+            </div>
+            <div id="deviceInfoSummary" class="summary-grid"></div>
+          </div>
+
+          <div class="card">
+            <div class="section-head">
+              <h2>传输状态</h2>
+            </div>
+            <div id="transferSummary" class="summary-grid"></div>
+          </div>
+
+          <div class="card">
+            <div class="section-head">
+              <h2>客户端花型列表</h2>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>编号</th>
+                    <th>名称</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="clientPatternsTable"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="section-head">
+              <h2>协议日志</h2>
+              <button id="clearLogsBtn" type="button" class="ghost">清空日志</button>
+            </div>
+            <div id="logs" class="logs"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+  </html>

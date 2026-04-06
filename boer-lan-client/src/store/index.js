@@ -3,6 +3,87 @@ import Vuex from 'vuex'
 
 Vue.use(Vuex)
 
+const DEFAULT_PERMISSIONS = {
+  home: true,
+  dashboard: true,
+  employeeManagement: true,
+  fileManagement: true,
+  remoteMonitoring: true,
+  statistics: true,
+  deviceManagement: true
+}
+
+function getDefaultPermissions() {
+  return { ...DEFAULT_PERMISSIONS }
+}
+
+function parsePermissions(rawPermissions) {
+  if (!rawPermissions) {
+    return null
+  }
+
+  try {
+    const permissions = typeof rawPermissions === 'string'
+      ? JSON.parse(rawPermissions)
+      : rawPermissions
+
+    if (Array.isArray(permissions)) {
+      return permissions.reduce((acc, key) => {
+        if (typeof key === 'string' && key.trim()) {
+          acc[key.trim()] = true
+        }
+        return acc
+      }, {})
+    }
+
+    if (permissions && typeof permissions === 'object') {
+      return Object.keys(permissions).reduce((acc, key) => {
+        if (permissions[key] === true) {
+          acc[key] = true
+        }
+        return acc
+      }, {})
+    }
+  } catch (error) {
+    console.error('解析用户权限失败:', error)
+  }
+
+  return null
+}
+
+function normalizePermissions(rawPermissions) {
+  const parsedPermissions = parsePermissions(rawPermissions)
+  if (!parsedPermissions) {
+    return getDefaultPermissions()
+  }
+
+  const normalizedPermissions = {
+    ...parsedPermissions
+  }
+
+  normalizedPermissions.home = parsedPermissions.home === true
+  normalizedPermissions.dashboard = parsedPermissions.dashboard === true
+  normalizedPermissions.employeeManagement = parsedPermissions.employeeManagement === true
+  normalizedPermissions.deviceManagement =
+    parsedPermissions.deviceManagement === true ||
+    parsedPermissions.deviceInfo === true
+  normalizedPermissions.remoteMonitoring =
+    parsedPermissions.remoteMonitoring === true ||
+    parsedPermissions.deviceManagement === true ||
+    parsedPermissions.deviceInfo === true
+  normalizedPermissions.fileManagement =
+    parsedPermissions.fileManagement === true ||
+    parsedPermissions.patternFiles === true ||
+    parsedPermissions.devicePatternFiles === true ||
+    parsedPermissions.downloadLog === true
+  normalizedPermissions.statistics =
+    parsedPermissions.statistics === true ||
+    parsedPermissions.salaryStatistics === true ||
+    parsedPermissions.statusStatistics === true
+
+  return normalizedPermissions
+}
+
 export default new Vuex.Store({
   state: {
     // User info
@@ -36,46 +117,15 @@ export default new Vuex.Store({
 
     // 用户权限对象
     userPermissions: state => {
-      // 使用缓存避免重复解析
       if (state.permissionsCache) {
         return state.permissionsCache
       }
 
       if (!state.user || !state.user.permissions) {
-        return {
-          home: true,
-          dashboard: true,
-          employeeManagement: true,
-          fileManagement: true,
-          remoteMonitoring: true,
-          statistics: true,
-          deviceManagement: true
-        }
+        return getDefaultPermissions()
       }
 
-      try {
-        const permissions = typeof state.user.permissions === 'string'
-          ? JSON.parse(state.user.permissions)
-          : state.user.permissions
-        if (Array.isArray(permissions)) {
-          return permissions.reduce((acc, key) => {
-            acc[key] = true
-            return acc
-          }, {})
-        }
-        return permissions
-      } catch (error) {
-        console.error('解析用户权限失败:', error)
-        return {
-          home: true,
-          dashboard: true,
-          employeeManagement: true,
-          fileManagement: true,
-          remoteMonitoring: true,
-          statistics: true,
-          deviceManagement: true
-        }
-      }
+      return normalizePermissions(state.user.permissions)
     },
 
     // 检查是否有某个权限
@@ -103,8 +153,7 @@ export default new Vuex.Store({
 
     SET_USER(state, user) {
       state.user = user
-      // 清除权限缓存，强制重新解析
-      state.permissionsCache = null
+      state.permissionsCache = normalizePermissions(user?.permissions)
     },
 
     SET_PERMISSIONS_CACHE(state, permissions) {

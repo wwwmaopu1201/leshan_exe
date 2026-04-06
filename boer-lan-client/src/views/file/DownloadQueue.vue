@@ -61,11 +61,13 @@
         </div>
       </div>
 
-      <div class="card queue-table-card">
+      <div ref="tableCard" class="card queue-table-card page-table-card">
         <el-table
+          ref="tableRef"
           v-loading="loading"
           :data="queueList"
           border
+          :height="tableHeight"
           empty-text="暂无下发任务"
           :row-class-name="getRowClassName"
         >
@@ -164,7 +166,8 @@ export default {
       loading: false,
       queueList: [],
       refreshTimer: null,
-      lastUpdatedAt: ''
+      lastUpdatedAt: '',
+      tableHeight: 320
     }
   },
   computed: {
@@ -186,11 +189,13 @@ export default {
   },
   mounted() {
     this.fetchData()
+    window.addEventListener('resize', this.syncTableHeight)
     this.refreshTimer = setInterval(() => {
       this.fetchData({ silent: true })
     }, 5000)
   },
   beforeDestroy() {
+    window.removeEventListener('resize', this.syncTableHeight)
     if (this.refreshTimer) {
       clearInterval(this.refreshTimer)
     }
@@ -205,6 +210,9 @@ export default {
         if (res.code === 0) {
           this.queueList = Array.isArray(res.data) ? res.data : (res.data?.list || [])
           this.lastUpdatedAt = this.formatTime(new Date())
+          this.$nextTick(() => {
+            this.syncTableHeight()
+          })
         }
       } catch (error) {
         console.error('Failed to fetch download queue:', error)
@@ -218,6 +226,13 @@ export default {
       const target = date instanceof Date ? date : new Date(date)
       const pad = value => String(value).padStart(2, '0')
       return `${pad(target.getHours())}:${pad(target.getMinutes())}:${pad(target.getSeconds())}`
+    },
+    syncTableHeight() {
+      this.$nextTick(() => {
+        const card = this.$refs.tableCard
+        if (!card) return
+        this.tableHeight = Math.max(240, card.clientHeight - 20)
+      })
     },
     getStatusType(status) {
       const map = {
@@ -333,8 +348,11 @@ export default {
 
 <style lang="scss" scoped>
 .queue-shell {
-  display: grid;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   gap: 18px;
+  min-height: 0;
 }
 
 .queue-hero-actions {
@@ -431,6 +449,10 @@ export default {
 }
 
 .queue-table-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   overflow: hidden;
 }
 

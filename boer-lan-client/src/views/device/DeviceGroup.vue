@@ -2,11 +2,10 @@
   <div class="page-container">
     <el-row :gutter="20">
       <el-col :span="8">
-        <div class="card">
+        <el-card shadow="never" class="card">
           <div class="card-header flex-between">
             <span>设备分组</span>
             <div>
-              <el-button type="primary" size="small" icon="el-icon-plus" @click="handleAddGroup">新增分组</el-button>
               <el-button size="small" icon="el-icon-refresh" @click="fetchAll">刷新</el-button>
             </div>
           </div>
@@ -27,42 +26,22 @@
             @node-click="handleNodeClick"
             @check="handleTreeCheck"
             @node-contextmenu="handleNodeContextMenu"
-            @node-drop="handleGroupNodeDrop"
-          >
-            <div class="tree-node flex-between" style="width: 100%" slot-scope="{ node, data }">
-              <span class="tree-node-label" @dblclick.stop="handleNodeDoubleClick(data)" :title="data.isDevice ? '双击可重命名设备' : '双击可重命名分组'">
-                <i :class="getTreeNodeIcon(data)"></i>
-                {{ node.label }}
-                <span v-if="!data.isDevice" class="device-count">({{ data.deviceCount || 0 }})</span>
-                <span v-if="data.isDevice" :class="['node-status-dot', `status-${data.status || 'offline'}`]"></span>
-              </span>
-              <span class="node-actions" v-if="!data.isRoot && !data.isVirtual && !data.isDevice">
-                <el-button type="text" size="mini" @click.stop="handleAddSibling(data)" title="新增平级组">
-                  <i class="el-icon-plus"></i>
-                </el-button>
-                <el-button type="text" size="mini" @click.stop="handleAddChild(data)" title="新增子组">
-                  <i class="el-icon-circle-plus-outline"></i>
-                </el-button>
-                <el-button type="text" size="mini" @click.stop="handleMoveGroup(data, 'up')" title="上移">
-                  <i class="el-icon-top"></i>
-                </el-button>
-                <el-button type="text" size="mini" @click.stop="handleMoveGroup(data, 'down')" title="下移">
-                  <i class="el-icon-bottom"></i>
-                </el-button>
-                <el-button type="text" size="mini" @click.stop="handleEditGroup(data)">
-                  <i class="el-icon-edit"></i>
-                </el-button>
-                <el-button type="text" size="mini" class="danger-text" @click.stop="handleDeleteGroup(data)">
-                  <i class="el-icon-delete"></i>
-                </el-button>
-              </span>
-            </div>
-          </el-tree>
-        </div>
+          @node-drop="handleGroupNodeDrop"
+        >
+          <div class="tree-node flex-between" style="width: 100%" slot-scope="{ node, data }">
+            <span class="tree-node-label" @dblclick.stop="handleNodeDoubleClick(data)" :title="data.isDevice ? '双击可重命名设备' : '双击可重命名分组'">
+              <i :class="getTreeNodeIcon(data)"></i>
+              {{ node.label }}
+              <span v-if="!data.isDevice" class="device-count">({{ data.deviceCount || 0 }})</span>
+              <span v-if="data.isDevice" :class="['node-status-dot', `status-${data.status || 'offline'}`]"></span>
+            </span>
+          </div>
+        </el-tree>
+      </el-card>
       </el-col>
 
       <el-col :span="16">
-        <div class="card">
+        <el-card shadow="never" class="card page-table-card">
           <div class="card-header">
             分组信息 - {{ selectedGroup?.label || '请选择分组' }}
           </div>
@@ -81,8 +60,8 @@
               <el-descriptions-item label="上级分组">{{ selectedGroup.parentLabel || '无' }}</el-descriptions-item>
             </el-descriptions>
 
-            <div class="mt-20">
-              <div class="flex-between">
+            <div ref="groupDeviceSection" class="mt-20 group-device-section">
+              <div ref="groupDeviceToolbar" class="flex-between">
                 <h4>分组设备列表</h4>
                 <div>
                   <el-button
@@ -120,6 +99,7 @@
                 border
                 class="mt-10"
                 v-loading="loadingDevices"
+                :height="groupDeviceTableHeight"
                 :row-class-name="getDeviceRowClass"
                 @selection-change="handleDeviceSelectionChange"
                 @row-click="handleGroupDeviceRowClick"
@@ -208,7 +188,7 @@
               <p>请从左侧选择一个分组查看详情</p>
             </div>
           </template>
-        </div>
+        </el-card>
       </el-col>
     </el-row>
 
@@ -321,6 +301,7 @@
         <li @click="handleContextMenuAction('edit')">重命名</li>
         <li class="danger" @click="handleContextMenuAction('delete')">删除分组</li>
       </template>
+      <li @click="handleContextMenuAction('refresh')">刷新</li>
     </ul>
   </div>
 </template>
@@ -383,7 +364,8 @@ export default {
       },
       groupRules: {
         name: [{ required: true, message: '请输入分组名称', trigger: 'blur' }]
-      }
+      },
+      groupDeviceTableHeight: 320
     }
   },
   computed: {
@@ -411,12 +393,16 @@ export default {
   },
   mounted() {
     document.addEventListener('click', this.hideContextMenu)
+    window.addEventListener('blur', this.hideContextMenu)
     window.addEventListener('resize', this.hideContextMenu)
+    window.addEventListener('resize', this.syncGroupDeviceTableHeight)
     this.fetchAll()
   },
   beforeDestroy() {
     document.removeEventListener('click', this.hideContextMenu)
+    window.removeEventListener('blur', this.hideContextMenu)
     window.removeEventListener('resize', this.hideContextMenu)
+    window.removeEventListener('resize', this.syncGroupDeviceTableHeight)
   },
   methods: {
     async fetchAll() {
@@ -430,6 +416,9 @@ export default {
         this.selectedGroup = this.groupTree[0]
       }
       this.syncGroupDevices()
+      this.$nextTick(() => {
+        this.syncGroupDeviceTableHeight()
+      })
     },
     async fetchGroups() {
       this.loadingGroups = true
@@ -978,6 +967,14 @@ export default {
     handleDeviceSelectionChange(rows) {
       this.selectedDeviceIds = rows.map(item => item.id).filter(Boolean)
     },
+    syncGroupDeviceTableHeight() {
+      this.$nextTick(() => {
+        const section = this.$refs.groupDeviceSection
+        const toolbar = this.$refs.groupDeviceToolbar
+        if (!section || !toolbar) return
+        this.groupDeviceTableHeight = Math.max(220, section.clientHeight - toolbar.offsetHeight - 12)
+      })
+    },
     handleGroupDeviceRowClick(row, column) {
       if (!row || !column || column.type === 'selection') {
         return
@@ -1117,12 +1114,14 @@ export default {
     handleNodeClick(data) {
       this.selectedGroup = data
       this.syncGroupDevices()
+      this.syncGroupDeviceTableHeight()
       this.hideContextMenu()
     },
     handleTreeCheck(data, checkedInfo) {
       const checkedNodes = checkedInfo?.checkedNodes || []
       this.checkedTreeNodes = checkedNodes.filter(node => !node?.isVirtual)
       this.syncGroupDevices()
+      this.syncGroupDeviceTableHeight()
     },
     handleNodeContextMenu(event, data) {
       event.preventDefault()
@@ -1132,6 +1131,7 @@ export default {
       }
       this.selectedGroup = data
       this.syncGroupDevices()
+      this.syncGroupDeviceTableHeight()
       this.contextMenu = {
         visible: true,
         x: event.clientX,
@@ -1150,6 +1150,10 @@ export default {
       this.hideContextMenu()
       if (action === 'addRoot') {
         this.handleAddGroup()
+        return
+      }
+      if (action === 'refresh') {
+        this.fetchAll()
         return
       }
       if (!data || data.isRoot || data.isVirtual || data.isDevice) {
@@ -1530,15 +1534,6 @@ export default {
     font-size: 12px;
     margin-left: 5px;
   }
-
-  .node-actions {
-    opacity: 0;
-    transition: opacity 0.3s;
-  }
-
-  &:hover .node-actions {
-    opacity: 1;
-  }
 }
 
 .danger-text {
@@ -1569,6 +1564,13 @@ export default {
 
 .mt-20 {
   margin-top: 20px;
+}
+
+.group-device-section {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 ::v-deep .el-table .row-ungrouped > td {

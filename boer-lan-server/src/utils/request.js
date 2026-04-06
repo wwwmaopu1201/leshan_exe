@@ -1,7 +1,9 @@
 import axios from 'axios'
 import { Message } from 'element-ui'
 import { invoke } from '@tauri-apps/api/core'
+import router from '@/router'
 
+let authRedirecting = false
 const defaultHost = '127.0.0.1'
 const defaultPort = 8088
 
@@ -9,17 +11,37 @@ function buildBaseURL(port = defaultPort) {
   return `http://${defaultHost}:${port}/api`
 }
 
-const request = axios.create({
-  baseURL: import.meta.env.DEV ? '/api' : buildBaseURL(),
-  timeout: 10000
-})
-
 function normalizePort(value) {
   const port = Number(value)
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error(`invalid backend port: ${value}`)
   }
   return port
+}
+
+const request = axios.create({
+  baseURL: import.meta.env.DEV ? '/api' : buildBaseURL(),
+  timeout: 10000
+})
+
+function redirectToLogin() {
+  if (authRedirecting) {
+    return
+  }
+  authRedirecting = true
+
+  const finish = () => {
+    authRedirecting = false
+  }
+
+  if (router.currentRoute?.path === '/login') {
+    finish()
+    return
+  }
+
+  Promise.resolve(router.replace('/login'))
+    .catch(() => {})
+    .finally(finish)
 }
 
 export async function initRequestBaseURL(retries = 40) {
@@ -58,13 +80,16 @@ request.interceptors.request.use(config => {
 request.interceptors.response.use(
   response => response.data,
   error => {
+    const message = error.response?.data?.message || error.response?.data?.error || '请求失败'
     if (error.response?.status === 401) {
       localStorage.removeItem('token')
-      window.location.reload()
+      if (!error.config?.skipAuthRedirect) {
+        redirectToLogin()
+      }
     }
 
     if (!error.config?.suppressErrorMessage) {
-      Message.error(error.response?.data?.error || '请求失败')
+      Message.error(message)
     }
 
     return Promise.reject(error)

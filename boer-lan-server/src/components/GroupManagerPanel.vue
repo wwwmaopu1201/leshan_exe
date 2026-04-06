@@ -1,11 +1,10 @@
 <template>
-  <div class="panel-shell">
+  <el-card shadow="never" class="panel-shell">
     <div class="panel-header">
       <div>
         <div class="panel-title">{{ title }}</div>
       </div>
       <div class="action-group">
-        <el-button type="primary" size="mini" icon="el-icon-plus" circle @click="createGroup(null)" />
         <el-button type="text" size="mini" @click="loadGroupTree">刷新</el-button>
       </div>
     </div>
@@ -43,26 +42,6 @@
             <i :class="['tree-node__icon', getNodeIcon(data)]"></i>
             <span class="tree-node__label" :title="node.label">{{ node.label }}</span>
           </div>
-          <div class="tree-node__actions">
-            <el-button type="text" size="mini" title="同级分组" @click.stop="addSibling(data)">
-              <i class="el-icon-plus"></i>
-            </el-button>
-            <el-button type="text" size="mini" title="子分组" @click.stop="addChild(data)">
-              <i class="el-icon-folder-add"></i>
-            </el-button>
-            <el-button type="text" size="mini" :disabled="!canMoveUp(data)" title="上移" @click.stop="moveUp(data)">
-              <i class="el-icon-top"></i>
-            </el-button>
-            <el-button type="text" size="mini" :disabled="!canMoveDown(data)" title="下移" @click.stop="moveDown(data)">
-              <i class="el-icon-bottom"></i>
-            </el-button>
-            <el-button type="text" size="mini" title="重命名" @click.stop="editGroup(data)">
-              <i class="el-icon-edit"></i>
-            </el-button>
-            <el-button type="text" size="mini" class="danger-text" title="删除分组" @click.stop="deleteGroup(data)">
-              <i class="el-icon-delete"></i>
-            </el-button>
-          </div>
         </div>
       </el-tree>
     </div>
@@ -85,7 +64,7 @@
       </template>
       <li @click="handleContextMenuAction('refresh')">刷新</li>
     </ul>
-  </div>
+  </el-card>
 </template>
 
 <script>
@@ -406,14 +385,21 @@ export default {
 </script>
 
 <style scoped>
+.panel-shell {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .tree-scroll ::v-deep .el-tree-node__content {
-  height: 38px;
-  border-radius: 12px;
-  margin-bottom: 4px;
+  height: 30px;
+  border-radius: 2px;
+  margin-bottom: 2px;
 }
 
 .tree-scroll ::v-deep .el-tree-node.is-current > .el-tree-node__content {
-  background: rgba(47, 109, 246, 0.1);
+  background: #e8f2ff;
 }
 
 .group-context-menu {
@@ -425,13 +411,13 @@ export default {
   min-width: 152px;
   background: #fff;
   border: 1px solid #e4e7ed;
-  border-radius: 6px;
+  border-radius: 2px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
 }
 
 .group-context-menu li {
-  padding: 7px 14px;
-  font-size: 13px;
+  padding: 6px 12px;
+  font-size: 12px;
   color: #303133;
   cursor: pointer;
   user-select: none;

@@ -26,10 +26,10 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- ========================================
 -- 密码都是 admin123 (bcrypt加密后的结果)
 INSERT INTO users (id, username, password, nickname, email, phone, role, avatar, created_at, updated_at) VALUES
-(1, 'admin', '$2a$10$N9qo8uLOickgx2ZMRZoMye/1qZVJR6jLqJE5fBIVGRV0cTvK7mPGK', '系统管理员', 'admin@boer.com', '13800000000', 'admin', NULL, NOW(), NOW()),
-(2, 'zhangsan', '$2a$10$N9qo8uLOickgx2ZMRZoMye/1qZVJR6jLqJE5fBIVGRV0cTvK7mPGK', '张三', 'zhangsan@boer.com', '13800138001', 'user', NULL, NOW(), NOW()),
-(3, 'lisi', '$2a$10$N9qo8uLOickgx2ZMRZoMye/1qZVJR6jLqJE5fBIVGRV0cTvK7mPGK', '李四', 'lisi@boer.com', '13800138002', 'user', NULL, NOW(), NOW()),
-(4, 'wangwu', '$2a$10$N9qo8uLOickgx2ZMRZoMye/1qZVJR6jLqJE5fBIVGRV0cTvK7mPGK', '王五', 'wangwu@boer.com', '13800138003', 'user', NULL, NOW(), NOW());
+(1, 'admin', '$2a$10$.DrZeVbIDBVkY2jV3Hi8x.c2TdzX1B7wPkRMpGNVIGbRXTFr2hluK', '系统管理员', 'admin@boer.com', '13800000000', 'admin', NULL, NOW(), NOW()),
+(2, 'zhangsan', '$2a$10$.DrZeVbIDBVkY2jV3Hi8x.c2TdzX1B7wPkRMpGNVIGbRXTFr2hluK', '张三', 'zhangsan@boer.com', '13800138001', 'user', NULL, NOW(), NOW()),
+(3, 'lisi', '$2a$10$.DrZeVbIDBVkY2jV3Hi8x.c2TdzX1B7wPkRMpGNVIGbRXTFr2hluK', '李四', 'lisi@boer.com', '13800138002', 'user', NULL, NOW(), NOW()),
+(4, 'wangwu', '$2a$10$.DrZeVbIDBVkY2jV3Hi8x.c2TdzX1B7wPkRMpGNVIGbRXTFr2hluK', '王五', 'wangwu@boer.com', '13800138003', 'user', NULL, NOW(), NOW());
 
 -- ========================================
 -- 登录日志数据

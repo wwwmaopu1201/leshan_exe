@@ -9,7 +9,7 @@
 
     <div class="panel-layout">
       <div class="panel-side">
-        <div class="panel-shell">
+        <el-card shadow="never" class="panel-shell">
           <div class="panel-header">
             <div>
               <div class="panel-title">设备树</div>
@@ -75,7 +75,7 @@
               </div>
             </el-tree>
           </div>
-        </div>
+        </el-card>
       </div>
 
       <div class="panel-main">
@@ -115,7 +115,7 @@
           </el-form>
         </div>
 
-        <div class="surface-card">
+        <el-card shadow="never" class="surface-card">
           <div class="action-row">
             <div class="soft-note">
               <i class="el-icon-info"></i>
@@ -189,7 +189,7 @@
               @current-change="handlePageChange"
             />
           </div>
-        </div>
+        </el-card>
       </div>
     </div>
 
@@ -850,8 +850,15 @@ export default {
 </script>
 
 <style scoped>
+.panel-shell {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .tree-shortcuts {
-  margin-top: 12px;
+  margin-top: 8px;
 }
 
 ::v-deep .row-ungrouped td {
@@ -859,13 +866,13 @@ export default {
 }
 
 .tree-scroll ::v-deep .el-tree-node__content {
-  height: 38px;
-  border-radius: 12px;
-  margin-bottom: 4px;
+  height: 30px;
+  border-radius: 2px;
+  margin-bottom: 2px;
 }
 
 .tree-scroll ::v-deep .el-tree-node.is-current > .el-tree-node__content {
-  background: rgba(47, 109, 246, 0.1);
+  background: #e8f2ff;
 }
 
 .group-context-menu {
@@ -877,13 +884,13 @@ export default {
   min-width: 152px;
   background: #fff;
   border: 1px solid #e4e7ed;
-  border-radius: 6px;
+  border-radius: 2px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
 }
 
 .group-context-menu li {
-  padding: 7px 14px;
-  font-size: 13px;
+  padding: 6px 12px;
+  font-size: 12px;
   color: #303133;
   cursor: pointer;
   user-select: none;

@@ -98,6 +98,11 @@ func parseEnvBool(name string, fallback bool) bool {
 	return parsed
 }
 
+func shouldSkipTrialValidation() bool {
+	return parseEnvBool("BOERLAN_SKIP_TRIAL", false) ||
+		strings.EqualFold(strings.TrimSpace(os.Getenv("APP_ENV")), "development")
+}
+
 func parseGORMLogLevel(value string, fallback logger.LogLevel) logger.LogLevel {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "silent":
@@ -154,12 +159,16 @@ func main() {
 		defer logFile.Close()
 	}
 
-	trialStatus, err := trial.Ensure()
-	if err != nil {
-		log.Fatalf("Trial validation failed: %s", trialStatus.Message)
+	if shouldSkipTrialValidation() {
+		log.Printf("Trial validation skipped in development mode")
+	} else {
+		trialStatus, err := trial.Ensure()
+		if err != nil {
+			log.Fatalf("Trial validation failed: %s", trialStatus.Message)
+		}
+		trial.StartExpiryWatcher(trialStatus)
+		log.Printf("Trial valid until %s", trialStatus.ExpiresAt.Format(time.RFC3339))
 	}
-	trial.StartExpiryWatcher(trialStatus)
-	log.Printf("Trial valid until %s", trialStatus.ExpiresAt.Format(time.RFC3339))
 
 	// Load config
 	loadConfig()
@@ -299,13 +308,13 @@ func initDB() {
 		config.Database.Type = "sqlite"
 	}
 
-	// 支持从环境变量读取数据目录
-	if config.Database.Path == "" {
-		dataDir := os.Getenv("DATA_DIR")
-		if dataDir == "" {
-			dataDir = "./data"
-		}
-		config.Database.Path = fmt.Sprintf("%s/boer-lan.db", dataDir)
+	// 开发调试时允许环境变量覆盖配置文件中的数据库路径。
+	if dbPath := strings.TrimSpace(os.Getenv("DB_PATH")); dbPath != "" {
+		config.Database.Path = dbPath
+	} else if dataDir := strings.TrimSpace(os.Getenv("DATA_DIR")); dataDir != "" {
+		config.Database.Path = filepath.Join(dataDir, "boer-lan.db")
+	} else if config.Database.Path == "" {
+		config.Database.Path = "./data/boer-lan.db"
 	}
 
 	switch config.Database.Type {
@@ -370,8 +379,87 @@ func initDB() {
 
 	// Create default data if not exists
 	initDefaultData(db)
+	backfillEmployeeGroupIDs(db)
 
 	log.Println("Database connected and migrated successfully")
+}
+
+func backfillEmployeeGroupIDs(db *gorm.DB) {
+	var employees []model.Employee
+	if err := db.Select("id").Where("group_id IS NULL").Find(&employees).Error; err != nil {
+		log.Printf("Skip employee group backfill: %v", err)
+		return
+	}
+	if len(employees) == 0 {
+		return
+	}
+
+	backfilled := 0
+	ambiguous := 0
+	for _, employee := range employees {
+		groupSet := make(map[uint]struct{})
+
+		var deviceGroups []uint
+		if err := db.Table("employee_devices ed").
+			Select("DISTINCT d.group_id").
+			Joins("JOIN devices d ON d.id = ed.device_id").
+			Where("ed.employee_id = ?", employee.ID).
+			Where("d.group_id IS NOT NULL").
+			Pluck("d.group_id", &deviceGroups).Error; err == nil {
+			for _, id := range deviceGroups {
+				if id > 0 {
+					groupSet[id] = struct{}{}
+				}
+			}
+		}
+
+		var productionGroups []uint
+		if err := db.Table("production_records pr").
+			Select("DISTINCT d.group_id").
+			Joins("JOIN devices d ON d.id = pr.device_id").
+			Where("pr.employee_id = ?", employee.ID).
+			Where("d.group_id IS NOT NULL").
+			Pluck("d.group_id", &productionGroups).Error; err == nil {
+			for _, id := range productionGroups {
+				if id > 0 {
+					groupSet[id] = struct{}{}
+				}
+			}
+		}
+
+		var salaryGroups []uint
+		if err := db.Table("salary_records sr").
+			Select("DISTINCT d.group_id").
+			Joins("JOIN devices d ON d.id = sr.device_id").
+			Where("sr.employee_id = ?", employee.ID).
+			Where("d.group_id IS NOT NULL").
+			Pluck("d.group_id", &salaryGroups).Error; err == nil {
+			for _, id := range salaryGroups {
+				if id > 0 {
+					groupSet[id] = struct{}{}
+				}
+			}
+		}
+
+		if len(groupSet) == 1 {
+			for groupID := range groupSet {
+				if err := db.Model(&model.Employee{}).
+					Where("id = ?", employee.ID).
+					Update("group_id", groupID).Error; err == nil {
+					backfilled++
+				}
+			}
+			continue
+		}
+
+		if len(groupSet) > 1 {
+			ambiguous++
+		}
+	}
+
+	if backfilled > 0 || ambiguous > 0 {
+		log.Printf("Employee group backfill finished: backfilled=%d ambiguous=%d", backfilled, ambiguous)
+	}
 }
 
 func initDefaultData(db *gorm.DB) {
@@ -407,51 +495,65 @@ func initDefaultData(db *gorm.DB) {
 		log.Println("Default groups created")
 	}
 
-	// 创建默认管理员用户
-	var userCount int64
-	db.Model(&model.User{}).Count(&userCount)
-	if userCount == 0 {
-		hashedPassword, _ := utils.HashPassword("admin123")
-
-		// 获取第一个分组
-		var firstGroup model.Group
-		db.First(&firstGroup)
-
-		adminPermissions := `{"home":true,"dashboard":true,"deviceManagement":true,"fileManagement":true,"statistics":true,"employeeManagement":true,"remoteMonitoring":true}`
-		var adminRole model.Role
-		if err := db.Where("name = ?", "admin").First(&adminRole).Error; err == nil {
-			adminPermissions = adminRole.Permissions
-		}
-
-		db.Create(&model.User{
-			Username:    "admin",
-			Password:    hashedPassword,
-			Nickname:    "管理员",
-			Role:        "admin",
-			GroupID:     &firstGroup.ID,
-			Permissions: adminPermissions,
-		})
-		log.Println("Default admin user created (admin/admin123)")
+	var firstGroup model.Group
+	if err := db.Order("id ASC").First(&firstGroup).Error; err != nil {
+		firstGroup = model.Group{}
 	}
 
-	// 创建默认操作员
-	var operatorCount int64
-	db.Model(&model.Operator{}).Count(&operatorCount)
-	if operatorCount == 0 {
-		hashedPassword, _ := utils.HashPassword("123")
+	ensureDefaultAdminUser(db, &firstGroup)
+	ensureDefaultOperatorUser(db, &firstGroup)
+}
 
-		// 获取第一个分组
-		var firstGroup model.Group
-		db.First(&firstGroup)
-
-		db.Create(&model.Operator{
-			Username: "operator",
-			Password: hashedPassword,
-			Nickname: "操作员",
-			GroupID:  &firstGroup.ID,
-		})
-		log.Println("Default operator created (operator/123)")
+func ensureDefaultAdminUser(db *gorm.DB, firstGroup *model.Group) {
+	var count int64
+	db.Model(&model.User{}).Where("username = ?", "admin").Count(&count)
+	if count > 0 {
+		return
 	}
+
+	hashedPassword, _ := utils.HashPassword("admin123")
+
+	adminPermissions := `{"home":true,"dashboard":true,"deviceManagement":true,"fileManagement":true,"statistics":true,"employeeManagement":true,"remoteMonitoring":true}`
+	var adminRole model.Role
+	if err := db.Where("name = ?", "admin").First(&adminRole).Error; err == nil {
+		adminPermissions = adminRole.Permissions
+	}
+
+	adminUser := model.User{
+		Username:    "admin",
+		Password:    hashedPassword,
+		Nickname:    "管理员",
+		Role:        "admin",
+		Permissions: adminPermissions,
+	}
+	if firstGroup != nil && firstGroup.ID > 0 {
+		adminUser.GroupID = &firstGroup.ID
+	}
+
+	db.Create(&adminUser)
+	log.Println("Default admin user created (admin/admin123)")
+}
+
+func ensureDefaultOperatorUser(db *gorm.DB, firstGroup *model.Group) {
+	var count int64
+	db.Model(&model.Operator{}).Where("username = ?", "operator").Count(&count)
+	if count > 0 {
+		return
+	}
+
+	hashedPassword, _ := utils.HashPassword("123")
+
+	operator := model.Operator{
+		Username: "operator",
+		Password: hashedPassword,
+		Nickname: "操作员",
+	}
+	if firstGroup != nil && firstGroup.ID > 0 {
+		operator.GroupID = &firstGroup.ID
+	}
+
+	db.Create(&operator)
+	log.Println("Default operator created (operator/123)")
 }
 
 func corsMiddleware() gin.HandlerFunc {
