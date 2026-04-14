@@ -1,0 +1,22 @@
+server:
+  port: 8088
+  mode: debug  # debug, release, test
+
+database:
+  type: sqlite  # sqlite 或 mysql
+  path: ./data/boer-lan.db  # SQLite数据库文件路径
+  # MySQL配置（切换到MySQL时取消注释并修改type为mysql）
+  # host: localhost
+  # port: 3306
+  # username: root
+  # password: "your_password"
+  # database: boer_lan
+  # charset: utf8mb4
+
+jwt:
+  secret: boer-lan-secret-key-2024
+  expire: 24  # hours
+
+log:
+  level: debug
+  path: ./logs
