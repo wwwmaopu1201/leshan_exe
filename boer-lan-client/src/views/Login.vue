@@ -1,6 +1,6 @@
 <template>
   <div class="login-shell">
-    <div class="login-background">
+    <div class="login-background" :style="backgroundStyle">
       <span v-for="n in 7" :key="`scan-${n}`" class="scan-line" :style="{ left: `${10 + n * 12}%` }"></span>
       <span v-for="n in 10" :key="`spark-${n}`" class="light-dot" :style="sparkStyle(n)"></span>
     </div>
@@ -155,6 +155,7 @@
 <script>
 import { mapActions } from 'vuex'
 import { login } from '@/api/auth'
+import loginBackground from '@/assets/images/login-background-client.png'
 
 export default {
   name: 'Login',
@@ -213,6 +214,11 @@ export default {
     }
   },
   computed: {
+    backgroundStyle() {
+      return {
+        '--login-bg-image': `url(${loginBackground})`
+      }
+    },
     currentLanguageLabel() {
       return this.currentLang === 'en-US' ? 'English' : '简体中文'
     }
@@ -300,18 +306,19 @@ export default {
   position: relative;
   min-height: 100%;
   overflow: hidden;
-  background:
-    linear-gradient(180deg, rgba(117, 169, 244, 0.95) 0%, rgba(117, 203, 251, 0.9) 48%, rgba(209, 241, 255, 0.9) 100%),
-    radial-gradient(circle at 20% 18%, rgba(255, 255, 255, 0.28), transparent 28%);
+  background: #d9e8f7;
 }
 
 .login-background {
   position: absolute;
   inset: 0;
-  background:
+  background-image:
     linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 22%),
-    linear-gradient(155deg, transparent 62%, rgba(255, 255, 255, 0.18) 62%, rgba(255, 255, 255, 0.18) 64%, transparent 64%),
-    linear-gradient(25deg, transparent 68%, rgba(255, 255, 255, 0.14) 68%, rgba(255, 255, 255, 0.14) 70%, transparent 70%);
+    linear-gradient(180deg, rgba(11, 37, 79, 0.14), rgba(11, 37, 79, 0.32)),
+    var(--login-bg-image);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: auto, auto, cover;
 }
 
 .scan-line {
