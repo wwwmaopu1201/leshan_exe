@@ -84,6 +84,26 @@ const routes = [
         }
       },
       {
+        path: 'file/pattern-types',
+        name: 'PatternTypeManager',
+        component: () => import('@/views/file/PatternTypeManager.vue'),
+        meta: {
+          title: 'menu.patternTypeManager',
+          parent: 'menu.file',
+          permission: PERMISSIONS.FILE_MANAGEMENT
+        }
+      },
+      {
+        path: 'file/order-nos',
+        name: 'OrderNoManager',
+        component: () => import('@/views/file/OrderNoManager.vue'),
+        meta: {
+          title: 'menu.orderNoManager',
+          parent: 'menu.file',
+          permission: PERMISSIONS.FILE_MANAGEMENT
+        }
+      },
+      {
         path: 'file/queue',
         name: 'DownloadQueue',
         component: () => import('@/views/file/DownloadQueue.vue'),

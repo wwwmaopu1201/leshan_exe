@@ -138,6 +138,7 @@
 
 <script>
 import { getDownloadLog, getPatternTypes } from '@/api/pattern'
+import { saveTextWithDialog } from '@/utils/file-export'
 
 export default {
   name: 'DownloadLog',
@@ -260,7 +261,7 @@ export default {
       }
       return map[status] || status
     },
-    handleExport() {
+    async handleExport() {
       if (!this.logList.length) {
         this.$message.warning('暂无可导出的日志')
         return
@@ -283,16 +284,17 @@ export default {
         .map(row => row.map(col => `\"${String(col).replace(/\"/g, '\"\"')}\"`).join(','))
         .join('\n')
 
-      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
-      const url = window.URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `download_log_${Date.now()}.csv`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      window.URL.revokeObjectURL(url)
-      this.$message.success('导出成功')
+      try {
+        const saved = await saveTextWithDialog(`\uFEFF${csv}`, `download_log_${Date.now()}.csv`, {
+          mimeType: 'text/csv;charset=utf-8;',
+          description: 'CSV 文件',
+          extensions: ['csv']
+        })
+        this.$message.success(saved ? '导出文件已保存' : '导出成功')
+      } catch (error) {
+        console.error('Failed to export download log:', error)
+        this.$message.error('导出失败')
+      }
     }
   }
 }

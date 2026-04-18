@@ -3,7 +3,20 @@
     <div class="profile-layout">
       <div class="card profile-overview">
         <div class="profile-overview-head">
-          <el-avatar :size="88" icon="el-icon-user-solid" />
+          <div class="profile-avatar-wrap">
+            <el-avatar class="profile-avatar-el" :size="88" :src="avatarSrc" fit="cover" />
+            <label for="profile-avatar-input" class="profile-avatar-upload">
+              <i class="el-icon-camera"></i>
+            </label>
+            <input
+              id="profile-avatar-input"
+              ref="avatarInput"
+              type="file"
+              accept=".png,.jpg,.jpeg,.webp"
+              style="display: none;"
+              @change="handleAvatarChange"
+            >
+          </div>
           <div class="profile-overview-meta">
             <h3>{{ userInfo.nickname || form.nickname || '-' }}</h3>
             <div class="profile-chip-row">
@@ -103,7 +116,8 @@
 
 <script>
 import { mapState } from 'vuex'
-import { updateProfile, getLoginLogs } from '@/api/auth'
+import defaultAvatar from '@/assets/images/default-avatar.svg'
+import { updateProfile, getLoginLogs, uploadAvatar } from '@/api/auth'
 
 export default {
   name: 'BasicInfo',
@@ -126,16 +140,33 @@ export default {
       userInfo: {
         nickname: '管理员',
         role: '',
-        createTime: ''
+        createTime: '',
+        avatar: ''
       },
       loginLogs: [],
       submitting: false,
+      avatarUploading: false,
       logLoading: false,
       tableHeight: 260
     }
   },
   computed: {
-    ...mapState(['user'])
+    ...mapState(['user', 'serverConfig']),
+    avatarSrc() {
+      const avatar = String(this.userInfo.avatar || this.user?.avatar || '').trim()
+      if (!avatar) {
+        return defaultAvatar
+      }
+      if (avatar.startsWith('http://') || avatar.startsWith('https://') || avatar.startsWith('data:')) {
+        return avatar
+      }
+      const ip = String(this.serverConfig?.ip || '').trim()
+      const port = String(this.serverConfig?.port || '').trim()
+      if (!ip || !port) {
+        return defaultAvatar
+      }
+      return `http://${ip}:${port}${avatar}?v=${encodeURIComponent(avatar)}`
+    }
   },
   mounted() {
     this.syncUserInfo()
@@ -158,6 +189,7 @@ export default {
       this.userInfo.nickname = this.user.nickname || '管理员'
       this.userInfo.role = this.user.role || ''
       this.userInfo.createTime = this.user.createTime || ''
+      this.userInfo.avatar = this.user.avatar || ''
     },
     formatRoleLabel(roleName) {
       if (!roleName) return '-'
@@ -186,6 +218,47 @@ export default {
       this.$nextTick(() => {
         this.$refs.formRef?.clearValidate()
       })
+    },
+    async handleAvatarChange(event) {
+      const file = event?.target?.files?.[0]
+      if (!file) {
+        return
+      }
+      if (!/^image\/(png|jpeg|webp)$/.test(file.type)) {
+        this.$message.warning('头像仅支持 png/jpg/jpeg/webp 格式')
+        return
+      }
+      if (file.size > 2 * 1024 * 1024) {
+        this.$message.warning('头像文件不能超过 2MB')
+        return
+      }
+
+      const formData = new FormData()
+      formData.append('file', file)
+
+      try {
+        this.avatarUploading = true
+        const res = await uploadAvatar(formData)
+        if (res.code === 0) {
+          const avatar = res.data?.avatar || ''
+          this.userInfo.avatar = avatar
+          this.$store.commit('SET_USER', {
+            ...this.user,
+            avatar
+          })
+          this.$message.success('头像更新成功')
+        } else {
+          this.$message.error(res.message || '头像更新失败')
+        }
+      } catch (error) {
+        console.error('Upload avatar failed:', error)
+        this.$message.error('头像更新失败')
+      } finally {
+        this.avatarUploading = false
+        if (this.$refs.avatarInput) {
+          this.$refs.avatarInput.value = ''
+        }
+      }
     },
     syncTableHeight() {
       this.$nextTick(() => {
@@ -260,6 +333,41 @@ export default {
     font-size: 24px;
     color: #22324d;
   }
+}
+
+.profile-avatar-wrap {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  flex-shrink: 0;
+}
+
+.profile-avatar-wrap ::v-deep .el-avatar {
+  background: #eef3f8;
+}
+
+.profile-avatar-el ::v-deep img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+}
+
+.profile-avatar-upload {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 24px;
+  height: 24px;
+  border: 1px solid #dbe6f5;
+  border-radius: 50%;
+  background: #f5f9ff;
+  color: #5d91ff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
 }
 
 .profile-overview-meta {

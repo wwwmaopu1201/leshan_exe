@@ -3,6 +3,8 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -110,6 +112,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 				"id":          user.ID,
 				"username":    user.Username,
 				"nickname":    user.Nickname,
+				"avatar":      user.Avatar,
 				"role":        user.Role,
 				"email":       user.Email,
 				"phone":       user.Phone,
@@ -152,6 +155,7 @@ func (h *AuthHandler) GetUserInfo(c *gin.Context) {
 			"id":          user.ID,
 			"username":    user.Username,
 			"nickname":    user.Nickname,
+			"avatar":      user.Avatar,
 			"role":        user.Role,
 			"email":       user.Email,
 			"phone":       user.Phone,
@@ -301,5 +305,92 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "信息更新成功",
+	})
+}
+
+func (h *AuthHandler) UploadAvatar(c *gin.Context) {
+	userId := c.GetUint("userId")
+
+	var user model.User
+	if err := h.db.First(&user, userId).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": "账号不存在",
+		})
+		return
+	}
+
+	file, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "请选择头像文件",
+		})
+		return
+	}
+
+	ext := strings.ToLower(filepath.Ext(file.Filename))
+	switch ext {
+	case ".png", ".jpg", ".jpeg", ".webp":
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "头像仅支持 png/jpg/jpeg/webp 格式",
+		})
+		return
+	}
+
+	if file.Size > 2*1024*1024 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "头像文件不能超过 2MB",
+		})
+		return
+	}
+
+	avatarDir := filepath.Join("uploads", "avatars")
+	if err := os.MkdirAll(avatarDir, 0755); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "创建头像目录失败",
+		})
+		return
+	}
+
+	fileName := time.Now().Format("20060102150405.000") + "_user_" + strings.TrimSpace(c.GetString("username")) + ext
+	savePath := filepath.Join(avatarDir, fileName)
+	oldAvatar := strings.TrimSpace(user.Avatar)
+	if err := c.SaveUploadedFile(file, savePath); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "头像保存失败",
+		})
+		return
+	}
+
+	avatarURL := "/uploads/avatars/" + fileName
+
+	if err := h.db.Model(&user).Update("avatar", avatarURL).Error; err != nil {
+		_ = os.Remove(savePath)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "头像更新失败",
+		})
+		return
+	}
+
+	if strings.HasPrefix(oldAvatar, "/uploads/avatars/") {
+		oldPath := filepath.Clean("." + oldAvatar)
+		if oldPath != filepath.Clean(savePath) {
+			_ = os.Remove(oldPath)
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": gin.H{
+			"avatar": avatarURL,
+		},
+		"message": "头像更新成功",
 	})
 }

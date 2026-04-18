@@ -162,6 +162,7 @@
 import * as echarts from 'echarts'
 import { getDurationStats, exportStatistics } from '@/api/statistics'
 import DeviceTreePanel from '@/components/DeviceTreePanel.vue'
+import { saveResponseWithDialog } from '@/utils/file-export'
 
 const getDefaultRange = () => {
   const end = new Date()
@@ -295,8 +296,12 @@ export default {
           deviceId: this.searchForm.deviceFilter.deviceId,
           deviceIds: this.searchForm.deviceFilter.deviceIds.join(',')
         })
-        this.downloadBlob(response, `duration_stats_${Date.now()}.csv`)
-        this.$message.success('导出成功')
+        const { saved } = await saveResponseWithDialog(response, `duration_stats_${Date.now()}.csv`, {
+          mimeType: 'text/csv;charset=utf-8;',
+          description: 'CSV 文件',
+          extensions: ['csv']
+        })
+        this.$message.success(saved ? '导出文件已保存' : '导出成功')
       } catch (error) {
         console.error('Failed to export duration stats:', error)
       }
@@ -308,29 +313,6 @@ export default {
       const chart = echarts.init(ref)
       this.charts[key] = chart
       return chart
-    },
-    parseFileName(contentDisposition, fallbackName) {
-      if (!contentDisposition) return fallbackName
-      const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i)
-      if (utf8Match && utf8Match[1]) {
-        return decodeURIComponent(utf8Match[1])
-      }
-      const normalMatch = contentDisposition.match(/filename="?([^";]+)"?/i)
-      return normalMatch?.[1] || fallbackName
-    },
-    downloadBlob(response, fallbackName) {
-      const blob = response.data instanceof Blob
-        ? response.data
-        : new Blob([response.data], { type: 'text/csv;charset=utf-8;' })
-      const filename = this.parseFileName(response.headers?.['content-disposition'], fallbackName)
-      const url = window.URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = filename
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      window.URL.revokeObjectURL(url)
     },
     initCharts() {
       this.initDurationPieChart()

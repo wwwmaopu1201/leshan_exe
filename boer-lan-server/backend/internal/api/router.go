@@ -50,6 +50,7 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, se
 		protected.GET("/auth/userinfo", authHandler.GetUserInfo)
 		protected.PUT("/auth/password", authHandler.ChangePassword)
 		protected.PUT("/auth/profile", authHandler.UpdateProfile)
+		protected.POST("/auth/avatar", authHandler.UploadAvatar)
 		protected.GET("/auth/login-logs", authHandler.GetLoginLogs)
 
 		// Device
@@ -73,6 +74,14 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, se
 		patternHandler := NewPatternHandler(db, patternTransfer)
 		protected.GET("/pattern/list", permPatternFiles, patternHandler.GetPatternList)
 		protected.GET("/pattern/types", permPatternFiles, patternHandler.GetPatternTypes)
+		protected.POST("/pattern/type-summary", permPatternFiles, patternHandler.CreatePatternType)
+		protected.GET("/pattern/type-summary", permPatternFiles, patternHandler.GetPatternTypeSummary)
+		protected.PUT("/pattern/type-summary", permPatternFiles, patternHandler.RenamePatternType)
+		protected.DELETE("/pattern/type-summary", permPatternFiles, patternHandler.ClearPatternType)
+		protected.POST("/pattern/order-summary", permPatternFiles, patternHandler.CreateOrderNo)
+		protected.GET("/pattern/order-summary", permPatternFiles, patternHandler.GetOrderSummary)
+		protected.PUT("/pattern/order-summary", permPatternFiles, patternHandler.RenameOrderNo)
+		protected.DELETE("/pattern/order-summary", permPatternFiles, patternHandler.ClearOrderNo)
 		protected.POST("/pattern/upload", permPatternFiles, patternHandler.UploadPattern)
 		protected.PUT("/pattern/:id", permPatternFiles, patternHandler.UpdatePattern)
 		protected.POST("/pattern/batch-update", permPatternFiles, patternHandler.BatchUpdatePatterns)

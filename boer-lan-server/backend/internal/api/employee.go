@@ -159,11 +159,19 @@ func (h *EmployeeHandler) canAccessEmployee(scope userGroupScope, employeeID uin
 func (h *EmployeeHandler) applyEmployeeFilters(query *gorm.DB, c *gin.Context) *gorm.DB {
 	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
 		like := "%" + keyword + "%"
-		query = query.Where("name LIKE ? OR code LIKE ? OR phone LIKE ? OR remark LIKE ?", like, like, like, like)
+		query = query.Where("name LIKE ? OR remark LIKE ?", like, like)
+	}
+
+	if code := strings.TrimSpace(c.Query("code")); code != "" {
+		query = query.Where("code LIKE ?", "%"+code+"%")
 	}
 
 	if phone := strings.TrimSpace(c.Query("phone")); phone != "" {
 		query = query.Where("phone LIKE ?", "%"+phone+"%")
+	}
+
+	if groupID := strings.TrimSpace(c.Query("groupId")); groupID != "" {
+		query = query.Where("group_id = ?", groupID)
 	}
 
 	if department := strings.TrimSpace(c.Query("department")); department != "" {

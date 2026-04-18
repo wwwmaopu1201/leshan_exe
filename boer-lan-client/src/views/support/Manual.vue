@@ -29,7 +29,7 @@
           </div>
         </div>
 
-        <div class="content-body">
+        <div ref="contentBody" class="content-body">
           <section id="overview" class="manual-section">
             <h3>1. 软件概述</h3>
             <p>
@@ -132,6 +132,8 @@
 </template>
 
 <script>
+import { saveBlobWithDialog } from '@/utils/file-export'
+
 export default {
   name: 'Manual',
   data() {
@@ -153,18 +155,27 @@ export default {
       this.activeSection = index
       const element = document.getElementById(index)
       if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        element.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' })
       }
     },
-    downloadManual() {
-      const url = `${process.env.BASE_URL}manuals/client-user-manual.pdf`
-      const link = document.createElement('a')
-      link.href = url
-      link.download = '局域网客户端操作说明-v1.0.10.pdf'
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      this.$message.success('操作说明 PDF 已下载')
+    async downloadManual() {
+      try {
+        const url = `${window.location.origin}/manuals/client-user-manual.pdf`
+        const response = await fetch(url)
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`)
+        }
+        const blob = await response.blob()
+        const saved = await saveBlobWithDialog(blob, '局域网客户端操作说明-v1.0.10.pdf', {
+          mimeType: 'application/pdf',
+          description: 'PDF 文件',
+          extensions: ['pdf']
+        })
+        this.$message.success(saved ? '操作说明已保存' : '操作说明已下载')
+      } catch (error) {
+        console.error('Download manual failed:', error)
+        this.$message.error('下载操作说明失败')
+      }
     }
   }
 }
@@ -174,20 +185,21 @@ export default {
 .manual-layout {
   display: flex;
   gap: 20px;
-  min-height: calc(100vh - 132px);
+  height: 100%;
+  min-height: 0;
 }
 
 .manual-sidebar {
   width: 250px;
+  height: 100%;
+  min-height: 0;
   background: #fff;
   border: 1px solid rgba(221, 229, 240, 0.92);
   border-radius: 22px;
   padding: 20px;
   box-shadow: 0 18px 36px rgba(59, 87, 132, 0.08);
-  position: sticky;
-  top: 20px;
-  height: fit-content;
-  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
 }
 
 .sidebar-head {
@@ -206,6 +218,9 @@ export default {
 
 .manual-menu {
   border: none;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .menu-badge {
@@ -223,11 +238,15 @@ export default {
 .manual-content {
   flex: 1;
   min-width: 0;
+  height: 100%;
+  min-height: 0;
   background: #fff;
   border: 1px solid rgba(221, 229, 240, 0.92);
   border-radius: 22px;
   padding: 26px 28px;
   box-shadow: 0 18px 36px rgba(59, 87, 132, 0.08);
+  display: flex;
+  flex-direction: column;
 }
 
 .content-header {
@@ -261,7 +280,11 @@ export default {
 }
 
 .content-body {
-  min-height: calc(100vh - 260px);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 6px;
 }
 
 .manual-section {
@@ -355,11 +378,12 @@ export default {
 @media (max-width: 980px) {
   .manual-layout {
     flex-direction: column;
+    height: auto;
   }
 
   .manual-sidebar {
     width: 100%;
-    position: static;
+    height: auto;
   }
 
   .manual-points {
@@ -369,6 +393,15 @@ export default {
   .content-header {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .manual-content {
+    height: auto;
+  }
+
+  .content-body {
+    overflow: visible;
+    padding-right: 0;
   }
 }
 </style>

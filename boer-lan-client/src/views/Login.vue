@@ -304,7 +304,7 @@ export default {
 <style lang="scss" scoped>
 .login-shell {
   position: relative;
-  min-height: 100%;
+  min-height: 100vh;
   overflow: hidden;
   background: #d9e8f7;
 }

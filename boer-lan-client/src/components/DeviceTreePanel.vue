@@ -4,12 +4,13 @@
       <div>
         <div class="panel-title">{{ title }}</div>
       </div>
-      <div class="panel-actions">
+      <div v-if="showRefresh" class="panel-actions">
         <el-button type="text" size="mini" @click="refreshTree">刷新</el-button>
       </div>
     </div>
 
     <el-input
+      v-if="showSearch"
       v-model="keyword"
       size="small"
       :placeholder="searchPlaceholder"
@@ -125,6 +126,14 @@ export default {
       default: false
     },
     showSelection: {
+      type: Boolean,
+      default: true
+    },
+    showSearch: {
+      type: Boolean,
+      default: true
+    },
+    showRefresh: {
       type: Boolean,
       default: true
     },
@@ -607,10 +616,11 @@ export default {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
+  overflow: hidden;
 }
 
 .tree-node-main {
+  width: 100%;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -627,6 +637,8 @@ export default {
 }
 
 .tree-node-label {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -637,6 +649,8 @@ export default {
 }
 
 .status-dot {
+  flex-shrink: 0;
+  margin-left: auto;
   width: 8px;
   height: 8px;
   border-radius: 50%;

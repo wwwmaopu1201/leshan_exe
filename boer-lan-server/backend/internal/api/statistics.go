@@ -78,6 +78,9 @@ func (h *StatisticsHandler) GetHomeStats(c *gin.Context) {
 	// 前三设备生产量
 	topProduction := h.getTopProduction(scopedDeviceIDs)
 
+	// 近7日设备使用率明细
+	deviceUsage := h.getDeviceUsage(scopedDeviceIDs)
+
 	// 24小时设备运行状态 + 近7日产量
 	runningStatusByHour := h.getRunningStatusByHour(scopedDeviceIDs)
 	productionByDay := h.getProductionByDay(scopedDeviceIDs)
@@ -94,6 +97,7 @@ func (h *StatisticsHandler) GetHomeStats(c *gin.Context) {
 			"patternUsage":        patternUsage,
 			"modelRatio":          modelRatio,
 			"topProduction":       topProduction,
+			"deviceUsage":         deviceUsage,
 			"runningStatusByHour": runningStatusByHour,
 			"productionByDay":     productionByDay,
 			// 兼容旧前端字段名
@@ -248,6 +252,46 @@ func (h *StatisticsHandler) getTopProduction(deviceIDs []uint) []gin.H {
 	return topProduction
 }
 
+func (h *StatisticsHandler) getDeviceUsage(deviceIDs []uint) []gin.H {
+	startDate := time.Now().AddDate(0, 0, -6).Format("2006-01-02")
+
+	var rows []struct {
+		DeviceID    uint
+		Name        string
+		RunningTime float64
+		IdleTime    float64
+	}
+
+	query := h.db.Table("production_records pr").
+		Select(fmt.Sprintf("pr.device_id, %s, COALESCE(SUM(pr.running_time), 0) as running_time, COALESCE(SUM(pr.idle_time), 0) as idle_time", h.deviceNameExpr("pr.device_id", "name"))).
+		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
+		Where("DATE(pr.record_date) >= ?", startDate)
+	if len(deviceIDs) > 0 {
+		query = query.Where("pr.device_id IN ?", deviceIDs)
+	}
+	query.
+		Group("pr.device_id, d.name").
+		Order("running_time DESC, idle_time ASC").
+		Scan(&rows)
+
+	result := make([]gin.H, 0, len(rows))
+	for _, row := range rows {
+		efficiency := 0.0
+		if row.RunningTime+row.IdleTime > 0 {
+			efficiency = row.RunningTime / (row.RunningTime + row.IdleTime) * 100
+		}
+		result = append(result, gin.H{
+			"deviceId":    row.DeviceID,
+			"name":        row.Name,
+			"runningTime": roundFloat(row.RunningTime, 2),
+			"idleTime":    roundFloat(row.IdleTime, 2),
+			"efficiency":  roundFloat(efficiency, 2),
+		})
+	}
+
+	return result
+}
+
 func (h *StatisticsHandler) getRunningStatusByHour(deviceIDs []uint) []gin.H {
 	var totalDevices int64
 	totalDeviceQuery := h.db.Model(&model.Device{})
@@ -378,19 +422,23 @@ func (h *StatisticsHandler) GetDashboardData(c *gin.Context) {
 	todayQuery.Select("COALESCE(SUM(running_time), 0)").Scan(&todayRunningTime)
 	todayQuery.Select("COALESCE(SUM(idle_time), 0)").Scan(&todayIdleTime)
 
+	runtimeTime := todayRunningTime + todayIdleTime
 	processingTime := todayRunningTime
 	usedThreadLength := threadLength
 	deviceCount := h.countDashboardScopeDevices(deviceId, deviceIDs)
+	onlineDeviceCount := h.countDashboardOnlineDevices(deviceId, deviceIDs)
+	todayAlarmCount, totalAlarmCount := h.countDashboardAlarms(deviceId, deviceIDs)
 	isAggregateScope := strings.TrimSpace(deviceId) == "" && deviceCount > 0
 	if isAggregateScope {
 		todayRunningTime = todayRunningTime / float64(deviceCount)
 		todayIdleTime = todayIdleTime / float64(deviceCount)
+		runtimeTime = todayRunningTime + todayIdleTime
+		processingTime = todayRunningTime
 	}
 	utilizationRate := h.getTodayUtilizationRate(deviceId, deviceIDs, deviceCount)
 	if !isAggregateScope && todayRunningTime+todayIdleTime > 0 {
 		utilizationRate = (todayRunningTime / (todayRunningTime + todayIdleTime)) * 100
 	}
-	processingTime = todayRunningTime
 	if deviceCount > 0 {
 		avgUsedThreadLength = usedThreadLength / float64(deviceCount)
 	}
@@ -420,9 +468,13 @@ func (h *StatisticsHandler) GetDashboardData(c *gin.Context) {
 			"usedThreadLength":       roundFloat(usedThreadLength, 2),
 			"avgUsedThreadLength":    roundFloat(avgUsedThreadLength, 2),
 			"spindleSpeed":           spindleSpeed,
-			"runningTime":            roundFloat(todayRunningTime, 2),
+			"runningTime":            roundFloat(runtimeTime, 2),
 			"processingTime":         roundFloat(processingTime, 2),
 			"utilizationRate":        roundFloat(utilizationRate, 2),
+			"todayAlarmCount":        todayAlarmCount,
+			"totalAlarmCount":        totalAlarmCount,
+			"onlineDeviceCount":      onlineDeviceCount,
+			"scopeDeviceCount":       deviceCount,
 			"hourlyProduction":       hourlyProduction,
 			"runningProcessingTrend": runningProcessingTrend,
 			"utilizationTrend":       utilizationTrend,
@@ -433,6 +485,16 @@ func (h *StatisticsHandler) GetDashboardData(c *gin.Context) {
 
 func applyDashboardDeviceFilter(query *gorm.DB, deviceId string, deviceIDs []uint) *gorm.DB {
 	if deviceId != "" {
+		return query.Where("device_id = ?", deviceId)
+	}
+	if len(deviceIDs) > 0 {
+		return query.Where("device_id IN ?", deviceIDs)
+	}
+	return query
+}
+
+func applyDashboardAlarmFilter(query *gorm.DB, deviceId string, deviceIDs []uint) *gorm.DB {
+	if strings.TrimSpace(deviceId) != "" {
 		return query.Where("device_id = ?", deviceId)
 	}
 	if len(deviceIDs) > 0 {
@@ -459,6 +521,40 @@ func (h *StatisticsHandler) countDashboardScopeDevices(deviceId string, deviceID
 	var count int64
 	h.db.Model(&model.Device{}).Count(&count)
 	return count
+}
+
+func (h *StatisticsHandler) countDashboardOnlineDevices(deviceId string, deviceIDs []uint) int64 {
+	query := h.db.Model(&model.Device{}).
+		Where("status IN ?", []string{"online", "working", "idle"})
+
+	if strings.TrimSpace(deviceId) != "" {
+		var count int64
+		query.Where("id = ?", deviceId).Count(&count)
+		return count
+	}
+	if len(deviceIDs) > 0 {
+		var count int64
+		query.Where("id IN ?", deviceIDs).Count(&count)
+		return count
+	}
+
+	var count int64
+	query.Count(&count)
+	return count
+}
+
+func (h *StatisticsHandler) countDashboardAlarms(deviceId string, deviceIDs []uint) (int64, int64) {
+	baseQuery := applyDashboardAlarmFilter(h.db.Model(&model.AlarmRecord{}), deviceId, deviceIDs)
+
+	var totalCount int64
+	baseQuery.Session(&gorm.Session{}).Count(&totalCount)
+
+	var todayCount int64
+	baseQuery.Session(&gorm.Session{}).
+		Where("DATE(start_time) = DATE(?)", time.Now()).
+		Count(&todayCount)
+
+	return todayCount, totalCount
 }
 
 func calculateSpindleSpeed(stitches int64, runningHours float64) float64 {
@@ -644,13 +740,15 @@ func (h *StatisticsHandler) getRuntimeAndUtilizationTrends(deviceId string, devi
 		key := day.Format("2006-01-02")
 		item := rowMap[key]
 
-		runningBase := item.RunningTotal
+		runningBase := item.RunningTotal + item.IdleTotal
+		processingBase := item.RunningTotal
 		if avgDeviceCount > 0 {
 			runningBase = runningBase / float64(avgDeviceCount)
+			processingBase = processingBase / float64(avgDeviceCount)
 		}
 
 		running := roundFloat(runningBase, 2)
-		processing := roundFloat(runningBase, 2)
+		processing := roundFloat(processingBase, 2)
 		utilization := 0.0
 		if avgDeviceCount > 0 {
 			utilization = roundFloat(item.UtilSum/float64(avgDeviceCount), 2)

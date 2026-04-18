@@ -17,6 +17,78 @@ export function getPatternTypes() {
   })
 }
 
+// 获取花型类型汇总
+export function getPatternTypeSummary(params) {
+  return request({
+    url: '/pattern/type-summary',
+    method: 'get',
+    params
+  })
+}
+
+// 新增花型类型
+export function createPatternType(data) {
+  return request({
+    url: '/pattern/type-summary',
+    method: 'post',
+    data
+  })
+}
+
+// 重命名花型类型
+export function renamePatternType(data) {
+  return request({
+    url: '/pattern/type-summary',
+    method: 'put',
+    data
+  })
+}
+
+// 清空花型类型
+export function clearPatternType(data) {
+  return request({
+    url: '/pattern/type-summary',
+    method: 'delete',
+    data
+  })
+}
+
+// 获取订单编号汇总
+export function getOrderSummary(params) {
+  return request({
+    url: '/pattern/order-summary',
+    method: 'get',
+    params
+  })
+}
+
+// 新增订单编号
+export function createOrderNo(data) {
+  return request({
+    url: '/pattern/order-summary',
+    method: 'post',
+    data
+  })
+}
+
+// 重命名订单编号
+export function renameOrderNo(data) {
+  return request({
+    url: '/pattern/order-summary',
+    method: 'put',
+    data
+  })
+}
+
+// 清空订单编号
+export function clearOrderNo(data) {
+  return request({
+    url: '/pattern/order-summary',
+    method: 'delete',
+    data
+  })
+}
+
 // 上传花型文件
 export function uploadPattern(formData) {
   return request({

@@ -109,6 +109,18 @@ type Pattern struct {
 	UploadedBy  uint    `gorm:"index" json:"uploadedBy"`
 }
 
+// PatternTypeCatalog 花型类型目录
+type PatternTypeCatalog struct {
+	gorm.Model
+	Value string `gorm:"size:100;uniqueIndex;not null" json:"value"`
+}
+
+// OrderNoCatalog 订单编号目录
+type OrderNoCatalog struct {
+	gorm.Model
+	Value string `gorm:"size:100;uniqueIndex;not null" json:"value"`
+}
+
 // DownloadTask 下发任务
 type DownloadTask struct {
 	gorm.Model

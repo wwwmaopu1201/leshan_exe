@@ -32,6 +32,8 @@ export default {
     remoteMonitor: '远程监控',
     file: '花型管理',
     patternList: '花型列表',
+    patternTypeManager: '花型类型管理',
+    orderNoManager: '订单编号管理',
     downloadQueue: '下发队列',
     downloadLog: '下发日志',
     statistics: '数据统计',

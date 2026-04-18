@@ -6,6 +6,7 @@ use std::env;
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
+use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 
@@ -240,10 +241,85 @@ fn get_trial_status(app: tauri::AppHandle) -> TrialStatus {
     inspect_trial_status(&app)
 }
 
+#[cfg(not(target_os = "macos"))]
+fn fallback_export_path(app: &tauri::AppHandle, suggested_name: &str) -> Result<PathBuf, String> {
+    app.path()
+        .download_dir()
+        .or_else(|_| app.path().desktop_dir())
+        .or_else(|_| app.path().document_dir())
+        .map(|dir| dir.join(suggested_name))
+        .map_err(|err| format!("failed to resolve export path: {err}"))
+}
+
+#[cfg(target_os = "macos")]
+fn prompt_save_path(suggested_name: &str) -> Result<Option<PathBuf>, String> {
+    let escaped_name = suggested_name.replace('\\', "\\\\").replace('"', "\\\"");
+    let output = Command::new("osascript")
+        .arg("-e")
+        .arg(format!(
+            "set chosenFile to choose file name with prompt \"保存导出文件\" default name \"{}\"",
+            escaped_name
+        ))
+        .arg("-e")
+        .arg("POSIX path of chosenFile")
+        .output()
+        .map_err(|err| format!("failed to show save dialog: {err}"))?;
+
+    if output.status.success() {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() {
+            return Ok(None);
+        }
+        return Ok(Some(PathBuf::from(path)));
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if stderr.contains("-128") {
+        return Ok(None);
+    }
+
+    Err(format!("save dialog failed: {}", stderr.trim()))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn prompt_save_path(_suggested_name: &str) -> Result<Option<PathBuf>, String> {
+    Ok(None)
+}
+
+#[tauri::command]
+fn save_export_file(
+    app: tauri::AppHandle,
+    suggested_name: String,
+    bytes: Vec<u8>,
+) -> Result<Option<String>, String> {
+    #[cfg(target_os = "macos")]
+    let _ = &app;
+
+    #[cfg(target_os = "macos")]
+    let path = match prompt_save_path(&suggested_name)? {
+        Some(path) => path,
+        None => return Ok(None),
+    };
+
+    #[cfg(not(target_os = "macos"))]
+    let path = match prompt_save_path(&suggested_name)? {
+        Some(path) => path,
+        None => fallback_export_path(&app, &suggested_name)?,
+    };
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("failed to create export directory: {err}"))?;
+    }
+    fs::write(&path, bytes).map_err(|err| format!("failed to write export file: {err}"))?;
+
+    Ok(Some(path.to_string_lossy().to_string()))
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .invoke_handler(tauri::generate_handler![get_trial_status])
+        .invoke_handler(tauri::generate_handler![get_trial_status, save_export_file])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

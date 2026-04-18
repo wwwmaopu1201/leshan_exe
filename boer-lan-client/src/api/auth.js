@@ -41,6 +41,18 @@ export function updateProfile(data) {
   })
 }
 
+// 上传头像
+export function uploadAvatar(formData) {
+  return request({
+    url: '/auth/avatar',
+    method: 'post',
+    data: formData,
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  })
+}
+
 // 获取登录记录
 export function getLoginLogs() {
   return request({

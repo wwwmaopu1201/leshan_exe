@@ -5,7 +5,15 @@
         <el-form-item :label="$t('employee.employeeName')">
           <el-input
             v-model.trim="searchForm.keyword"
-            placeholder="姓名 / 工号 / 备注"
+            placeholder="姓名 / 备注"
+            clearable
+            @keyup.enter.native="handleSearch"
+          />
+        </el-form-item>
+        <el-form-item :label="$t('employee.employeeCode')">
+          <el-input
+            v-model.trim="searchForm.code"
+            placeholder="员工工号"
             clearable
             @keyup.enter.native="handleSearch"
           />
@@ -17,6 +25,27 @@
             clearable
             @keyup.enter.native="handleSearch"
           />
+        </el-form-item>
+        <el-form-item :label="$t('device.group')">
+          <el-select
+            v-model="searchForm.groupId"
+            clearable
+            filterable
+            placeholder="全部分组"
+            popper-class="employee-group-popper"
+            :popper-append-to-body="false"
+            no-data-text="暂无可选分组"
+            style="width: 220px;"
+          >
+            <el-option
+              v-for="item in visibleGroupOptions"
+              :key="item.id"
+              :label="item.label"
+              :value="item.id"
+            >
+              <span>{{ item.label }}</span>
+            </el-option>
+          </el-select>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" icon="el-icon-search" @click="handleSearch">
@@ -121,13 +150,24 @@
           <el-input v-model="editForm.phone" />
         </el-form-item>
         <el-form-item :label="$t('device.group')" prop="groupId">
-          <el-select v-model="editForm.groupId" clearable filterable placeholder="请选择所属分组" style="width: 100%;">
+          <el-select
+            v-model="editForm.groupId"
+            clearable
+            filterable
+            placeholder="请选择所属分组"
+            popper-class="employee-group-popper"
+            :popper-append-to-body="false"
+            no-data-text="暂无可选分组"
+            style="width: 100%;"
+          >
             <el-option
-              v-for="item in groupOptions"
+              v-for="item in visibleGroupOptions"
               :key="item.id"
               :label="item.label"
               :value="item.id"
-            />
+            >
+              <span>{{ item.label }}</span>
+            </el-option>
           </el-select>
         </el-form-item>
         <el-form-item :label="$t('common.remark')" prop="remark">
@@ -157,13 +197,24 @@
       </div>
       <div class="import-toolbar" style="margin-bottom: 12px;">
         <span class="import-group-label">导入到分组</span>
-        <el-select v-model="importGroupId" clearable filterable placeholder="请选择所属分组" style="width: 260px;">
+        <el-select
+          v-model="importGroupId"
+          clearable
+          filterable
+          placeholder="请选择所属分组"
+          popper-class="employee-group-popper"
+          :popper-append-to-body="false"
+          no-data-text="暂无可选分组"
+          style="width: 260px;"
+        >
           <el-option
-            v-for="item in groupOptions"
+            v-for="item in visibleGroupOptions"
             :key="item.id"
             :label="item.label"
             :value="item.id"
-          />
+          >
+            <span>{{ item.label }}</span>
+          </el-option>
         </el-select>
       </div>
       <div class="import-toolbar">
@@ -203,6 +254,7 @@ import {
   importEmployees,
   exportEmployees
 } from '@/api/employee'
+import { saveTextWithDialog } from '@/utils/file-export'
 
 export default {
   name: 'EmployeeList',
@@ -214,7 +266,9 @@ export default {
       groupOptions: [],
       searchForm: {
         keyword: '',
-        phone: ''
+        code: '',
+        phone: '',
+        groupId: ''
       },
       pagination: {
         page: 1,
@@ -251,6 +305,9 @@ export default {
     }
   },
   computed: {
+    visibleGroupOptions() {
+      return (this.groupOptions || []).filter(item => String(item.label || '').trim())
+    },
     pagedTableData() {
       const start = (this.pagination.page - 1) * this.pagination.pageSize
       return this.tableData.slice(start, start + this.pagination.pageSize)
@@ -281,7 +338,13 @@ export default {
     buildGroupOptions(groups) {
       const list = Array.isArray(groups) ? groups : []
       const map = new Map()
-      list.forEach(item => {
+      const normalizedList = list.map(item => ({
+        id: Number(item.id ?? item.ID ?? 0),
+        name: String(item.name || item.Name || '').trim(),
+        parentId: item.parentId ?? item.ParentID ?? null
+      })).filter(item => item.id > 0)
+
+      normalizedList.forEach(item => {
         map.set(item.id, item)
       })
       const labelCache = new Map()
@@ -293,22 +356,28 @@ export default {
           return labelCache.get(groupId)
         }
         const group = map.get(groupId)
+        const currentName = String(group?.name || '').trim() || `分组-${groupId}`
         const parentLabel = group.parentId ? resolveLabel(group.parentId) : ''
-        const label = parentLabel ? `${parentLabel} / ${group.name}` : group.name
+        const label = parentLabel ? `${parentLabel} / ${currentName}` : currentName
         labelCache.set(groupId, label)
         return label
       }
-      return list.map(item => ({
-        id: item.id,
-        label: resolveLabel(item.id)
-      }))
+      return normalizedList
+        .map(item => ({
+          id: item.id,
+          label: resolveLabel(item.id)
+        }))
+        .filter(item => String(item.label || '').trim())
     },
     async fetchData() {
       this.loading = true
       try {
         const queryKeyword = this.searchForm.keyword || this.searchForm.phone || ''
         const res = await getEmployeeList({
-          keyword: queryKeyword,
+          keyword: this.searchForm.keyword,
+          code: this.searchForm.code,
+          phone: this.searchForm.phone,
+          groupId: this.searchForm.groupId,
           page: 1,
           pageSize: 2000
         })
@@ -329,15 +398,18 @@ export default {
     },
     applyLocalFilters(list) {
       const keyword = String(this.searchForm.keyword || '').trim().toLowerCase()
+      const code = String(this.searchForm.code || '').trim().toLowerCase()
       const phone = String(this.searchForm.phone || '').trim()
+      const groupId = Number(this.searchForm.groupId || 0)
       return list.filter(item => {
         const matchedKeyword = !keyword || [
           item.name,
-          item.code,
           item.remark
         ].some(value => String(value || '').toLowerCase().includes(keyword))
+        const matchedCode = !code || String(item.code || '').toLowerCase().includes(code)
         const matchedPhone = !phone || String(item.phone || '').includes(phone)
-        return matchedKeyword && matchedPhone
+        const matchedGroup = !groupId || Number(item.groupId || 0) === groupId
+        return matchedKeyword && matchedCode && matchedPhone && matchedGroup
       })
     },
     handleSearch() {
@@ -347,7 +419,9 @@ export default {
     handleReset() {
       this.searchForm = {
         keyword: '',
-        phone: ''
+        code: '',
+        phone: '',
+        groupId: ''
       }
       this.handleSearch()
     },
@@ -516,44 +590,6 @@ export default {
 
       return { employees, lineErrors }
     },
-    async saveCsvWithPicker(csvContent, suggestedName) {
-      if (!window.showSaveFilePicker) {
-        return false
-      }
-      try {
-        const handle = await window.showSaveFilePicker({
-          suggestedName,
-          types: [
-            {
-              description: 'CSV 文件',
-              accept: {
-                'text/csv': ['.csv']
-              }
-            }
-          ]
-        })
-        const writable = await handle.createWritable()
-        await writable.write(csvContent)
-        await writable.close()
-        return true
-      } catch (error) {
-        if (error?.name !== 'AbortError') {
-          console.error('Save file with picker failed:', error)
-        }
-        return false
-      }
-    },
-    fallbackDownload(csvContent, filename) {
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-      const url = window.URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = filename
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      window.URL.revokeObjectURL(url)
-    },
     async downloadImportTemplate() {
       const headers = ['员工工号', '员工姓名', '手机号', '备注']
       const examples = [
@@ -565,10 +601,11 @@ export default {
         .join('\n')
       const content = '\uFEFF' + csv
       const filename = '员工导入模板.csv'
-      const saved = await this.saveCsvWithPicker(content, filename)
-      if (!saved) {
-        this.fallbackDownload(content, filename)
-      }
+      const saved = await saveTextWithDialog(content, filename, {
+        mimeType: 'text/csv;charset=utf-8;',
+        description: 'CSV 文件',
+        extensions: ['csv']
+      })
       this.$message.success(saved ? '模板已保存' : '模板下载成功')
     },
     async handleSave() {
@@ -688,7 +725,10 @@ export default {
     async handleExport() {
       try {
         const res = await exportEmployees({
-          keyword: this.searchForm.keyword || this.searchForm.phone || ''
+          keyword: this.searchForm.keyword,
+          code: this.searchForm.code,
+          phone: this.searchForm.phone,
+          groupId: this.searchForm.groupId
         })
         if (res.code !== 0) {
           this.$message.error(res.message || '导出失败')
@@ -712,10 +752,11 @@ export default {
 
         const content = '\uFEFF' + csv
         const filename = `employees_${Date.now()}.csv`
-        const saved = await this.saveCsvWithPicker(content, filename)
-        if (!saved) {
-          this.fallbackDownload(content, filename)
-        }
+        const saved = await saveTextWithDialog(content, filename, {
+          mimeType: 'text/csv;charset=utf-8;',
+          description: 'CSV 文件',
+          extensions: ['csv']
+        })
         this.$message.success(saved ? '导出文件已保存' : '导出成功')
       } catch (error) {
         console.error('Export employees failed:', error)
@@ -751,5 +792,25 @@ export default {
 
 .danger-text {
   color: #ef5a5a !important;
+}
+
+</style>
+<style lang="scss">
+.employee-group-popper {
+  .el-select-dropdown__item {
+    color: #303133 !important;
+    background: #ffffff !important;
+  }
+
+  .el-select-dropdown__item.hover,
+  .el-select-dropdown__item:hover {
+    color: #303133 !important;
+    background: #f5f7fa !important;
+  }
+
+  .el-select-dropdown__item.selected {
+    color: #409eff !important;
+    font-weight: 600;
+  }
 }
 </style>

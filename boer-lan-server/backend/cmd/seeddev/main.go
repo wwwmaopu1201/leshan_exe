@@ -172,6 +172,8 @@ func autoMigrate(db *gorm.DB) error {
 		&model.Operator{},
 		&model.Device{},
 		&model.Pattern{},
+		&model.PatternTypeCatalog{},
+		&model.OrderNoCatalog{},
 		&model.DownloadTask{},
 		&model.DevicePatternFile{},
 		&model.UploadTask{},
@@ -910,7 +912,7 @@ func seedProductionRecords(ctx *seedContext) error {
 			employee := ctx.employees[device.EmployeeCode]
 			pattern := ctx.patterns[patternOrder[(dayOffset+deviceIndex)%len(patternOrder)]]
 			recordTime := dayBase.Add(9*time.Hour + time.Duration(deviceIndex%5)*70*time.Minute)
-			pieces := 70 + ((13-dayOffset)*6) + deviceIndex*4
+			pieces := 70 + ((13 - dayOffset) * 6) + deviceIndex*4
 			runningTime := 3.2 + float64((deviceIndex+dayOffset)%4)*0.55
 			idleTime := 0.6 + float64((deviceIndex+dayOffset)%3)*0.18
 

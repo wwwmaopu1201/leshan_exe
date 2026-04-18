@@ -32,6 +32,8 @@ export default {
     remoteMonitor: 'Remote Monitor',
     file: 'Pattern Management',
     patternList: 'Pattern List',
+    patternTypeManager: 'Pattern Type Management',
+    orderNoManager: 'Order Number Management',
     downloadQueue: 'Download Queue',
     downloadLog: 'Download Log',
     statistics: 'Statistics',

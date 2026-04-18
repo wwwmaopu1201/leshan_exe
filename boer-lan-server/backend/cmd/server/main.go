@@ -188,6 +188,7 @@ func main() {
 		r.Use(gin.LoggerWithWriter(log.Writer()))
 	}
 	r.Use(gin.RecoveryWithWriter(log.Writer()))
+	r.Static("/uploads", "./uploads")
 
 	// CORS middleware
 	r.Use(corsMiddleware())
@@ -362,6 +363,8 @@ func initDB() {
 		&model.Operator{},
 		&model.Device{},
 		&model.Pattern{},
+		&model.PatternTypeCatalog{},
+		&model.OrderNoCatalog{},
 		&model.DownloadTask{},
 		&model.DevicePatternFile{},
 		&model.UploadTask{},

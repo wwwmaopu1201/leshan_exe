@@ -27,7 +27,7 @@
 
         <el-dropdown trigger="click" @command="handleCommand">
           <div class="user-info">
-            <el-avatar :size="24" icon="el-icon-user-solid"></el-avatar>
+            <el-avatar class="topbar-avatar" :size="24" :src="avatarSrc" fit="cover"></el-avatar>
             <div class="user-copy">
               <span class="username">{{ user?.username || 'Admin' }}</span>
             </div>
@@ -89,6 +89,8 @@
               <span>{{ $t('menu.file') }}</span>
             </template>
             <el-menu-item index="/file/pattern">{{ $t('menu.patternList') }}</el-menu-item>
+            <el-menu-item index="/file/pattern-types">{{ $t('menu.patternTypeManager') }}</el-menu-item>
+            <el-menu-item index="/file/order-nos">{{ $t('menu.orderNoManager') }}</el-menu-item>
             <el-menu-item index="/file/queue">{{ $t('menu.downloadQueue') }}</el-menu-item>
             <el-menu-item index="/file/log">{{ $t('menu.downloadLog') }}</el-menu-item>
           </el-submenu>
@@ -142,6 +144,7 @@
 </template>
 
 <script>
+import defaultAvatar from '@/assets/images/default-avatar.svg'
 import { mapState, mapMutations, mapActions } from 'vuex'
 
 export default {
@@ -156,6 +159,19 @@ export default {
   },
   computed: {
     ...mapState(['user', 'sidebarCollapsed', 'language', 'serverConfig']),
+    avatarSrc() {
+      const avatar = String(this.user?.avatar || '').trim()
+      if (!avatar) {
+        return defaultAvatar
+      }
+      if (avatar.startsWith('http://') || avatar.startsWith('https://') || avatar.startsWith('data:')) {
+        return avatar
+      }
+      if (!this.serverAddress) {
+        return defaultAvatar
+      }
+      return `http://${this.serverAddress}${avatar}?v=${encodeURIComponent(avatar)}`
+    },
     canAccess() {
       const hasPermission = this.$store.getters.hasPermission
       const deviceManagement = hasPermission('deviceManagement')
@@ -437,6 +453,19 @@ export default {
   background: rgba(255, 255, 255, 0.14);
   color: #ffffff;
   cursor: pointer;
+}
+
+.topbar-avatar {
+  flex-shrink: 0;
+  background: #eef3f8;
+}
+
+.topbar-avatar ::v-deep img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
 }
 
 .user-copy {

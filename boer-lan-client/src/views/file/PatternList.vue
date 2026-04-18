@@ -296,21 +296,26 @@
           <div class="name-rule-tip">命名建议：款式+部位+尺码（例如：JK01+前片+M）</div>
         </el-form-item>
         <el-form-item label="花型类型">
-          <el-select
-            v-model="uploadForm.patternType"
-            filterable
-            allow-create
-            default-first-option
-            clearable
-            placeholder="可输入新类型"
-          >
-            <el-option
-              v-for="item in patternTypeOptions"
-              :key="item"
-              :label="item"
-              :value="item"
-            />
-          </el-select>
+          <div class="inline-field-row">
+            <el-select
+              v-model="uploadForm.patternType"
+              filterable
+              allow-create
+              default-first-option
+              clearable
+              placeholder="可输入新类型"
+            >
+              <el-option
+                v-for="item in patternTypeOptions"
+                :key="item"
+                :label="item"
+                :value="item"
+              />
+            </el-select>
+            <el-button icon="el-icon-plus" @click="openQuickCreateDialog('patternType')">
+              新增
+            </el-button>
+          </div>
         </el-form-item>
         <el-form-item label="花型针数">
           <el-input-number
@@ -333,7 +338,26 @@
           />
         </el-form-item>
         <el-form-item label="订单编号">
-          <el-input v-model.trim="uploadForm.orderNo" placeholder="支持同一订单号绑定多个花型" />
+          <div class="inline-field-row">
+            <el-select
+              v-model="uploadForm.orderNo"
+              filterable
+              allow-create
+              default-first-option
+              clearable
+              placeholder="可选择或输入订单编号"
+            >
+              <el-option
+                v-for="item in orderNoOptions"
+                :key="item"
+                :label="item"
+                :value="item"
+              />
+            </el-select>
+            <el-button icon="el-icon-plus" @click="openQuickCreateDialog('orderNo')">
+              新增
+            </el-button>
+          </div>
         </el-form-item>
       </el-form>
 
@@ -617,13 +641,39 @@
         </div>
       </div>
     </el-dialog>
+
+    <el-dialog
+      :title="quickCreateDialog.mode === 'patternType' ? '新增花型类型' : '新增订单编号'"
+      :visible.sync="quickCreateDialog.visible"
+      width="420px"
+      @closed="resetQuickCreateDialog"
+    >
+      <el-form label-width="92px">
+        <el-form-item :label="quickCreateDialog.mode === 'patternType' ? '花型类型' : '订单编号'">
+          <el-input
+            v-model.trim="quickCreateDialog.value"
+            :placeholder="quickCreateDialog.mode === 'patternType' ? '请输入花型类型' : '请输入订单编号'"
+            @keyup.enter.native="submitQuickCreate"
+          />
+        </el-form-item>
+      </el-form>
+      <span slot="footer" class="dialog-footer">
+        <el-button @click="quickCreateDialog.visible = false">{{ $t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="quickCreating" @click="submitQuickCreate">
+          {{ $t('common.save') }}
+        </el-button>
+      </span>
+    </el-dialog>
   </div>
 </template>
 
 <script>
 import {
+  createOrderNo,
+  createPatternType,
   getPatternList,
   getPatternTypes,
+  getOrderSummary,
   uploadPattern,
   updatePattern,
   batchUpdatePatterns,
@@ -704,6 +754,7 @@ export default {
         total: 0
       },
       patternTypeOptions: [],
+      orderNoOptions: [],
       showUploadDialog: false,
       uploadFileList: [],
       uploadForm: defaultUploadForm(),
@@ -743,6 +794,12 @@ export default {
       },
       showPreviewDialog: false,
       previewPattern: {},
+      quickCreating: false,
+      quickCreateDialog: {
+        visible: false,
+        mode: 'patternType',
+        value: ''
+      },
       serverTableHeight: 320,
       deviceFileTableHeight: 320,
       uploadQueueTableMaxHeight: 460
@@ -751,6 +808,7 @@ export default {
   mounted() {
     this.fetchData()
     this.fetchPatternTypes()
+    this.fetchOrderNos()
     this.fetchDeviceTree()
     this.fetchDeviceOptions()
     window.addEventListener('resize', this.syncTableHeights)
@@ -817,6 +875,54 @@ export default {
       const num = Number(value || 0)
       return num.toFixed(3)
     },
+    openQuickCreateDialog(mode) {
+      this.quickCreateDialog = {
+        visible: true,
+        mode,
+        value: ''
+      }
+    },
+    resetQuickCreateDialog() {
+      this.quickCreating = false
+      this.quickCreateDialog = {
+        visible: false,
+        mode: 'patternType',
+        value: ''
+      }
+    },
+    async submitQuickCreate() {
+      const value = String(this.quickCreateDialog.value || '').trim()
+      if (!value) {
+        this.$message.warning(this.quickCreateDialog.mode === 'patternType' ? '花型类型不能为空' : '订单编号不能为空')
+        return
+      }
+
+      this.quickCreating = true
+      try {
+        const res = this.quickCreateDialog.mode === 'patternType'
+          ? await createPatternType({ value })
+          : await createOrderNo({ value })
+
+        if (res.code === 0) {
+          if (this.quickCreateDialog.mode === 'patternType') {
+            await this.fetchPatternTypes()
+            this.uploadForm.patternType = value
+          } else {
+            await this.fetchOrderNos()
+            this.uploadForm.orderNo = value
+          }
+          this.$message.success(this.quickCreateDialog.mode === 'patternType' ? '花型类型已新增' : '订单编号已新增')
+          this.quickCreateDialog.visible = false
+        } else {
+          this.$message.error(res.message || '新增失败')
+        }
+      } catch (error) {
+        console.error('Quick create failed:', error)
+        this.$message.error('新增失败')
+      } finally {
+        this.quickCreating = false
+      }
+    },
     async fetchData() {
       this.loading = true
       try {
@@ -851,6 +957,16 @@ export default {
         }
       } catch (error) {
         console.error('Failed to fetch pattern types:', error)
+      }
+    },
+    async fetchOrderNos() {
+      try {
+        const res = await getOrderSummary()
+        if (res.code === 0) {
+          this.orderNoOptions = (res.data || []).map(item => item.value).filter(Boolean)
+        }
+      } catch (error) {
+        console.error('Failed to fetch order summary:', error)
       }
     },
     async fetchDeviceTree() {
@@ -981,6 +1097,7 @@ export default {
           this.$message.success('上传成功')
           this.showUploadDialog = false
           this.fetchPatternTypes()
+          this.fetchOrderNos()
           this.fetchData()
         }
       } catch (error) {
@@ -1286,6 +1403,7 @@ export default {
           this.$message.success('修改成功')
           this.showEditDialog = false
           this.fetchPatternTypes()
+          this.fetchOrderNos()
           this.fetchData()
         }
       } catch (error) {
@@ -1323,6 +1441,7 @@ export default {
           this.$message.success(`批量修改成功，影响 ${res.data.affected || 0} 条记录`)
           this.showBatchEditDialog = false
           this.fetchPatternTypes()
+          this.fetchOrderNos()
           this.fetchData()
         }
       } catch (error) {
@@ -1495,6 +1614,17 @@ export default {
   .el-select,
   .el-input,
   .el-input-number {
+    flex: 1;
+  }
+}
+
+.inline-field-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  .el-select,
+  .el-input {
     flex: 1;
   }
 }

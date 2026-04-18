@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -461,10 +462,392 @@ func (h *PatternHandler) GetPatternTypes(c *gin.Context) {
 		return
 	}
 
+	catalogTypes, err := h.loadCatalogValues("pattern_type")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "查询花型类型失败",
+		})
+		return
+	}
+
+	merged := make(map[string]struct{})
+	for _, item := range types {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			merged[item] = struct{}{}
+		}
+	}
+	for _, item := range catalogTypes {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			merged[item] = struct{}{}
+		}
+	}
+
+	result := make([]string, 0, len(merged))
+	for item := range merged {
+		result = append(result, item)
+	}
+	sort.Strings(result)
+
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
-		"data": types,
+		"data": result,
 	})
+}
+
+func (h *PatternHandler) CreatePatternType(c *gin.Context) {
+	h.createCatalogEntry(c, "pattern_type", "花型类型")
+}
+
+func (h *PatternHandler) CreateOrderNo(c *gin.Context) {
+	h.createCatalogEntry(c, "order_no", "订单编号")
+}
+
+func (h *PatternHandler) GetPatternTypeSummary(c *gin.Context) {
+	h.getPatternFieldSummary(c, "pattern_type", "花型类型")
+}
+
+func (h *PatternHandler) GetOrderSummary(c *gin.Context) {
+	h.getPatternFieldSummary(c, "order_no", "订单编号")
+}
+
+func (h *PatternHandler) getPatternFieldSummary(c *gin.Context, fieldName, fieldLabel string) {
+	scope := h.getCurrentUserScope(c)
+	query := h.db.Model(&model.Pattern{}).Where(fieldName + " <> ''")
+
+	if !scope.All {
+		patternIDs, err := h.queryScopedPatternIDs(scope, c.GetUint("userId"))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "查询花型范围失败",
+			})
+			return
+		}
+		if len(patternIDs) == 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"code": 0,
+				"data": []gin.H{},
+			})
+			return
+		}
+		query = query.Where("id IN ?", patternIDs)
+	}
+
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		query = query.Where(fieldName+" LIKE ?", "%"+keyword+"%")
+	}
+
+	var rows []struct {
+		Value        string
+		PatternCount int64
+		UpdateTime   time.Time
+	}
+
+	if err := query.
+		Select(fieldName + " as value, COUNT(*) as pattern_count, MAX(updated_at) as update_time").
+		Group(fieldName).
+		Order("pattern_count DESC, value ASC").
+		Scan(&rows).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "查询" + fieldLabel + "汇总失败",
+		})
+		return
+	}
+
+	summaryMap := make(map[string]gin.H, len(rows))
+	for _, row := range rows {
+		summaryMap[row.Value] = gin.H{
+			"value":        row.Value,
+			"patternCount": row.PatternCount,
+			"updateTime":   row.UpdateTime.Format("2006-01-02 15:04:05"),
+		}
+	}
+
+	catalogValues, err := h.loadCatalogValues(fieldName)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "查询" + fieldLabel + "汇总失败",
+		})
+		return
+	}
+
+	for _, value := range catalogValues {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, exists := summaryMap[value]; !exists {
+			summaryMap[value] = gin.H{
+				"value":        value,
+				"patternCount": int64(0),
+				"updateTime":   "-",
+			}
+		}
+	}
+
+	list := make([]gin.H, 0, len(summaryMap))
+	for _, item := range summaryMap {
+		list = append(list, item)
+	}
+	sort.Slice(list, func(i, j int) bool {
+		leftCount := list[i]["patternCount"].(int64)
+		rightCount := list[j]["patternCount"].(int64)
+		if leftCount != rightCount {
+			return leftCount > rightCount
+		}
+		return list[i]["value"].(string) < list[j]["value"].(string)
+	})
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": list,
+	})
+}
+
+func (h *PatternHandler) RenamePatternType(c *gin.Context) {
+	h.renamePatternField(c, "pattern_type", "花型类型")
+}
+
+func (h *PatternHandler) RenameOrderNo(c *gin.Context) {
+	h.renamePatternField(c, "order_no", "订单编号")
+}
+
+func (h *PatternHandler) renamePatternField(c *gin.Context, fieldName, fieldLabel string) {
+	var req struct {
+		OldValue string `json:"oldValue" binding:"required"`
+		NewValue string `json:"newValue" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "参数错误",
+		})
+		return
+	}
+
+	oldValue := strings.TrimSpace(req.OldValue)
+	newValue := strings.TrimSpace(req.NewValue)
+	if oldValue == "" || newValue == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": fieldLabel + "不能为空",
+		})
+		return
+	}
+	if oldValue == newValue {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    0,
+			"data":    gin.H{"affected": 0},
+			"message": "success",
+		})
+		return
+	}
+
+	scope := h.getCurrentUserScope(c)
+	query := h.db.Model(&model.Pattern{}).Where(fieldName+" = ?", oldValue)
+	if !scope.All {
+		patternIDs, err := h.queryScopedPatternIDs(scope, c.GetUint("userId"))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "查询花型范围失败",
+			})
+			return
+		}
+		if len(patternIDs) == 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    0,
+				"data":    gin.H{"affected": 0},
+				"message": "success",
+			})
+			return
+		}
+		query = query.Where("id IN ?", patternIDs)
+	}
+
+	result := query.Updates(map[string]interface{}{fieldName: newValue})
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "更新" + fieldLabel + "失败",
+		})
+		return
+	}
+
+	if err := h.renameCatalogValue(fieldName, oldValue, newValue); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "更新" + fieldLabel + "失败",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"data":    gin.H{"affected": result.RowsAffected},
+		"message": "success",
+	})
+}
+
+func (h *PatternHandler) ClearPatternType(c *gin.Context) {
+	h.clearPatternField(c, "pattern_type", "花型类型")
+}
+
+func (h *PatternHandler) ClearOrderNo(c *gin.Context) {
+	h.clearPatternField(c, "order_no", "订单编号")
+}
+
+func (h *PatternHandler) clearPatternField(c *gin.Context, fieldName, fieldLabel string) {
+	var req struct {
+		Value string `json:"value" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "参数错误",
+		})
+		return
+	}
+
+	value := strings.TrimSpace(req.Value)
+	if value == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": fieldLabel + "不能为空",
+		})
+		return
+	}
+
+	scope := h.getCurrentUserScope(c)
+	query := h.db.Model(&model.Pattern{}).Where(fieldName+" = ?", value)
+	if !scope.All {
+		patternIDs, err := h.queryScopedPatternIDs(scope, c.GetUint("userId"))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "查询花型范围失败",
+			})
+			return
+		}
+		if len(patternIDs) == 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"code":    0,
+				"data":    gin.H{"affected": 0},
+				"message": "success",
+			})
+			return
+		}
+		query = query.Where("id IN ?", patternIDs)
+	}
+
+	result := query.Updates(map[string]interface{}{fieldName: ""})
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "清空" + fieldLabel + "失败",
+		})
+		return
+	}
+
+	if err := h.deleteCatalogValue(fieldName, value); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "清空" + fieldLabel + "失败",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"data":    gin.H{"affected": result.RowsAffected},
+		"message": "success",
+	})
+}
+
+func (h *PatternHandler) loadCatalogValues(fieldName string) ([]string, error) {
+	values := make([]string, 0)
+	switch fieldName {
+	case "pattern_type":
+		err := h.db.Model(&model.PatternTypeCatalog{}).Order("value ASC").Pluck("value", &values).Error
+		return values, err
+	case "order_no":
+		err := h.db.Model(&model.OrderNoCatalog{}).Order("value ASC").Pluck("value", &values).Error
+		return values, err
+	default:
+		return values, nil
+	}
+}
+
+func (h *PatternHandler) createCatalogEntry(c *gin.Context, fieldName, fieldLabel string) {
+	var req struct {
+		Value string `json:"value" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "参数错误",
+		})
+		return
+	}
+
+	value := strings.TrimSpace(req.Value)
+	if value == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": fieldLabel + "不能为空",
+		})
+		return
+	}
+
+	if err := h.upsertCatalogValue(fieldName, value); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "新增" + fieldLabel + "失败",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "success",
+	})
+}
+
+func (h *PatternHandler) upsertCatalogValue(fieldName, value string) error {
+	switch fieldName {
+	case "pattern_type":
+		return h.db.FirstOrCreate(&model.PatternTypeCatalog{}, model.PatternTypeCatalog{Value: value}).Error
+	case "order_no":
+		return h.db.FirstOrCreate(&model.OrderNoCatalog{}, model.OrderNoCatalog{Value: value}).Error
+	default:
+		return nil
+	}
+}
+
+func (h *PatternHandler) renameCatalogValue(fieldName, oldValue, newValue string) error {
+	if oldValue == "" || newValue == "" {
+		return nil
+	}
+	if err := h.deleteCatalogValue(fieldName, oldValue); err != nil {
+		return err
+	}
+	return h.upsertCatalogValue(fieldName, newValue)
+}
+
+func (h *PatternHandler) deleteCatalogValue(fieldName, value string) error {
+	switch fieldName {
+	case "pattern_type":
+		return h.db.Where("value = ?", value).Delete(&model.PatternTypeCatalog{}).Error
+	case "order_no":
+		return h.db.Where("value = ?", value).Delete(&model.OrderNoCatalog{}).Error
+	default:
+		return nil
+	}
 }
 
 func (h *PatternHandler) UploadPattern(c *gin.Context) {
@@ -563,6 +946,13 @@ func (h *PatternHandler) UploadPattern(c *gin.Context) {
 		return
 	}
 
+	if pattern.PatternType != "" {
+		_ = h.upsertCatalogValue("pattern_type", pattern.PatternType)
+	}
+	if pattern.OrderNo != "" {
+		_ = h.upsertCatalogValue("order_no", pattern.OrderNo)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
@@ -654,6 +1044,13 @@ func (h *PatternHandler) UpdatePattern(c *gin.Context) {
 			"message": "读取更新后的花型失败",
 		})
 		return
+	}
+
+	if pattern.PatternType != "" {
+		_ = h.upsertCatalogValue("pattern_type", pattern.PatternType)
+	}
+	if pattern.OrderNo != "" {
+		_ = h.upsertCatalogValue("order_no", pattern.OrderNo)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -763,6 +1160,13 @@ func (h *PatternHandler) BatchUpdatePatterns(c *gin.Context) {
 			"message": "批量更新失败",
 		})
 		return
+	}
+
+	if req.PatternType != nil && strings.TrimSpace(*req.PatternType) != "" {
+		_ = h.upsertCatalogValue("pattern_type", strings.TrimSpace(*req.PatternType))
+	}
+	if req.OrderNo != nil && strings.TrimSpace(*req.OrderNo) != "" {
+		_ = h.upsertCatalogValue("order_no", strings.TrimSpace(*req.OrderNo))
 	}
 
 	c.JSON(http.StatusOK, gin.H{
