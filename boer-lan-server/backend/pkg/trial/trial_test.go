@@ -7,7 +7,7 @@ import (
 	appversion "boer-lan-server/pkg/version"
 )
 
-func TestEnsureResetsTrialWhenVersionChanges(t *testing.T) {
+func TestEnsureKeepsTrialWhenVersionChanges(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("DATA_DIR", tempDir)
 	t.Setenv("APP_VERSION", "1.0.10")
@@ -22,10 +22,13 @@ func TestEnsureResetsTrialWhenVersionChanges(t *testing.T) {
 		t.Fatalf("MachineHash failed: %v", err)
 	}
 
+	firstSeenAt := time.Now().Add(-2 * time.Hour).Unix()
+	lastSeenAt := time.Now().Add(-5 * time.Minute).Unix()
+
 	if err := writeState(statePath, &State{
 		MachineHash:   machineHash,
-		FirstSeenAt:   100,
-		LastSeenAt:    100,
+		FirstSeenAt:   firstSeenAt,
+		LastSeenAt:    lastSeenAt,
 		LaunchCount:   7,
 		PolicyVersion: trialPolicyVersion,
 		AppVersion:    "1.0.8",
@@ -51,11 +54,11 @@ func TestEnsureResetsTrialWhenVersionChanges(t *testing.T) {
 	if state.AppVersion != appversion.Resolve() {
 		t.Fatalf("expected app version %q, got %q", appversion.Resolve(), state.AppVersion)
 	}
-	if state.LaunchCount != 1 {
-		t.Fatalf("expected launch count reset to 1, got %d", state.LaunchCount)
+	if state.LaunchCount != 8 {
+		t.Fatalf("expected launch count to increment to 8, got %d", state.LaunchCount)
 	}
-	if state.FirstSeenAt <= 100 {
-		t.Fatalf("expected firstSeenAt to be reset, got %d", state.FirstSeenAt)
+	if state.FirstSeenAt != firstSeenAt {
+		t.Fatalf("expected firstSeenAt to stay %d, got %d", firstSeenAt, state.FirstSeenAt)
 	}
 }
 
@@ -83,7 +86,7 @@ func TestEnsureKeepsTrialForSameVersion(t *testing.T) {
 		LastSeenAt:    lastSeenAt,
 		LaunchCount:   3,
 		PolicyVersion: trialPolicyVersion,
-		AppVersion:    "V1.0.11",
+		AppVersion:    "V1.0.10",
 	}); err != nil {
 		t.Fatalf("writeState failed: %v", err)
 	}
@@ -111,7 +114,7 @@ func TestEnsureKeepsTrialForSameVersion(t *testing.T) {
 	}
 }
 
-func TestEnsureResetsTrialWhenDowngradingVersion(t *testing.T) {
+func TestEnsureKeepsTrialWhenDowngradingVersion(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("DATA_DIR", tempDir)
 	t.Setenv("APP_VERSION", "1.0.10")
@@ -126,10 +129,13 @@ func TestEnsureResetsTrialWhenDowngradingVersion(t *testing.T) {
 		t.Fatalf("MachineHash failed: %v", err)
 	}
 
+	firstSeenAt := time.Now().Add(-2 * time.Hour).Unix()
+	lastSeenAt := time.Now().Add(-5 * time.Minute).Unix()
+
 	if err := writeState(statePath, &State{
 		MachineHash:   machineHash,
-		FirstSeenAt:   200,
-		LastSeenAt:    200,
+		FirstSeenAt:   firstSeenAt,
+		LastSeenAt:    lastSeenAt,
 		LaunchCount:   5,
 		PolicyVersion: trialPolicyVersion,
 		AppVersion:    "1.1.0",
@@ -155,10 +161,10 @@ func TestEnsureResetsTrialWhenDowngradingVersion(t *testing.T) {
 	if state.AppVersion != appversion.Resolve() {
 		t.Fatalf("expected downgraded app version %q, got %q", appversion.Resolve(), state.AppVersion)
 	}
-	if state.LaunchCount != 1 {
-		t.Fatalf("expected launch count reset to 1, got %d", state.LaunchCount)
+	if state.LaunchCount != 6 {
+		t.Fatalf("expected launch count to increment to 6, got %d", state.LaunchCount)
 	}
-	if state.FirstSeenAt <= 200 {
-		t.Fatalf("expected firstSeenAt to be reset, got %d", state.FirstSeenAt)
+	if state.FirstSeenAt != firstSeenAt {
+		t.Fatalf("expected firstSeenAt to stay %d, got %d", firstSeenAt, state.FirstSeenAt)
 	}
 }

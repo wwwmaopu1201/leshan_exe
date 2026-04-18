@@ -191,10 +191,10 @@ fn inspect_trial_status(app: &tauri::AppHandle) -> TrialStatus {
         };
     }
 
-    if state.policy_version < TRIAL_POLICY_VERSION
-        || state.app_version.as_deref() != Some(current_app_version.as_str())
-    {
+    if state.policy_version < TRIAL_POLICY_VERSION {
         reset_trial_state(&mut state, &current_machine_hash, &current_app_version, now);
+    } else if state.app_version.as_deref() != Some(current_app_version.as_str()) {
+        state.app_version = Some(current_app_version.clone());
     }
 
     if now + ROLLBACK_LEEWAY_SECONDS < state.last_seen_at {

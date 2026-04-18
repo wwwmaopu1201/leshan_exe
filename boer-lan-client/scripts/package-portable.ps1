@@ -1,6 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
-$appVersion = '1.0.10'
+$packageJson = Get-Content (Join-Path $PSScriptRoot '..\package.json') -Raw | ConvertFrom-Json
+$appVersion = $packageJson.version
 $appVersionTag = "V$appVersion"
 $appExeName = "Boer-LAN-Manager-$appVersionTag.exe"
 

@@ -1,6 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
-$appVersion = 'V1.0.10'
+$packageJson = Get-Content (Join-Path $PSScriptRoot '..\package.json') -Raw | ConvertFrom-Json
+$appVersion = "V$($packageJson.version)"
 $appExeName = "Boer-LAN-Server-$appVersion.exe"
 
 $releaseDir = (Resolve-Path (Join-Path $PSScriptRoot '..\src-tauri\target\release')).Path

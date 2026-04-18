@@ -78,7 +78,7 @@ func Ensure() (*Status, error) {
 		return buildStatus(statePath, state, now, false), nil
 	}
 
-	if reason := trialResetReason(state, currentVersion); reason != "" {
+	if reason := trialResetReason(state); reason != "" {
 		log.Printf("Resetting trial state: %s", reason)
 		resetState(state, machineHash, currentVersion, now)
 	}
@@ -105,6 +105,9 @@ func Ensure() (*Status, error) {
 		return status, errors.New(status.Message)
 	}
 
+	if appversion.Normalize(state.AppVersion) != currentVersion {
+		state.AppVersion = currentVersion
+	}
 	state.LastSeenAt = now.Unix()
 	state.LaunchCount++
 	if err := writeState(statePath, state); err != nil {
@@ -115,19 +118,11 @@ func Ensure() (*Status, error) {
 	return status, nil
 }
 
-func trialResetReason(state *State, currentVersion string) string {
+func trialResetReason(state *State) string {
 	if state.PolicyVersion < trialPolicyVersion {
 		return fmt.Sprintf("policy version changed %d -> %d", state.PolicyVersion, trialPolicyVersion)
 	}
-
-	storedVersion := appversion.Normalize(state.AppVersion)
-	if storedVersion == currentVersion {
-		return ""
-	}
-	if storedVersion == "" {
-		return fmt.Sprintf("missing app version, current=%s", currentVersion)
-	}
-	return fmt.Sprintf("app version changed %s -> %s", storedVersion, currentVersion)
+	return ""
 }
 
 func resetState(state *State, machineHash, currentVersion string, now time.Time) {

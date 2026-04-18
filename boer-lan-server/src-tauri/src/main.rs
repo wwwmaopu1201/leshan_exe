@@ -1,7 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::{Deserialize, Serialize};
-use std::env;
 use std::fs;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -58,25 +57,24 @@ fn current_app_version(app: &tauri::AppHandle) -> String {
     normalize_version(&app.package_info().version.to_string())
 }
 
-fn trial_reset_reason(state: &TrialState, current_version: &str) -> Option<String> {
+fn trial_reset_reason(state: &TrialState) -> Option<String> {
     if state.policy_version < TRIAL_POLICY_VERSION {
         return Some(format!(
             "policy version changed {} -> {}",
             state.policy_version, TRIAL_POLICY_VERSION
         ));
     }
+    None
+}
 
+fn sync_trial_version(state: &mut TrialState, current_version: &str) -> bool {
     let stored_version = normalize_version(&state.app_version);
     if stored_version == current_version {
-        return None;
+        return false;
     }
-    if stored_version.is_empty() {
-        return Some(format!("missing app version, current={current_version}"));
-    }
-    Some(format!(
-        "app version changed {} -> {}",
-        stored_version, current_version
-    ))
+
+    state.app_version = current_version.to_string();
+    true
 }
 
 fn reset_trial_state(state: &mut TrialState, current_version: &str, now: u64) {
@@ -236,17 +234,12 @@ fn inspect_trial_status(app: &tauri::AppHandle) -> TrialStatus {
         }
     };
 
-    if let Some(reason) = trial_reset_reason(&state, &current_version) {
+    let mut state_changed = false;
+
+    if let Some(reason) = trial_reset_reason(&state) {
         println!("Resetting trial state: {reason}");
         reset_trial_state(&mut state, &current_version, now);
-        if let Err(err) = write_trial_state(&state_path, &state) {
-            return TrialStatus {
-                valid: false,
-                message: format!("试用状态写入失败：{err}"),
-                expires_at: None,
-                remaining_seconds: 0,
-            };
-        }
+        state_changed = true;
     }
 
     if now + ROLLBACK_LEEWAY_SECONDS < state.last_seen_at {
@@ -266,6 +259,21 @@ fn inspect_trial_status(app: &tauri::AppHandle) -> TrialStatus {
             expires_at: Some(expires_at),
             remaining_seconds: 0,
         };
+    }
+
+    if sync_trial_version(&mut state, &current_version) {
+        state_changed = true;
+    }
+
+    if state_changed {
+        if let Err(err) = write_trial_state(&state_path, &state) {
+            return TrialStatus {
+                valid: false,
+                message: format!("试用状态写入失败：{err}"),
+                expires_at: Some(expires_at),
+                remaining_seconds: 0,
+            };
+        }
     }
 
     let remaining_seconds = expires_at.saturating_sub(now);
