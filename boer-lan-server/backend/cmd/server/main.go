@@ -164,7 +164,10 @@ func main() {
 	} else {
 		trialStatus, err := trial.Ensure()
 		if err != nil {
-			log.Fatalf("Trial validation failed: %s", trialStatus.Message)
+			if trialStatus != nil && trialStatus.Message != "" {
+				log.Fatalf("Trial validation failed: %s", trialStatus.Message)
+			}
+			log.Fatalf("Trial validation failed: %v", err)
 		}
 		trial.StartExpiryWatcher(trialStatus)
 		log.Printf("Trial valid until %s", trialStatus.ExpiresAt.Format(time.RFC3339))
@@ -383,6 +386,7 @@ func initDB() {
 	// Create default data if not exists
 	initDefaultData(db)
 	backfillEmployeeGroupIDs(db)
+	service.BackfillProductionDerivedData(db)
 
 	log.Println("Database connected and migrated successfully")
 }

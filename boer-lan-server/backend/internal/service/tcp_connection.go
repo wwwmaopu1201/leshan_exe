@@ -723,34 +723,34 @@ func (dc *DeviceConnection) handleProduction(pkt *Packet) {
 		return
 	}
 
-	recordTime := production.EndTime
-	if recordTime.IsZero() {
-		recordTime = time.Now()
+	record, created, err := dc.syncProductionSnapshot(productionSnapshot{
+		PatternNo:      uint(production.PatternID),
+		PatternName:    production.PatternName,
+		ProtocolUserID: production.UserID,
+		StartTime:      production.StartTime,
+		EndTime:        production.EndTime,
+		StartNeedle:    production.StartNeedle,
+		EndNeedle:      production.EndNeedle,
+		StopReason:     production.StopReason,
+	})
+	if err != nil {
+		emitTCPLog(dc.db, "error", true, "[TCP] Failed to sync production record for device %s: %v", dc.deviceCode, err)
+		return
 	}
-	pieces := 1
-	stitches := int64(0)
-	if production.EndNeedle >= production.StartNeedle {
-		stitches = int64(production.EndNeedle - production.StartNeedle)
-	}
-	runningHours := 0.0
-	if !production.StartTime.IsZero() && !production.EndTime.IsZero() && production.EndTime.After(production.StartTime) {
-		runningHours = production.EndTime.Sub(production.StartTime).Hours()
-	}
-
-	record := model.ProductionRecord{
-		DeviceID:     dc.deviceID,
-		Pieces:       pieces,
-		Stitches:     stitches,
-		ThreadLength: 0,
-		RunningTime:  runningHours,
-		IdleTime:     0,
-		RecordDate:   recordTime,
+	if record == nil {
+		return
 	}
 
-	if err := dc.db.Create(&record).Error; err != nil {
-		emitTCPLog(dc.db, "error", true, "[TCP] Failed to save production record for device %s: %v", dc.deviceCode, err)
-	} else {
-		emitTCPLog(dc.db, "info", false, "[TCP] Production record saved: device=%s pieces=%d stitches=%d runningHours=%.3f", dc.deviceCode, pieces, stitches, runningHours)
+	if created {
+		emitTCPLog(dc.db, "info", false,
+			"[TCP] Production record saved: device=%s productionId=%d employeeId=%d patternId=%d pieces=%d unitPrice=%.3f",
+			dc.deviceCode,
+			record.ID,
+			record.EmployeeID,
+			record.PatternID,
+			record.Pieces,
+			record.UnitPrice,
+		)
 	}
 }
 
@@ -783,6 +783,37 @@ func (dc *DeviceConnection) handleProductionOld(pkt *Packet) {
 		"current_pattern_no":   uint(production.PatternID),
 		"current_pattern_name": production.PatternName,
 	})
+
+	if dc.deviceID == 0 {
+		emitTCPLog(dc.db, "warn", true, "[TCP] Production old data received before device registration: payloadDeviceId=%d remote=%s",
+			production.DeviceCode, dc.conn.RemoteAddr())
+		return
+	}
+
+	record, created, err := dc.syncProductionSnapshot(productionSnapshot{
+		PatternNo:   uint(production.PatternID),
+		PatternName: production.PatternName,
+		StartTime:   production.StartTime,
+		EndTime:     production.EndTime,
+		StartNeedle: production.StartNeedle,
+		EndNeedle:   production.EndNeedle,
+		StopReason:  production.StopReason,
+	})
+	if err != nil {
+		emitTCPLog(dc.db, "error", true, "[TCP] Failed to sync old production record for device %s: %v", dc.deviceCode, err)
+		return
+	}
+	if created && record != nil {
+		emitTCPLog(dc.db, "info", false,
+			"[TCP] Production old record saved: device=%s productionId=%d employeeId=%d patternId=%d pieces=%d unitPrice=%.3f",
+			dc.deviceCode,
+			record.ID,
+			record.EmployeeID,
+			record.PatternID,
+			record.Pieces,
+			record.UnitPrice,
+		)
+	}
 }
 
 // send 发送数据包

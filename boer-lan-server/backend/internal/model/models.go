@@ -181,15 +181,26 @@ type EmployeeDevice struct {
 // ProductionRecord 生产记录
 type ProductionRecord struct {
 	gorm.Model
-	DeviceID     uint      `gorm:"index;not null" json:"deviceId"`
-	EmployeeID   uint      `gorm:"index" json:"employeeId"`
-	PatternID    uint      `gorm:"index" json:"patternId"`
-	Pieces       int       `json:"pieces"`       // 加工件数
-	Stitches     int64     `json:"stitches"`     // 针数
-	ThreadLength float64   `json:"threadLength"` // 用线量(m)
-	RunningTime  float64   `json:"runningTime"`  // 运行时长(h)
-	IdleTime     float64   `json:"idleTime"`     // 空闲时长(h)
-	RecordDate   time.Time `gorm:"index" json:"recordDate"`
+	DeviceID       uint       `gorm:"index;not null" json:"deviceId"`
+	EmployeeID     uint       `gorm:"index" json:"employeeId"`
+	PatternID      uint       `gorm:"index" json:"patternId"`
+	PatternNo      uint       `gorm:"index" json:"patternNo"`
+	PatternName    string     `gorm:"size:255" json:"patternName"`
+	ProtocolUserID string     `gorm:"size:50;index" json:"protocolUserId"`
+	Pieces         int        `json:"pieces"`       // 加工件数
+	Stitches       int64      `json:"stitches"`     // 针数
+	ThreadLength   float64    `json:"threadLength"` // 用线量(m)
+	RunningTime    float64    `json:"runningTime"`  // 运行时长(h)
+	IdleTime       float64    `json:"idleTime"`     // 空闲时长(h)
+	StartTime      *time.Time `gorm:"index" json:"startTime"`
+	EndTime        *time.Time `gorm:"index" json:"endTime"`
+	StartNeedle    uint       `json:"startNeedle"`
+	EndNeedle      uint       `json:"endNeedle"`
+	StopReason     uint       `json:"stopReason"`
+	UnitPrice      float64    `gorm:"type:decimal(12,3);default:0" json:"unitPrice"`
+	OrderNo        string     `gorm:"size:100;index" json:"orderNo"`
+	SourceKey      string     `gorm:"size:64;uniqueIndex" json:"sourceKey"`
+	RecordDate     time.Time  `gorm:"index" json:"recordDate"`
 }
 
 // AlarmRecord 报警记录
@@ -208,14 +219,18 @@ type AlarmRecord struct {
 // SalaryRecord 工资记录
 type SalaryRecord struct {
 	gorm.Model
-	EmployeeID  uint      `gorm:"index;not null" json:"employeeId"`
-	DeviceID    uint      `gorm:"index" json:"deviceId"`
-	Pieces      int       `json:"pieces"`
-	UnitPrice   float64   `json:"unitPrice"`
-	Salary      float64   `json:"salary"`
-	Bonus       float64   `json:"bonus"`
-	TotalAmount float64   `json:"totalAmount"`
-	RecordDate  time.Time `gorm:"index" json:"recordDate"`
+	EmployeeID         uint      `gorm:"index;not null" json:"employeeId"`
+	DeviceID           uint      `gorm:"index" json:"deviceId"`
+	PatternID          uint      `gorm:"index" json:"patternId"`
+	PatternName        string    `gorm:"size:255" json:"patternName"`
+	OrderNo            string    `gorm:"size:100;index" json:"orderNo"`
+	SourceProductionID *uint     `gorm:"uniqueIndex" json:"sourceProductionId"`
+	Pieces             int       `json:"pieces"`
+	UnitPrice          float64   `gorm:"type:decimal(12,3);default:0" json:"unitPrice"`
+	Salary             float64   `json:"salary"`
+	Bonus              float64   `json:"bonus"`
+	TotalAmount        float64   `json:"totalAmount"`
+	RecordDate         time.Time `gorm:"index" json:"recordDate"`
 }
 
 // LoginLog 登录记录

@@ -810,7 +810,8 @@ func (h *StatisticsHandler) GetSalaryStats(c *gin.Context) {
 	}
 	offset := (page - 1) * pageSize
 	baseQuery.Session(&gorm.Session{}).
-		Select("sr.*, e.name as employee_name, e.code as employee_code, d.name as device_name").
+		Select("sr.*, COALESCE(NULLIF(sr.pattern_name, ''), p.name, '') as pattern_name, COALESCE(NULLIF(sr.order_no, ''), p.order_no, '') as order_no, e.name as employee_name, e.code as employee_code, d.name as device_name").
+		Joins("LEFT JOIN patterns p ON sr.pattern_id = p.id").
 		Order("sr.record_date DESC").
 		Offset(offset).
 		Limit(pageSize).
@@ -825,6 +826,9 @@ func (h *StatisticsHandler) GetSalaryStats(c *gin.Context) {
 			"employeeCode": r.EmployeeCode,
 			"deviceId":     r.DeviceID,
 			"deviceName":   r.DeviceName,
+			"workDays":     1,
+			"patternName":  strings.TrimSpace(r.PatternName),
+			"orderNo":      strings.TrimSpace(r.OrderNo),
 			"totalPieces":  r.Pieces,
 			"unitPrice":    roundFloat(r.UnitPrice, 3),
 			"salary":       roundFloat(r.Salary, 2),
@@ -916,18 +920,24 @@ func (h *StatisticsHandler) GetSalaryDetail(c *gin.Context) {
 		PatternName     string
 		PatternStitches int64
 		UnitPrice       float64
+		OrderNo         string
 	}
 	query.Session(&gorm.Session{}).
-		Select(fmt.Sprintf("pr.*, %s, COALESCE(p.name, '未命名花型') as pattern_name, COALESCE(NULLIF(p.stitches, 0), pr.stitches, 0) as pattern_stitches, COALESCE(sr.unit_price, 0) as unit_price", h.deviceNameExpr("pr.device_id", "device_name"))).
+		Select(fmt.Sprintf("pr.*, %s, COALESCE(NULLIF(pr.pattern_name, ''), p.name, '未命名花型') as pattern_name, COALESCE(NULLIF(p.stitches, 0), pr.stitches, 0) as pattern_stitches, COALESCE(NULLIF(pr.unit_price, 0), p.unit_price, 0) as unit_price, COALESCE(NULLIF(pr.order_no, ''), p.order_no, '') as order_no", h.deviceNameExpr("pr.device_id", "device_name"))).
 		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
 		Joins("LEFT JOIN patterns p ON pr.pattern_id = p.id").
-		Joins("LEFT JOIN (SELECT employee_id, device_id, DATE(record_date) as record_date, MAX(unit_price) as unit_price FROM salary_records GROUP BY employee_id, device_id, DATE(record_date)) sr ON sr.employee_id = pr.employee_id AND sr.device_id = pr.device_id AND sr.record_date = DATE(pr.record_date)").
 		Order("pr.record_date DESC, pr.created_at DESC, pr.id DESC").
 		Scan(&results)
 
 	list := make([]gin.H, 0, len(results))
 	for _, r := range results {
 		startTime, endTime := deriveProductionTimeRange(r.RecordDate, r.CreatedAt, r.RunningTime)
+		if r.StartTime != nil && !r.StartTime.IsZero() {
+			startTime = *r.StartTime
+		}
+		if r.EndTime != nil && !r.EndTime.IsZero() {
+			endTime = *r.EndTime
+		}
 		totalAmount := roundFloat(float64(r.Pieces)*r.UnitPrice, 2)
 		avgSewDuration := 0.0
 		if r.Pieces > 0 {
@@ -944,6 +954,7 @@ func (h *StatisticsHandler) GetSalaryDetail(c *gin.Context) {
 			"sewDuration":     roundFloat(r.RunningTime, 2),
 			"avgSewDuration":  roundFloat(avgSewDuration, 2),
 			"unitPrice":       roundFloat(r.UnitPrice, 3),
+			"orderNo":         strings.TrimSpace(r.OrderNo),
 			"totalAmount":     totalAmount,
 			"date":            r.RecordDate.Format("2006-01-02"),
 		})
@@ -1556,7 +1567,8 @@ func (h *StatisticsHandler) exportSalaryCSV(c *gin.Context) {
 	}
 
 	query := baseQuery.Session(&gorm.Session{}).
-		Select("sr.*, e.name as employee_name, e.code as employee_code, d.name as device_name").
+		Select("sr.*, COALESCE(NULLIF(sr.pattern_name, ''), p.name, '') as pattern_name, COALESCE(NULLIF(sr.order_no, ''), p.order_no, '') as order_no, e.name as employee_name, e.code as employee_code, d.name as device_name").
+		Joins("LEFT JOIN patterns p ON sr.pattern_id = p.id").
 		Order("sr.record_date DESC")
 
 	if mode == "current" {
@@ -1581,6 +1593,8 @@ func (h *StatisticsHandler) exportSalaryCSV(c *gin.Context) {
 			row.EmployeeCode,
 			row.EmployeeName,
 			row.DeviceName,
+			row.PatternName,
+			row.OrderNo,
 			strconv.Itoa(row.Pieces),
 			csvFloat(row.UnitPrice, 3),
 			csvFloat(row.Salary, 2),
@@ -1592,7 +1606,7 @@ func (h *StatisticsHandler) exportSalaryCSV(c *gin.Context) {
 
 	writeCSVResponse(c,
 		fileNamePrefix+"_"+time.Now().Format("20060102_150405")+".csv",
-		[]string{"员工工号", "员工姓名", "设备名称", "加工件数", "单价(元)", "工资(元)", "奖金(元)", "合计(元)", "日期"},
+		[]string{"员工工号", "员工姓名", "设备名称", "花型名称", "订单号", "加工件数", "单价(元)", "工资(元)", "奖金(元)", "合计(元)", "日期"},
 		rows,
 	)
 }
