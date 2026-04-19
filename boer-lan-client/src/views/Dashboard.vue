@@ -71,10 +71,14 @@
 
             <div class="runtime-panel">
               <div class="runtime-panel__summary">
-                <div class="runtime-panel__label">当天运行时长</div>
-                <div class="runtime-panel__value">{{ formatHours(dashboardData.runningTime) }}小时</div>
-                <div class="runtime-panel__label runtime-panel__label--spaced">当天加工时长</div>
-                <div class="runtime-panel__value is-green">{{ formatHours(dashboardData.processingTime) }}小时</div>
+                <div class="runtime-panel__metric">
+                  <div class="runtime-panel__label">当天运行时长</div>
+                  <div class="runtime-panel__value">{{ formatHours(dashboardData.runningTime) }}小时</div>
+                </div>
+                <div class="runtime-panel__metric">
+                  <div class="runtime-panel__label">当天加工时长</div>
+                  <div class="runtime-panel__value is-green">{{ formatHours(dashboardData.processingTime) }}小时</div>
+                </div>
               </div>
               <div ref="runtimeChart" class="runtime-panel__chart"></div>
             </div>
@@ -228,7 +232,7 @@ export default {
       return `${this.toNumber(value).toFixed(0)}%`
     },
     formatHours(value) {
-      return this.toNumber(value).toFixed(1)
+      return this.toNumber(value).toFixed(2)
     },
     async fetchDeviceTree() {
       try {
@@ -749,7 +753,20 @@ export default {
   align-items: stretch;
 }
 
-.runtime-panel__summary,
+.runtime-panel__summary {
+  min-height: 188px;
+  padding: 0 0 8px 6px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 24px;
+}
+
+.runtime-panel__metric {
+  display: grid;
+  gap: 8px;
+}
+
 .utilization-panel__summary {
   padding: 54px 0 0 6px;
 }
@@ -759,10 +776,6 @@ export default {
   color: #576474;
   font-size: 12px;
   font-weight: 700;
-}
-
-.runtime-panel__label--spaced {
-  margin-top: 36px;
 }
 
 .runtime-panel__value,

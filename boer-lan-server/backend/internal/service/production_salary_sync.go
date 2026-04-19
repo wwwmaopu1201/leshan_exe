@@ -8,6 +8,7 @@ import (
 	"log"
 	"math"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -314,53 +315,35 @@ func resolveProductionResolution(tx *gorm.DB, device model.Device, snapshot prod
 func resolveProductionEmployee(tx *gorm.DB, device model.Device, protocolUserID string) (model.Employee, bool, string, string, error) {
 	code := strings.TrimSpace(protocolUserID)
 	if code == "" {
-		code = strings.TrimSpace(device.EmployeeCode)
+		return model.Employee{}, false, "", "", nil
 	}
-	name := strings.TrimSpace(device.EmployeeName)
 
-	if code != "" {
-		employee, err := findEmployeeByCode(tx, code)
-		switch {
-		case err == nil:
-			return employee, true, employee.Code, employee.Name, nil
-		case !errors.Is(err, gorm.ErrRecordNotFound):
-			return model.Employee{}, false, "", "", err
-		}
-
-		placeholderName := code
-		if strings.EqualFold(strings.TrimSpace(device.EmployeeCode), code) && name != "" {
-			placeholderName = name
-		}
-		employee = model.Employee{
-			Code:    code,
-			Name:    placeholderName,
-			GroupID: device.GroupID,
-		}
-		if err := tx.Create(&employee).Error; err != nil {
-			return model.Employee{}, false, "", "", err
-		}
+	employee, err := findEmployeeByIdentity(tx, code)
+	switch {
+	case err == nil:
 		return employee, true, employee.Code, employee.Name, nil
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return model.Employee{}, false, "", "", nil
+	default:
+		return model.Employee{}, false, "", "", err
 	}
-
-	if name != "" {
-		var employee model.Employee
-		err := tx.Where("name = ?", name).First(&employee).Error
-		switch {
-		case err == nil:
-			return employee, true, employee.Code, employee.Name, nil
-		case errors.Is(err, gorm.ErrRecordNotFound):
-			return model.Employee{}, false, "", "", nil
-		default:
-			return model.Employee{}, false, "", "", err
-		}
-	}
-
-	return model.Employee{}, false, "", "", nil
 }
 
-func findEmployeeByCode(tx *gorm.DB, code string) (model.Employee, error) {
+func findEmployeeByIdentity(tx *gorm.DB, identity string) (model.Employee, error) {
 	var employee model.Employee
-	if err := tx.Where("LOWER(code) = ?", strings.ToLower(strings.TrimSpace(code))).First(&employee).Error; err != nil {
+	identity = strings.TrimSpace(identity)
+	if identity == "" {
+		return model.Employee{}, gorm.ErrRecordNotFound
+	}
+
+	query := tx
+	if parsedID, err := strconv.ParseUint(identity, 10, 64); err == nil && parsedID > 0 {
+		query = query.Where("id = ? OR LOWER(code) = ?", uint(parsedID), strings.ToLower(identity))
+	} else {
+		query = query.Where("LOWER(code) = ?", strings.ToLower(identity))
+	}
+
+	if err := query.First(&employee).Error; err != nil {
 		return model.Employee{}, err
 	}
 	return employee, nil
@@ -424,7 +407,7 @@ func resolvePatternSnapshot(tx *gorm.DB, deviceID, patternNo uint, rawPatternNam
 		}
 
 		if rawPatternName != "" {
-			return 0, rawPatternName, deviceFile.UnitPrice, strings.TrimSpace(deviceFile.OrderNo), nil
+			return 0, rawPatternName, 0, "", nil
 		}
 
 		if followPattern, followFound, err := findPatternByCandidates(tx, buildPatternLookupCandidates(deviceFile.FileName)); err != nil {
@@ -434,18 +417,10 @@ func resolvePatternSnapshot(tx *gorm.DB, deviceID, patternNo uint, rawPatternNam
 			if name == "" {
 				name = devicePatternName
 			}
-			unitPrice := followPattern.UnitPrice
-			if unitPrice == 0 && deviceFile.UnitPrice > 0 {
-				unitPrice = deviceFile.UnitPrice
-			}
-			orderNo := strings.TrimSpace(followPattern.OrderNo)
-			if orderNo == "" {
-				orderNo = strings.TrimSpace(deviceFile.OrderNo)
-			}
-			return followPattern.ID, name, unitPrice, orderNo, nil
+			return followPattern.ID, name, followPattern.UnitPrice, strings.TrimSpace(followPattern.OrderNo), nil
 		}
 
-		return 0, devicePatternName, deviceFile.UnitPrice, strings.TrimSpace(deviceFile.OrderNo), nil
+		return 0, devicePatternName, 0, "", nil
 	}
 
 	fallbackName := rawPatternName

@@ -93,7 +93,7 @@ export default new Vuex.Store({
     // Server connection
     serverConfig: {
       ip: localStorage.getItem('serverIp') || '',
-      port: localStorage.getItem('serverPort') || '8088'
+      port: '8088'
     },
 
     // Device tree
@@ -161,9 +161,13 @@ export default new Vuex.Store({
     },
 
     SET_SERVER_CONFIG(state, config) {
-      state.serverConfig = config
-      localStorage.setItem('serverIp', config.ip)
-      localStorage.setItem('serverPort', config.port)
+      const normalizedConfig = {
+        ip: config.ip,
+        port: '8088'
+      }
+      state.serverConfig = normalizedConfig
+      localStorage.setItem('serverIp', normalizedConfig.ip)
+      localStorage.setItem('serverPort', normalizedConfig.port)
     },
 
     SET_DEVICE_TREE(state, tree) {

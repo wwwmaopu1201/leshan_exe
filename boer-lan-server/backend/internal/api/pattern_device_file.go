@@ -6,14 +6,24 @@ import (
 	"strings"
 
 	"boer-lan-server/internal/model"
+	"boer-lan-server/internal/service"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 type UploadDeviceFilesRequest struct {
-	DeviceID uint   `json:"deviceId" binding:"required"`
-	FileIDs  []uint `json:"fileIds" binding:"required"`
+	DeviceID     uint              `json:"deviceId" binding:"required"`
+	FileIDs      []uint            `json:"fileIds" binding:"required"`
+	ConflictMode string            `json:"conflictMode"`
+	RenameNames  map[string]string `json:"renameNames"`
+}
+
+type uploadPatternConflictItem struct {
+	FileID            uint   `json:"fileId"`
+	FileName          string `json:"fileName"`
+	PatternName       string `json:"patternName"`
+	ExistingPatternID uint   `json:"existingPatternId"`
 }
 
 func (h *PatternHandler) loadAccessibleDeviceForPatternFiles(c *gin.Context, rawDeviceID string) (*model.Device, bool) {
@@ -317,6 +327,28 @@ func (h *PatternHandler) UploadDeviceFilesToServer(c *gin.Context) {
 		return
 	}
 
+	conflictMode := service.NormalizeUploadConflictMode(req.ConflictMode)
+	if conflictMode == service.UploadConflictModeAsk {
+		conflicts, err := h.findUploadPatternConflicts(device.ID, files)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "检测花型重名失败",
+			})
+			return
+		}
+		if len(conflicts) > 0 {
+			c.JSON(http.StatusConflict, gin.H{
+				"code":    http.StatusConflict,
+				"message": "检测到同名花型，请选择覆盖或重命名",
+				"data": gin.H{
+					"duplicates": conflicts,
+				},
+			})
+			return
+		}
+	}
+
 	userID := c.GetUint("userId")
 	successCount := 0
 	failedCount := 0
@@ -335,7 +367,8 @@ func (h *PatternHandler) UploadDeviceFilesToServer(c *gin.Context) {
 			continue
 		}
 
-		pattern, err := h.transfer.UploadPatternFromDevice(device, file, userID)
+		renameName := strings.TrimSpace(req.RenameNames[strconv.FormatUint(uint64(file.ID), 10)])
+		pattern, err := h.transfer.UploadPatternFromDeviceWithOptions(device, file, userID, conflictMode, renameName)
 		if err != nil {
 			_ = h.db.Model(&task).Updates(map[string]interface{}{
 				"status":   "failed",
@@ -369,6 +402,57 @@ func (h *PatternHandler) UploadDeviceFilesToServer(c *gin.Context) {
 		},
 		"message": "success",
 	})
+}
+
+func (h *PatternHandler) findUploadPatternConflicts(deviceID uint, files []model.DevicePatternFile) ([]uploadPatternConflictItem, error) {
+	if h == nil || h.db == nil || len(files) == 0 {
+		return nil, nil
+	}
+
+	nameSet := make(map[string]struct{}, len(files))
+	names := make([]string, 0, len(files))
+	for _, file := range files {
+		patternName := service.ResolveUploadedPatternName(file, deviceID)
+		if patternName == "" {
+			continue
+		}
+		if _, exists := nameSet[patternName]; exists {
+			continue
+		}
+		nameSet[patternName] = struct{}{}
+		names = append(names, patternName)
+	}
+	if len(names) == 0 {
+		return nil, nil
+	}
+
+	var patterns []model.Pattern
+	if err := h.db.Where("name IN ?", names).Find(&patterns).Error; err != nil {
+		return nil, err
+	}
+
+	existingByName := make(map[string]model.Pattern, len(patterns))
+	for _, pattern := range patterns {
+		if _, exists := existingByName[pattern.Name]; !exists {
+			existingByName[pattern.Name] = pattern
+		}
+	}
+
+	conflicts := make([]uploadPatternConflictItem, 0)
+	for _, file := range files {
+		patternName := service.ResolveUploadedPatternName(file, deviceID)
+		existing, exists := existingByName[patternName]
+		if !exists {
+			continue
+		}
+		conflicts = append(conflicts, uploadPatternConflictItem{
+			FileID:            file.ID,
+			FileName:          file.FileName,
+			PatternName:       patternName,
+			ExistingPatternID: existing.ID,
+		})
+	}
+	return conflicts, nil
 }
 
 func (h *PatternHandler) GetUploadQueue(c *gin.Context) {

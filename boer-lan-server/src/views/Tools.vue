@@ -88,19 +88,11 @@
           <div class="section-title">
             <div>
               <h3>服务器配置</h3>
-              <p>统一维护管理端口、共享目录和调试输出开关。</p>
+              <p>统一维护共享目录和调试输出开关。</p>
             </div>
           </div>
 
           <el-form label-width="110px" class="tool-form">
-            <el-form-item label="服务器端口">
-              <el-input-number
-                v-model="settings.serverPort"
-                :min="1"
-                :max="65535"
-                controls-position="right"
-              />
-            </el-form-item>
             <el-form-item label="共享文件夹目录">
               <el-input
                 v-model.trim="settings.sharedFolder"
@@ -127,7 +119,7 @@
           <div class="section-title">
             <div>
               <h3>运行环境信息</h3>
-              <p>显示当前服务端程序的端口、工作目录和系统环境。</p>
+              <p>显示当前服务端程序的工作目录和系统环境。</p>
             </div>
           </div>
 
@@ -135,10 +127,6 @@
             <div class="info-item">
               <span class="info-item__label">系统环境</span>
               <strong class="info-item__value">{{ serverInfo.os || '-' }} / {{ serverInfo.arch || '-' }}</strong>
-            </div>
-            <div class="info-item">
-              <span class="info-item__label">管理端口</span>
-              <strong class="info-item__value">{{ serverInfo.port || '-' }}</strong>
             </div>
             <div class="info-item">
               <span class="info-item__label">设备 TCP 端口</span>
@@ -191,7 +179,6 @@ export default {
         tcpPort: 0
       },
       settings: {
-        serverPort: 8088,
         sharedFolder: '',
         debugOutputEnabled: true
       },
@@ -218,9 +205,6 @@ export default {
             ...this.serverInfo,
             ...res.data
           }
-          if (!this.settings.serverPort) {
-            this.settings.serverPort = Number(res.data?.port || 8088)
-          }
         }
       } catch (error) {
         console.error('加载服务器信息失败', error)
@@ -238,8 +222,6 @@ export default {
           return acc
         }, {})
 
-        const serverPort = Number(map.server_port || this.serverInfo.port || 8088)
-        this.settings.serverPort = Number.isFinite(serverPort) && serverPort > 0 ? serverPort : 8088
         this.settings.sharedFolder = map.shared_folder || ''
         this.settings.debugOutputEnabled = this.parseBoolConfig(map.debug_output_enabled, true)
       } catch (error) {
@@ -254,20 +236,9 @@ export default {
       return fallback
     },
     async saveSettings() {
-      const port = Number(this.settings.serverPort || 0)
-      if (!port || port < 1 || port > 65535) {
-        this.$message.warning('请输入有效端口（1-65535）')
-        return
-      }
-
       this.settingsLoading = true
       try {
         await Promise.all([
-          this.$axios.post('/system/config', {
-            key: 'server_port',
-            value: String(port),
-            desc: '服务器端口（重启后生效）'
-          }),
           this.$axios.post('/system/config', {
             key: 'shared_folder',
             value: this.settings.sharedFolder || '',
@@ -279,7 +250,7 @@ export default {
             desc: '调试输出开关'
           })
         ])
-        this.$message.success('配置已保存，端口修改需重启服务器后生效')
+        this.$message.success('配置已保存')
       } catch (error) {
         console.error('保存服务器配置失败', error)
       } finally {
@@ -407,7 +378,7 @@ export default {
       }
     },
     checkServerPortUsage() {
-      const serverPort = Number(this.serverInfo.port || this.settings.serverPort || 0)
+      const serverPort = Number(this.serverInfo.port || 8088)
       if (!serverPort || serverPort < 1 || serverPort > 65535) {
         this.$message.warning('当前服务端口不可用，请先检查服务配置')
         return

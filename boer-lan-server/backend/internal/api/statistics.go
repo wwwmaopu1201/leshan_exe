@@ -28,6 +28,20 @@ func (h *StatisticsHandler) isSQLite() bool {
 	return strings.EqualFold(h.db.Dialector.Name(), "sqlite")
 }
 
+func (h *StatisticsHandler) localDateExpr(column string) string {
+	if h.isSQLite() {
+		return fmt.Sprintf("substr(CAST(%s AS TEXT), 1, 10)", column)
+	}
+	return fmt.Sprintf("DATE(%s)", column)
+}
+
+func formatLocalStatsDate(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.In(time.Local).Format("2006-01-02")
+}
+
 func (h *StatisticsHandler) deviceNameExpr(deviceIDExpr, alias string) string {
 	expr := fmt.Sprintf("COALESCE(d.name, CONCAT('设备-', %s))", deviceIDExpr)
 	if h.isSQLite() {
@@ -181,9 +195,11 @@ func (h *StatisticsHandler) getWeeklyEfficiency(deviceIDs []uint) []gin.H {
 			RunningTime float64
 			IdleTime    float64
 		}
+		dateExpr := h.localDateExpr("record_date")
+		durationExpr := h.productionDurationHoursExpr("", "")
 		dailyQuery := h.db.Model(&model.ProductionRecord{}).
-			Select("device_id, COALESCE(SUM(running_time), 0) as running_time, COALESCE(SUM(idle_time), 0) as idle_time").
-			Where("DATE(record_date) = DATE(?)", date)
+			Select(fmt.Sprintf("device_id, COALESCE(SUM(%s), 0) as running_time, COALESCE(SUM(idle_time), 0) as idle_time", durationExpr)).
+			Where(fmt.Sprintf("%s = ?", dateExpr), formatLocalStatsDate(date))
 		if len(deviceIDs) > 0 {
 			dailyQuery = dailyQuery.Where("device_id IN ?", deviceIDs)
 		}
@@ -284,10 +300,11 @@ func (h *StatisticsHandler) getTopProduction(deviceIDs []uint) []gin.H {
 		Total    int
 	}
 
+	dateExpr := h.localDateExpr("pr.record_date")
 	query := h.db.Table("production_records pr").
 		Select("pr.device_id, d.name, SUM(pr.pieces) as total").
 		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
-		Where("pr.record_date >= ?", time.Now().AddDate(0, 0, -7))
+		Where(fmt.Sprintf("%s >= ?", dateExpr), formatLocalStatsDate(time.Now().AddDate(0, 0, -6)))
 	if len(deviceIDs) > 0 {
 		query = query.Where("pr.device_id IN ?", deviceIDs)
 	}
@@ -314,10 +331,12 @@ func (h *StatisticsHandler) getDeviceUsage(deviceIDs []uint) []gin.H {
 		IdleTime    float64
 	}
 
+	dateExpr := h.localDateExpr("pr.record_date")
+	durationExpr := h.productionDurationHoursExpr("pr", "")
 	query := h.db.Table("production_records pr").
-		Select(fmt.Sprintf("pr.device_id, %s, COALESCE(SUM(pr.running_time), 0) as running_time, COALESCE(SUM(pr.idle_time), 0) as idle_time", h.deviceNameExpr("pr.device_id", "name"))).
+		Select(fmt.Sprintf("pr.device_id, %s, COALESCE(SUM(%s), 0) as running_time, COALESCE(SUM(pr.idle_time), 0) as idle_time", h.deviceNameExpr("pr.device_id", "name"), durationExpr)).
 		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
-		Where("DATE(pr.record_date) >= ?", startDate)
+		Where(fmt.Sprintf("%s >= ?", dateExpr), startDate)
 	if len(deviceIDs) > 0 {
 		query = query.Where("pr.device_id IN ?", deviceIDs)
 	}
@@ -364,16 +383,15 @@ func (h *StatisticsHandler) getRunningStatusByHour(deviceIDs []uint) []gin.H {
 	onlineQuery.Count(&currentOnlineDevices)
 
 	now := time.Now()
-	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	dayEnd := dayStart.Add(24 * time.Hour)
 
 	var records []struct {
 		DeviceID   uint
 		RecordDate time.Time
 	}
+	dateExpr := h.localDateExpr("record_date")
 	hourlyQuery := h.db.Model(&model.ProductionRecord{}).
 		Select("device_id, record_date").
-		Where("record_date >= ? AND record_date < ?", dayStart, dayEnd)
+		Where(fmt.Sprintf("%s = ?", dateExpr), formatLocalStatsDate(now))
 	if len(deviceIDs) > 0 {
 		hourlyQuery = hourlyQuery.Where("device_id IN ?", deviceIDs)
 	}
@@ -423,13 +441,14 @@ func (h *StatisticsHandler) getProductionByDay(deviceIDs []uint) []gin.H {
 		Value int
 	}
 
+	dateExpr := h.localDateExpr("record_date")
 	query := h.db.Model(&model.ProductionRecord{}).
-		Select("DATE(record_date) as date, COALESCE(SUM(pieces), 0) as value").
-		Where("DATE(record_date) >= ?", startDate)
+		Select(fmt.Sprintf("%s as date, COALESCE(SUM(pieces), 0) as value", dateExpr)).
+		Where(fmt.Sprintf("%s >= ?", dateExpr), startDate)
 	if len(deviceIDs) > 0 {
 		query = query.Where("device_id IN ?", deviceIDs)
 	}
-	query.Group("DATE(record_date)").Order("DATE(record_date) ASC").Scan(&rows)
+	query.Group(dateExpr).Order("date ASC").Scan(&rows)
 
 	valueMap := make(map[string]int, len(rows))
 	for _, row := range rows {
@@ -461,17 +480,19 @@ func (h *StatisticsHandler) GetDashboardData(c *gin.Context) {
 	var avgUsedThreadLength float64
 
 	var todayRunningTime, todayIdleTime float64
+	durationExpr := h.productionDurationHoursExpr("", "")
 	summaryQuery := applyDashboardDeviceFilter(h.db.Model(&model.ProductionRecord{}), deviceId, deviceIDs)
 	summaryQuery.Select("COALESCE(SUM(pieces), 0)").Scan(&totalPieces)
 	summaryQuery.Select("COALESCE(SUM(thread_length), 0)").Scan(&threadLength)
 
+	recordDateExpr := h.localDateExpr("record_date")
 	todayQuery := applyDashboardDeviceFilter(
-		h.db.Model(&model.ProductionRecord{}).Where("DATE(record_date) = DATE(?)", time.Now()),
+		h.db.Model(&model.ProductionRecord{}).Where(fmt.Sprintf("%s = ?", recordDateExpr), formatLocalStatsDate(time.Now())),
 		deviceId,
 		deviceIDs,
 	)
 	todayQuery.Select("COALESCE(SUM(pieces), 0)").Scan(&todayPieces)
-	todayQuery.Select("COALESCE(SUM(running_time), 0)").Scan(&todayRunningTime)
+	todayQuery.Select(fmt.Sprintf("COALESCE(SUM(%s), 0)", durationExpr)).Scan(&todayRunningTime)
 	todayQuery.Select("COALESCE(SUM(idle_time), 0)").Scan(&todayIdleTime)
 
 	runtimeTime := todayRunningTime + todayIdleTime
@@ -602,8 +623,9 @@ func (h *StatisticsHandler) countDashboardAlarms(deviceId string, deviceIDs []ui
 	baseQuery.Session(&gorm.Session{}).Count(&totalCount)
 
 	var todayCount int64
+	startDateExpr := h.localDateExpr("start_time")
 	baseQuery.Session(&gorm.Session{}).
-		Where("DATE(start_time) = DATE(?)", time.Now()).
+		Where(fmt.Sprintf("%s = ?", startDateExpr), formatLocalStatsDate(time.Now())).
 		Count(&todayCount)
 
 	return todayCount, totalCount
@@ -632,8 +654,9 @@ func (h *StatisticsHandler) getDashboardSpindleSpeed(deviceId string, deviceIDs 
 		RunningTime float64
 	}
 
+	durationExpr := h.productionDurationHoursExpr("", "")
 	applyDashboardDeviceFilter(h.db.Model(&model.ProductionRecord{}), deviceId, deviceIDs).
-		Select("device_id, stitches, running_time").
+		Select(fmt.Sprintf("device_id, stitches, %s as running_time", durationExpr)).
 		Order("record_date DESC, created_at DESC, id DESC").
 		Limit(500).
 		Scan(&rows)
@@ -670,16 +693,17 @@ func (h *StatisticsHandler) getDashboardSpindleSpeed(deviceId string, deviceIDs 
 
 func (h *StatisticsHandler) getHourlyProduction(deviceId string, deviceIDs []uint) []gin.H {
 	startDate := time.Now().AddDate(0, 0, -9).Format("2006-01-02")
+	recordDateExpr := h.localDateExpr("record_date")
 	query := applyDashboardDeviceFilter(h.db.Model(&model.ProductionRecord{}), deviceId, deviceIDs).
-		Select("DATE(record_date) as date, COALESCE(SUM(pieces), 0) as value").
-		Where("DATE(record_date) >= ?", startDate)
+		Select(fmt.Sprintf("%s as date, COALESCE(SUM(pieces), 0) as value", recordDateExpr)).
+		Where(fmt.Sprintf("%s >= ?", recordDateExpr), startDate)
 
 	var rows []struct {
 		Date  string
 		Value int
 	}
-	query.Group("DATE(record_date)").
-		Order("DATE(record_date) ASC").
+	query.Group(recordDateExpr).
+		Order("date ASC").
 		Scan(&rows)
 
 	valueMap := make(map[string]int, len(rows))
@@ -702,17 +726,18 @@ func (h *StatisticsHandler) getHourlyProduction(deviceId string, deviceIDs []uin
 }
 
 func (h *StatisticsHandler) getTodayUtilizationRate(deviceId string, deviceIDs []uint, deviceCount int64) float64 {
+	durationExpr := h.productionDurationHoursExpr("", "")
 	if strings.TrimSpace(deviceId) != "" {
 		var totals struct {
 			Running float64
 			Idle    float64
 		}
 		applyDashboardDeviceFilter(
-			h.db.Model(&model.ProductionRecord{}).Where("DATE(record_date) = DATE(?)", time.Now()),
+			h.db.Model(&model.ProductionRecord{}).Where(fmt.Sprintf("%s = ?", h.localDateExpr("record_date")), formatLocalStatsDate(time.Now())),
 			deviceId,
 			deviceIDs,
 		).
-			Select("COALESCE(SUM(running_time), 0) as running, COALESCE(SUM(idle_time), 0) as idle").
+			Select(fmt.Sprintf("COALESCE(SUM(%s), 0) as running, COALESCE(SUM(idle_time), 0) as idle", durationExpr)).
 			Scan(&totals)
 		if totals.Running+totals.Idle <= 0 {
 			return 0
@@ -725,11 +750,11 @@ func (h *StatisticsHandler) getTodayUtilizationRate(deviceId string, deviceIDs [
 		Idle    float64
 	}
 	applyDashboardDeviceFilter(
-		h.db.Model(&model.ProductionRecord{}).Where("DATE(record_date) = DATE(?)", time.Now()),
+		h.db.Model(&model.ProductionRecord{}).Where(fmt.Sprintf("%s = ?", h.localDateExpr("record_date")), formatLocalStatsDate(time.Now())),
 		deviceId,
 		deviceIDs,
 	).
-		Select("COALESCE(SUM(running_time), 0) as running, COALESCE(SUM(idle_time), 0) as idle").
+		Select(fmt.Sprintf("COALESCE(SUM(%s), 0) as running, COALESCE(SUM(idle_time), 0) as idle", durationExpr)).
 		Group("device_id").
 		Scan(&rows)
 
@@ -752,9 +777,11 @@ func (h *StatisticsHandler) getTodayUtilizationRate(deviceId string, deviceIDs [
 
 func (h *StatisticsHandler) getRuntimeAndUtilizationTrends(deviceId string, deviceIDs []uint, avgDeviceCount int64) ([]gin.H, []gin.H) {
 	startDate := time.Now().AddDate(0, 0, -6).Format("2006-01-02")
+	recordDateExpr := h.localDateExpr("record_date")
+	durationExpr := h.productionDurationHoursExpr("", "")
 	query := applyDashboardDeviceFilter(h.db.Model(&model.ProductionRecord{}), deviceId, deviceIDs).
-		Select("DATE(record_date) as date, device_id, COALESCE(SUM(running_time), 0) as running_time, COALESCE(SUM(idle_time), 0) as idle_time").
-		Where("DATE(record_date) >= ?", startDate)
+		Select(fmt.Sprintf("%s as date, device_id, COALESCE(SUM(%s), 0) as running_time, COALESCE(SUM(idle_time), 0) as idle_time", recordDateExpr, durationExpr)).
+		Where(fmt.Sprintf("%s >= ?", recordDateExpr), startDate)
 
 	var rows []struct {
 		Date        string
@@ -762,8 +789,8 @@ func (h *StatisticsHandler) getRuntimeAndUtilizationTrends(deviceId string, devi
 		RunningTime float64
 		IdleTime    float64
 	}
-	query.Group("DATE(record_date), device_id").
-		Order("DATE(record_date) ASC").
+	query.Group(recordDateExpr + ", device_id").
+		Order("date ASC").
 		Scan(&rows)
 
 	type dayAgg struct {
@@ -913,9 +940,10 @@ func (h *StatisticsHandler) GetSalaryStats(c *gin.Context) {
 		Date        string
 		TotalAmount float64
 	}
+	salaryDateExpr := h.localDateExpr("sr.record_date")
 	baseQuery.Session(&gorm.Session{}).
-		Select("DATE(sr.record_date) as date, COALESCE(SUM(sr.total_amount), 0) as total_amount").
-		Group("DATE(sr.record_date)").
+		Select(fmt.Sprintf("%s as date, COALESCE(SUM(sr.total_amount), 0) as total_amount", salaryDateExpr)).
+		Group(salaryDateExpr).
 		Order("date").
 		Scan(&trendRows)
 
@@ -963,7 +991,7 @@ func (h *StatisticsHandler) GetSalaryDetail(c *gin.Context) {
 		query = query.Where("pr.employee_id = ?", employeeId)
 	}
 	if date != "" {
-		query = query.Where("DATE(pr.record_date) = ?", date)
+		query = query.Where(fmt.Sprintf("%s = ?", h.localDateExpr("pr.record_date")), date)
 	}
 
 	var results []struct {
@@ -1135,9 +1163,10 @@ func (h *StatisticsHandler) GetProcessOverview(c *gin.Context) {
 		RunningTime float64
 		IdleTime    float64
 	}
+	productionDateExpr := h.localDateExpr("pr.record_date")
 	baseQuery.Session(&gorm.Session{}).
-		Select(fmt.Sprintf("DATE(pr.record_date) as date, COALESCE(SUM(pr.pieces), 0) as pieces, COALESCE(SUM(%s), 0) as running_time, COALESCE(SUM(pr.idle_time), 0) as idle_time", durationExpr)).
-		Group("DATE(pr.record_date)").
+		Select(fmt.Sprintf("%s as date, COALESCE(SUM(pr.pieces), 0) as pieces, COALESCE(SUM(%s), 0) as running_time, COALESCE(SUM(pr.idle_time), 0) as idle_time", productionDateExpr, durationExpr)).
+		Group(productionDateExpr).
 		Order("date").
 		Scan(&trendRows)
 
@@ -1432,9 +1461,10 @@ func (h *StatisticsHandler) GetDurationStats(c *gin.Context) {
 		RunningTime float64
 		IdleTime    float64
 	}
+	productionDateExpr := h.localDateExpr("pr.record_date")
 	baseProdQuery.Session(&gorm.Session{}).
-		Select(fmt.Sprintf("DATE(pr.record_date) as date, COALESCE(SUM(%s), 0) as running_time, COALESCE(SUM(pr.idle_time), 0) as idle_time", durationExpr)).
-		Group("DATE(pr.record_date)").
+		Select(fmt.Sprintf("%s as date, COALESCE(SUM(%s), 0) as running_time, COALESCE(SUM(pr.idle_time), 0) as idle_time", productionDateExpr, durationExpr)).
+		Group(productionDateExpr).
 		Order("date").
 		Scan(&prodTrendRows)
 
@@ -1442,9 +1472,10 @@ func (h *StatisticsHandler) GetDurationStats(c *gin.Context) {
 		Date      string
 		AlarmTime float64
 	}
+	alarmDateExpr := h.localDateExpr("ar.start_time")
 	baseAlarmQuery.Session(&gorm.Session{}).
-		Select("DATE(ar.start_time) as date, COALESCE(SUM(ar.duration), 0) / 3600 as alarm_time").
-		Group("DATE(ar.start_time)").
+		Select(fmt.Sprintf("%s as date, COALESCE(SUM(ar.duration), 0) / 3600 as alarm_time", alarmDateExpr)).
+		Group(alarmDateExpr).
 		Order("date").
 		Scan(&alarmTrendRows)
 
@@ -1592,9 +1623,10 @@ func (h *StatisticsHandler) GetAlarmStats(c *gin.Context) {
 		Count       int64
 		AvgDuration float64
 	}
+	alarmDateExpr := h.localDateExpr("ar.start_time")
 	baseQuery.Session(&gorm.Session{}).
-		Select("DATE(ar.start_time) as date, COUNT(*) as count, COALESCE(AVG(ar.duration), 0) / 60 as avg_duration").
-		Group("DATE(ar.start_time)").
+		Select(fmt.Sprintf("%s as date, COUNT(*) as count, COALESCE(AVG(ar.duration), 0) / 60 as avg_duration", alarmDateExpr)).
+		Group(alarmDateExpr).
 		Order("date").
 		Scan(&trendRows)
 
@@ -2065,10 +2097,11 @@ func (h *StatisticsHandler) loadPatternSewCountByDevicePatternDate(startDate, en
 		RecordDate      string
 		PatternSewCount int64
 	}
+	recordDateExpr := h.localDateExpr("pr.record_date")
 	baseQuery.Session(&gorm.Session{}).
-		Select("pr.device_id, pr.pattern_id, " + patternNameExpr + " as pattern_name, DATE(pr.record_date) as record_date, COALESCE(SUM(pr.pieces), 0) as pattern_sew_count").
+		Select("pr.device_id, pr.pattern_id, " + patternNameExpr + " as pattern_name, " + recordDateExpr + " as record_date, COALESCE(SUM(pr.pieces), 0) as pattern_sew_count").
 		Joins("LEFT JOIN patterns p ON pr.pattern_id = p.id").
-		Group("pr.device_id, pr.pattern_id, " + patternNameExpr + ", DATE(pr.record_date)").
+		Group("pr.device_id, pr.pattern_id, " + patternNameExpr + ", " + recordDateExpr).
 		Scan(&rows)
 
 	result := make(map[string]int64, len(rows))
@@ -2087,9 +2120,10 @@ func (h *StatisticsHandler) loadAlarmInfoByDeviceDate(startDate, endDate, device
 		AlarmInfo  string
 		AlarmTime  time.Time
 	}
+	recordDateExpr := h.localDateExpr("ar.start_time")
 	baseQuery.Session(&gorm.Session{}).
-		Select(fmt.Sprintf("ar.device_id, DATE(ar.start_time) as record_date, %s, MIN(ar.start_time) as alarm_time", h.alarmInfoAggregateExpr("alarm_info"))).
-		Group("ar.device_id, DATE(ar.start_time)").
+		Select(fmt.Sprintf("ar.device_id, %s as record_date, %s, MIN(ar.start_time) as alarm_time", recordDateExpr, h.alarmInfoAggregateExpr("alarm_info"))).
+		Group("ar.device_id, " + recordDateExpr).
 		Scan(&rows)
 
 	result := make(map[string]alarmDailyInfo, len(rows))
@@ -2119,10 +2153,11 @@ func (h *StatisticsHandler) loadEmployeeInfoByDeviceDate(startDate, endDate, dev
 		EmployeeCode string
 		EmployeeName string
 	}
+	recordDateExpr := h.localDateExpr("pr.record_date")
 	baseQuery.Session(&gorm.Session{}).
-		Select("pr.device_id, DATE(pr.record_date) as record_date, COALESCE(MAX(e.code), '-') as employee_code, COALESCE(MAX(e.name), '-') as employee_name").
+		Select("pr.device_id, " + recordDateExpr + " as record_date, COALESCE(MAX(e.code), '-') as employee_code, COALESCE(MAX(e.name), '-') as employee_name").
 		Joins("LEFT JOIN employees e ON pr.employee_id = e.id").
-		Group("pr.device_id, DATE(pr.record_date)").
+		Group("pr.device_id, " + recordDateExpr).
 		Scan(&rows)
 
 	result := make(map[string]employeeDailyInfo, len(rows))
@@ -2147,7 +2182,7 @@ func (h *StatisticsHandler) buildSalaryStatsBaseQuery(startDate, endDate, employ
 	query := h.db.Table("salary_records sr").
 		Joins("LEFT JOIN employees e ON sr.employee_id = e.id").
 		Joins("LEFT JOIN devices d ON sr.device_id = d.id")
-	query = applyDateRangeFilter(query, "sr.record_date", startDate, endDate)
+	query = applyDateRangeFilter(query, h.localDateExpr("sr.record_date"), startDate, endDate)
 	if employeeId != "" {
 		query = query.Where("sr.employee_id = ?", employeeId)
 	}
@@ -2165,7 +2200,7 @@ func (h *StatisticsHandler) buildSalaryStatsBaseQuery(startDate, endDate, employ
 
 func (h *StatisticsHandler) buildProductionStatsBaseQuery(startDate, endDate, deviceId string, deviceIDs []uint) *gorm.DB {
 	query := h.db.Table("production_records pr")
-	query = applyDateRangeFilter(query, "pr.record_date", startDate, endDate)
+	query = applyDateRangeFilter(query, h.localDateExpr("pr.record_date"), startDate, endDate)
 	if len(deviceIDs) > 0 {
 		query = query.Where("pr.device_id IN ?", deviceIDs)
 	} else if deviceId != "" {
@@ -2176,7 +2211,7 @@ func (h *StatisticsHandler) buildProductionStatsBaseQuery(startDate, endDate, de
 
 func (h *StatisticsHandler) buildAlarmStatsBaseQuery(startDate, endDate, deviceId string, deviceIDs []uint, alarmType string) *gorm.DB {
 	query := h.db.Table("alarm_records ar")
-	query = applyDateRangeFilter(query, "ar.start_time", startDate, endDate)
+	query = applyDateRangeFilter(query, h.localDateExpr("ar.start_time"), startDate, endDate)
 	if len(deviceIDs) > 0 {
 		query = query.Where("ar.device_id IN ?", deviceIDs)
 	} else if deviceId != "" {
@@ -2268,16 +2303,16 @@ func parseDeviceIDs(raw string) []uint {
 	return ids
 }
 
-func applyDateRangeFilter(query *gorm.DB, column, startDate, endDate string) *gorm.DB {
+func applyDateRangeFilter(query *gorm.DB, dateExpr, startDate, endDate string) *gorm.DB {
 	if strings.TrimSpace(startDate) == "" && strings.TrimSpace(endDate) == "" {
-		today := time.Now().Format("2006-01-02")
-		return query.Where(fmt.Sprintf("DATE(%s) = ?", column), today)
+		today := formatLocalStatsDate(time.Now())
+		return query.Where(fmt.Sprintf("%s = ?", dateExpr), today)
 	}
 	if startDate != "" {
-		query = query.Where(fmt.Sprintf("DATE(%s) >= ?", column), startDate)
+		query = query.Where(fmt.Sprintf("%s >= ?", dateExpr), startDate)
 	}
 	if endDate != "" {
-		query = query.Where(fmt.Sprintf("DATE(%s) <= ?", column), endDate)
+		query = query.Where(fmt.Sprintf("%s <= ?", dateExpr), endDate)
 	}
 	return query
 }

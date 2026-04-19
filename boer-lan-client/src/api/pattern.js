@@ -1,5 +1,7 @@
 import request from './request'
 
+const patternTransferHttpTimeout = 30 * 60 * 1000
+
 // 获取花型文件列表
 export function getPatternList(params) {
   return request({
@@ -132,7 +134,8 @@ export function downloadToDevice(patternId, deviceIds) {
   return request({
     url: '/pattern/download',
     method: 'post',
-    data: { patternId, deviceIds }
+    data: { patternId, deviceIds },
+    timeout: patternTransferHttpTimeout
   })
 }
 
@@ -141,7 +144,8 @@ export function batchDownload(patternIds, deviceIds) {
   return request({
     url: '/pattern/batch-download',
     method: 'post',
-    data: { patternIds, deviceIds }
+    data: { patternIds, deviceIds },
+    timeout: patternTransferHttpTimeout
   })
 }
 
@@ -228,11 +232,13 @@ export function deleteDevicePatternFile(id) {
 }
 
 // 设备文件回传到服务器
-export function uploadDeviceFilesToServer(data) {
+export function uploadDeviceFilesToServer(data, extraConfig = {}) {
   return request({
     url: '/pattern/device-files/upload',
     method: 'post',
-    data
+    data,
+    timeout: patternTransferHttpTimeout,
+    ...extraConfig
   })
 }
 

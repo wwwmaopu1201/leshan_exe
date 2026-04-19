@@ -3,7 +3,7 @@
     <div class="page-header">
       <div class="page-title-block">
         <h2>花型列表</h2>
-        <p>维护服务器花型与设备花型，支持上传、编辑、删除和设备文件回传。</p>
+        <p>维护服务器花型与设备花型，支持上传、下发、编辑、删除和设备文件回传。</p>
       </div>
     </div>
 
@@ -72,6 +72,7 @@
         </div>
         <div class="action-group">
           <el-button type="primary" icon="el-icon-plus" @click="openUploadDialog">上传花型</el-button>
+          <el-button icon="el-icon-s-promotion" @click="openDownloadQueueDialog">下发队列</el-button>
           <el-button icon="el-icon-refresh" @click="fetchServerPatterns">刷新</el-button>
         </div>
       </div>
@@ -101,8 +102,9 @@
         </el-table-column>
         <el-table-column prop="orderNo" label="订单编号" min-width="140" show-overflow-tooltip />
         <el-table-column prop="uploadTime" label="上传时间" width="170" />
-        <el-table-column label="操作" width="190" align="center" fixed="right">
+        <el-table-column label="操作" width="250" align="center" fixed="right">
           <template slot-scope="{ row }">
+            <el-button size="small" type="primary" plain @click="openDownloadDialog(row)">下发</el-button>
             <el-button size="small" @click="openEditDialog(row)">编辑</el-button>
             <el-button size="small" type="danger" @click="confirmDelete(row)">删除</el-button>
           </template>
@@ -375,6 +377,124 @@
     </el-dialog>
 
     <el-dialog
+      title="下发到设备"
+      :visible.sync="downloadDialogVisible"
+      width="620px"
+      @closed="resetDownloadDialog"
+    >
+      <el-form :model="downloadForm" label-width="100px">
+        <el-form-item label="花型名称">
+          <el-input :value="downloadForm.patternName" disabled />
+        </el-form-item>
+        <el-form-item label="目标设备" required>
+          <el-select
+            v-model="downloadForm.deviceIds"
+            multiple
+            filterable
+            collapse-tags
+            placeholder="请选择一个或多个设备"
+            style="width: 100%;"
+          >
+            <el-option
+              v-for="item in deviceOptions"
+              :key="item.id"
+              :label="item.name"
+              :value="item.id"
+            />
+          </el-select>
+          <div class="dialog-tip">在线设备会优先立即执行，离线设备会保留在等待队列中。</div>
+        </el-form-item>
+      </el-form>
+      <span slot="footer" class="dialog-footer">
+        <el-button @click="downloadDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="downloadingToDevice" @click="submitDownloadToDevice">开始下发</el-button>
+      </span>
+    </el-dialog>
+
+    <el-dialog
+      title="下发队列"
+      :visible.sync="downloadQueueDialogVisible"
+      width="980px"
+      @opened="syncDownloadQueueTableHeight"
+    >
+      <div class="action-row queue-toolbar">
+        <div class="soft-note">
+          <i class="el-icon-s-promotion"></i>
+          <span>查看服务器花型下发到设备的任务状态。</span>
+        </div>
+        <div class="action-group">
+          <el-button icon="el-icon-refresh" @click="fetchDownloadQueue">刷新</el-button>
+          <el-button type="danger" plain @click="clearDownloadHistory">清理已完成</el-button>
+        </div>
+      </div>
+
+      <el-table
+        :data="downloadQueueList"
+        v-loading="downloadQueueLoading"
+        border
+        :max-height="downloadQueueTableMaxHeight"
+        empty-text="暂无下发任务"
+      >
+        <el-table-column type="index" label="序号" width="60" align="center" />
+        <el-table-column prop="deviceName" label="设备名称" min-width="120" />
+        <el-table-column prop="patternName" label="花型名称" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="patternType" label="花型类型" width="120" />
+        <el-table-column prop="status" label="状态" width="110" align="center">
+          <template slot-scope="{ row }">
+            <span :class="['status-pill', getDownloadStatusType(row.status)]">
+              {{ getDownloadStatusText(row.status) }}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="progress" label="进度" width="80" align="center" />
+        <el-table-column prop="message" label="结果信息" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="createTime" label="创建时间" width="170" />
+        <el-table-column label="操作" width="180" align="center">
+          <template slot-scope="{ row }">
+            <el-button
+              v-if="row.status === 'waiting' || row.status === 'downloading'"
+              type="text"
+              size="small"
+              @click="handlePauseDownloadTask(row)"
+            >
+              暂停
+            </el-button>
+            <el-button
+              v-if="row.status === 'paused'"
+              type="text"
+              size="small"
+              @click="handleResumeDownloadTask(row)"
+            >
+              恢复
+            </el-button>
+            <el-button
+              v-if="row.status !== 'completed'"
+              type="text"
+              size="small"
+              class="danger-text"
+              @click="handleCancelDownloadTask(row)"
+            >
+              取消
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <div class="compact-pagination">
+        <el-pagination
+          background
+          layout="total, sizes, prev, pager, next, jumper"
+          :current-page.sync="downloadQueuePagination.page"
+          :page-size.sync="downloadQueuePagination.pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="downloadQueuePagination.total"
+          @size-change="handleDownloadQueueSizeChange"
+          @current-change="handleDownloadQueuePageChange"
+        />
+      </div>
+    </el-dialog>
+
+    <el-dialog
       title="上传队列"
       :visible.sync="uploadQueueDialogVisible"
       width="980px"
@@ -456,6 +576,49 @@
         />
       </div>
     </el-dialog>
+
+    <el-dialog
+      title="同名花型处理"
+      :visible.sync="uploadConflictDialogVisible"
+      width="620px"
+      @closed="handleUploadConflictDialogClosed"
+    >
+      <div class="conflict-dialog-intro">
+        检测到服务器中已存在同名花型，请选择处理方式。
+      </div>
+      <el-radio-group v-model="uploadConflictForm.mode" class="conflict-mode-group">
+        <el-radio label="overwrite">覆盖同名花型</el-radio>
+        <el-radio label="rename">重命名后新增</el-radio>
+      </el-radio-group>
+      <div v-if="uploadConflictForm.mode === 'rename'" class="conflict-rename-list">
+        <div
+          v-for="item in uploadConflictDuplicates"
+          :key="item.fileId"
+          class="conflict-rename-item"
+        >
+          <div class="conflict-rename-label">
+            {{ item.fileName || item.patternName || item.fileId }}
+          </div>
+          <el-input
+            v-model.trim="uploadConflictForm.renameNames[String(item.fileId)]"
+            placeholder="请输入新的花型名称"
+          />
+        </div>
+      </div>
+      <div v-else class="conflict-overwrite-list">
+        <div
+          v-for="item in uploadConflictDuplicates"
+          :key="item.fileId"
+          class="conflict-overwrite-item"
+        >
+          {{ item.patternName }}
+        </div>
+      </div>
+      <span slot="footer" class="dialog-footer">
+        <el-button @click="cancelUploadConflictResolution">取消</el-button>
+        <el-button type="primary" @click="confirmUploadConflictResolution">确定</el-button>
+      </span>
+    </el-dialog>
   </div>
 </template>
 
@@ -484,6 +647,17 @@ const defaultEditForm = () => ({
   orderNo: ''
 })
 
+const defaultDownloadForm = () => ({
+  patternId: null,
+  patternName: '',
+  deviceIds: []
+})
+
+const defaultUploadConflictForm = () => ({
+  mode: 'overwrite',
+  renameNames: {}
+})
+
 const defaultDeviceFileQuery = () => ({
   deviceId: '',
   keyword: '',
@@ -491,6 +665,7 @@ const defaultDeviceFileQuery = () => ({
 })
 
 const connectedDeviceStatuses = ['online', 'idle', 'working', 'alarm']
+const patternTransferHttpTimeout = 30 * 60 * 1000
 
 export default {
   name: 'Patterns',
@@ -501,16 +676,20 @@ export default {
       saving: false,
       deviceFileLoading: false,
       refreshingDeviceFiles: false,
+      downloadingToDevice: false,
       uploadingFromDevice: false,
+      downloadQueueLoading: false,
       uploadQueueLoading: false,
       serverTableHeight: 320,
       deviceFileTableHeight: 320,
+      downloadQueueTableMaxHeight: 460,
       uploadQueueTableMaxHeight: 460,
       tableData: [],
       patternTypeOptions: [],
       deviceOptions: [],
       deviceFileList: [],
       deviceFileSelectedRows: [],
+      downloadQueueList: [],
       uploadQueueList: [],
       searchForm: defaultSearchForm(),
       deviceFileQuery: defaultDeviceFileQuery(),
@@ -524,6 +703,11 @@ export default {
         pageSize: 10,
         total: 0
       },
+      downloadQueuePagination: {
+        page: 1,
+        pageSize: 10,
+        total: 0
+      },
       uploadQueuePagination: {
         page: 1,
         pageSize: 10,
@@ -531,9 +715,16 @@ export default {
       },
       uploadDialogVisible: false,
       editDialogVisible: false,
+      downloadDialogVisible: false,
+      downloadQueueDialogVisible: false,
       uploadQueueDialogVisible: false,
+      uploadConflictDialogVisible: false,
       uploadForm: defaultUploadForm(),
       editForm: defaultEditForm(),
+      downloadForm: defaultDownloadForm(),
+      uploadConflictForm: defaultUploadConflictForm(),
+      uploadConflictDuplicates: [],
+      uploadConflictResolver: null,
       uploadFileList: [],
       uploadRules: {
         name: [
@@ -760,10 +951,24 @@ export default {
 
       this.uploadingFromDevice = true
       try {
-        const res = await this.$axios.post('/pattern/device-files/upload', {
-          deviceId: this.deviceFileQuery.deviceId,
-          fileIds: this.deviceFileSelectedRows.map(item => item.id)
-        })
+        let res = null
+        try {
+          res = await this.submitUploadFromDeviceRequest('ask')
+        } catch (error) {
+          const duplicates = Array.isArray(error?.response?.data?.data?.duplicates)
+            ? error.response.data.data.duplicates
+            : []
+          if (error?.response?.status !== 409 || !duplicates.length) {
+            throw error
+          }
+
+          const conflictDecision = await this.promptUploadConflictResolution(duplicates)
+          if (!conflictDecision?.mode) {
+            return
+          }
+          res = await this.submitUploadFromDeviceRequest(conflictDecision.mode, conflictDecision.renameNames || {})
+        }
+
         if (res.code === 0) {
           this.$message.success(`回传完成：成功 ${res.data.success || 0} 条，失败 ${res.data.failed || 0} 条`)
           await Promise.all([
@@ -779,11 +984,231 @@ export default {
         this.uploadingFromDevice = false
       }
     },
+    submitUploadFromDeviceRequest(conflictMode = 'ask', renameNames = {}) {
+      return this.$axios.post('/pattern/device-files/upload', {
+        deviceId: this.deviceFileQuery.deviceId,
+        fileIds: this.deviceFileSelectedRows.map(item => item.id),
+        conflictMode,
+        renameNames
+      }, {
+        suppressErrorMessage: true,
+        timeout: patternTransferHttpTimeout
+      })
+    },
+    async promptUploadConflictResolution(duplicates = []) {
+      const renameNames = {}
+      for (const item of duplicates) {
+        renameNames[String(item.fileId)] = `${item.patternName || item.fileName || '新花型'}(1)`
+      }
+      this.uploadConflictDuplicates = duplicates.map(item => ({ ...item }))
+      this.uploadConflictForm = {
+        mode: 'overwrite',
+        renameNames
+      }
+      this.uploadConflictDialogVisible = true
+      return new Promise(resolve => {
+        this.uploadConflictResolver = resolve
+      })
+    },
+    resolveUploadConflict(result) {
+      const resolver = this.uploadConflictResolver
+      this.uploadConflictResolver = null
+      this.uploadConflictDialogVisible = false
+      this.uploadConflictDuplicates = []
+      this.uploadConflictForm = defaultUploadConflictForm()
+      if (typeof resolver === 'function') {
+        resolver(result)
+      }
+    },
+    cancelUploadConflictResolution() {
+      this.resolveUploadConflict({ mode: '', renameNames: {} })
+    },
+    confirmUploadConflictResolution() {
+      if (this.uploadConflictForm.mode === 'rename') {
+        const renameNames = {}
+        for (const item of this.uploadConflictDuplicates) {
+          const nextName = String(this.uploadConflictForm.renameNames[String(item.fileId)] || '').trim()
+          if (!nextName) {
+            this.$message.warning(`请为“${item.fileName || item.patternName || item.fileId}”输入新名称`)
+            return
+          }
+          renameNames[String(item.fileId)] = nextName
+        }
+        this.resolveUploadConflict({ mode: 'rename', renameNames })
+        return
+      }
+      this.resolveUploadConflict({ mode: 'overwrite', renameNames: {} })
+    },
+    handleUploadConflictDialogClosed() {
+      if (this.uploadConflictResolver) {
+        this.resolveUploadConflict({ mode: '', renameNames: {} })
+      }
+    },
     openUploadQueueDialog() {
       this.uploadQueueDialogVisible = true
       this.uploadQueuePagination.page = 1
       this.fetchUploadQueue()
       this.syncUploadQueueTableHeight()
+    },
+    resolveDefaultDownloadDeviceIds() {
+      const candidates = []
+      const currentDeviceId = Number(this.deviceFileQuery.deviceId || 0)
+      if (currentDeviceId) {
+        candidates.push(currentDeviceId)
+      }
+      const firstConnected = this.deviceOptions.find(item => this.isConnectedDeviceStatus(item.status))
+      if (firstConnected) {
+        candidates.push(firstConnected.id)
+      }
+      const uniqueIds = Array.from(new Set(candidates.filter(Boolean)))
+      return uniqueIds.length ? [uniqueIds[0]] : []
+    },
+    openDownloadDialog(row) {
+      this.downloadForm = {
+        patternId: row.id,
+        patternName: row.name || row.fileName || `花型${row.id}`,
+        deviceIds: this.resolveDefaultDownloadDeviceIds()
+      }
+      this.downloadDialogVisible = true
+    },
+    resetDownloadDialog() {
+      this.downloadForm = defaultDownloadForm()
+    },
+    async submitDownloadToDevice() {
+      if (!this.downloadForm.patternId) {
+        this.$message.warning('请选择要下发的花型')
+        return
+      }
+      if (!this.downloadForm.deviceIds.length) {
+        this.$message.warning('请至少选择一个目标设备')
+        return
+      }
+
+      this.downloadingToDevice = true
+      try {
+        const res = await this.$axios.post('/pattern/download', {
+          patternId: this.downloadForm.patternId,
+          deviceIds: this.downloadForm.deviceIds
+        }, {
+          timeout: patternTransferHttpTimeout
+        })
+        if (res.code === 0) {
+          this.$message.success(`已加入下发队列，共 ${this.downloadForm.deviceIds.length} 台设备`)
+          this.downloadDialogVisible = false
+          this.openDownloadQueueDialog()
+        }
+      } catch (error) {
+        console.error('下发花型失败', error)
+        this.$message.error(this.getRequestErrorMessage(error, '下发花型失败'))
+      } finally {
+        this.downloadingToDevice = false
+      }
+    },
+    openDownloadQueueDialog() {
+      this.downloadQueueDialogVisible = true
+      this.downloadQueuePagination.page = 1
+      this.fetchDownloadQueue()
+      this.syncDownloadQueueTableHeight()
+    },
+    handleDownloadQueueSizeChange(size) {
+      this.downloadQueuePagination.pageSize = size
+      this.fetchDownloadQueue()
+    },
+    handleDownloadQueuePageChange(page) {
+      this.downloadQueuePagination.page = page
+      this.fetchDownloadQueue()
+    },
+    async fetchDownloadQueue() {
+      if (!this.downloadQueueDialogVisible) {
+        return
+      }
+      this.downloadQueueLoading = true
+      try {
+        const res = await this.$axios.get('/pattern/queue', {
+          params: {
+            page: this.downloadQueuePagination.page,
+            pageSize: this.downloadQueuePagination.pageSize
+          }
+        })
+        if (res.code === 0) {
+          this.downloadQueueList = Array.isArray(res.data?.list) ? res.data.list : []
+          this.downloadQueuePagination.total = Number(res.data?.total || 0)
+          this.syncDownloadQueueTableHeight()
+        }
+      } catch (error) {
+        console.error('加载下发队列失败', error)
+        this.$message.error(this.getRequestErrorMessage(error, '获取下发队列失败'))
+      } finally {
+        this.downloadQueueLoading = false
+      }
+    },
+    getDownloadStatusType(status) {
+      const map = {
+        waiting: 'warning',
+        downloading: 'primary',
+        paused: 'info',
+        completed: 'success',
+        failed: 'danger'
+      }
+      return map[status] || 'info'
+    },
+    getDownloadStatusText(status) {
+      const map = {
+        waiting: '等待中',
+        downloading: '下发中',
+        paused: '已暂停',
+        completed: '已完成',
+        failed: '失败'
+      }
+      return map[status] || status || '-'
+    },
+    async handlePauseDownloadTask(row) {
+      try {
+        const res = await this.$axios.post(`/pattern/queue/${row.id}/pause`)
+        if (res.code === 0) {
+          this.$message.success('任务已暂停')
+          this.fetchDownloadQueue()
+        }
+      } catch (error) {
+        console.error('暂停下发任务失败', error)
+        this.$message.error(this.getRequestErrorMessage(error, '暂停下发任务失败'))
+      }
+    },
+    async handleResumeDownloadTask(row) {
+      try {
+        const res = await this.$axios.post(`/pattern/queue/${row.id}/resume`)
+        if (res.code === 0) {
+          this.$message.success('任务已恢复')
+          this.fetchDownloadQueue()
+        }
+      } catch (error) {
+        console.error('恢复下发任务失败', error)
+        this.$message.error(this.getRequestErrorMessage(error, '恢复下发任务失败'))
+      }
+    },
+    async handleCancelDownloadTask(row) {
+      try {
+        const res = await this.$axios.delete(`/pattern/queue/${row.id}`)
+        if (res.code === 0) {
+          this.$message.success('任务已取消')
+          this.fetchDownloadQueue()
+        }
+      } catch (error) {
+        console.error('取消下发任务失败', error)
+        this.$message.error(this.getRequestErrorMessage(error, '取消下发任务失败'))
+      }
+    },
+    async clearDownloadHistory() {
+      try {
+        const res = await this.$axios.delete('/pattern/queue/completed')
+        if (res.code === 0) {
+          this.$message.success(`已清理 ${res.data?.affected || 0} 条历史任务`)
+          this.fetchDownloadQueue()
+        }
+      } catch (error) {
+        console.error('清理下发历史失败', error)
+        this.$message.error(this.getRequestErrorMessage(error, '清理下发历史失败'))
+      }
     },
     handleUploadQueueSizeChange(size) {
       this.uploadQueuePagination.pageSize = size
@@ -1046,7 +1471,15 @@ export default {
 
         syncHeight('serverPatternCard', 'serverPatternTable', 'serverTableHeight', 260)
         syncHeight('deviceFileCard', 'deviceFileTable', 'deviceFileTableHeight', 220)
+        this.syncDownloadQueueTableHeight()
         this.syncUploadQueueTableHeight()
+      })
+    },
+    syncDownloadQueueTableHeight() {
+      this.$nextTick(() => {
+        if (!this.downloadQueueDialogVisible) return
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 900
+        this.downloadQueueTableMaxHeight = Math.max(240, viewportHeight - 320)
       })
     },
     syncUploadQueueTableHeight() {
@@ -1081,6 +1514,45 @@ export default {
 
 .queue-toolbar {
   margin-bottom: 12px;
+}
+
+.dialog-tip {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #909399;
+}
+
+.conflict-dialog-intro {
+  margin-bottom: 14px;
+  color: #606266;
+  line-height: 1.7;
+}
+
+.conflict-mode-group {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 16px;
+}
+
+.conflict-rename-list,
+.conflict-overwrite-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.conflict-rename-item,
+.conflict-overwrite-item {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f7f8fa;
+}
+
+.conflict-rename-label {
+  margin-bottom: 8px;
+  color: #303133;
+  font-size: 13px;
 }
 
 .danger-text {

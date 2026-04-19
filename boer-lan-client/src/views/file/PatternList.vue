@@ -620,6 +620,49 @@
     </el-dialog>
 
     <el-dialog
+      title="同名花型处理"
+      :visible.sync="showUploadConflictDialog"
+      width="620px"
+      @closed="handleUploadConflictDialogClosed"
+    >
+      <div class="conflict-dialog-intro">
+        检测到服务器中已存在同名花型，请选择处理方式。
+      </div>
+      <el-radio-group v-model="uploadConflictForm.mode" class="conflict-mode-group">
+        <el-radio label="overwrite">覆盖同名花型</el-radio>
+        <el-radio label="rename">重命名后新增</el-radio>
+      </el-radio-group>
+      <div v-if="uploadConflictForm.mode === 'rename'" class="conflict-rename-list">
+        <div
+          v-for="item in uploadConflictDuplicates"
+          :key="item.fileId"
+          class="conflict-rename-item"
+        >
+          <div class="conflict-rename-label">
+            {{ item.fileName || item.patternName || item.fileId }}
+          </div>
+          <el-input
+            v-model.trim="uploadConflictForm.renameNames[String(item.fileId)]"
+            placeholder="请输入新的花型名称"
+          />
+        </div>
+      </div>
+      <div v-else class="conflict-overwrite-list">
+        <div
+          v-for="item in uploadConflictDuplicates"
+          :key="item.fileId"
+          class="conflict-overwrite-item"
+        >
+          {{ item.patternName }}
+        </div>
+      </div>
+      <span slot="footer" class="dialog-footer">
+        <el-button @click="cancelUploadConflictResolution">取消</el-button>
+        <el-button type="primary" @click="confirmUploadConflictResolution">确定</el-button>
+      </span>
+    </el-dialog>
+
+    <el-dialog
       title="花型预览"
       :visible.sync="showPreviewDialog"
       width="600px"
@@ -724,6 +767,11 @@ const defaultBatchEditForm = () => ({
   }
 })
 
+const defaultUploadConflictForm = () => ({
+  mode: 'overwrite',
+  renameNames: {}
+})
+
 const connectedDeviceStatuses = ['online', 'idle', 'working', 'alarm']
 
 export default {
@@ -785,8 +833,12 @@ export default {
       },
       uploadingFromDevice: false,
       showUploadQueueDialog: false,
+      showUploadConflictDialog: false,
       uploadQueueLoading: false,
       uploadQueueList: [],
+      uploadConflictDuplicates: [],
+      uploadConflictForm: defaultUploadConflictForm(),
+      uploadConflictResolver: null,
       uploadQueuePagination: {
         page: 1,
         pageSize: 10,
@@ -1234,10 +1286,24 @@ export default {
 
       this.uploadingFromDevice = true
       try {
-        const res = await uploadDeviceFilesToServer({
-          deviceId: this.deviceFileQuery.deviceId,
-          fileIds: this.deviceFileSelectedRows.map(item => item.id)
-        })
+        let res = null
+        try {
+          res = await this.submitUploadFromDeviceRequest('ask')
+        } catch (error) {
+          const duplicates = Array.isArray(error?.response?.data?.data?.duplicates)
+            ? error.response.data.data.duplicates
+            : []
+          if (error?.response?.status !== 409 || !duplicates.length) {
+            throw error
+          }
+
+          const conflictDecision = await this.promptUploadConflictResolution(duplicates)
+          if (!conflictDecision?.mode) {
+            return
+          }
+          res = await this.submitUploadFromDeviceRequest(conflictDecision.mode, conflictDecision.renameNames || {})
+        }
+
         if (res.code === 0) {
           this.$message.success(`回传完成：成功 ${res.data.success || 0} 条，失败 ${res.data.failed || 0} 条`)
           this.fetchData()
@@ -1249,6 +1315,65 @@ export default {
         this.$message.error(this.getRequestErrorMessage(error, '回传设备文件失败'))
       } finally {
         this.uploadingFromDevice = false
+      }
+    },
+    submitUploadFromDeviceRequest(conflictMode = 'ask', renameNames = {}) {
+      return uploadDeviceFilesToServer({
+        deviceId: this.deviceFileQuery.deviceId,
+        fileIds: this.deviceFileSelectedRows.map(item => item.id),
+        conflictMode,
+        renameNames
+      }, {
+        suppressErrorMessage: true
+      })
+    },
+    async promptUploadConflictResolution(duplicates = []) {
+      const renameNames = {}
+      for (const item of duplicates) {
+        renameNames[String(item.fileId)] = `${item.patternName || item.fileName || '新花型'}(1)`
+      }
+      this.uploadConflictDuplicates = duplicates.map(item => ({ ...item }))
+      this.uploadConflictForm = {
+        mode: 'overwrite',
+        renameNames
+      }
+      this.showUploadConflictDialog = true
+      return new Promise(resolve => {
+        this.uploadConflictResolver = resolve
+      })
+    },
+    resolveUploadConflict(result) {
+      const resolver = this.uploadConflictResolver
+      this.uploadConflictResolver = null
+      this.showUploadConflictDialog = false
+      this.uploadConflictDuplicates = []
+      this.uploadConflictForm = defaultUploadConflictForm()
+      if (typeof resolver === 'function') {
+        resolver(result)
+      }
+    },
+    cancelUploadConflictResolution() {
+      this.resolveUploadConflict({ mode: '', renameNames: {} })
+    },
+    confirmUploadConflictResolution() {
+      if (this.uploadConflictForm.mode === 'rename') {
+        const renameNames = {}
+        for (const item of this.uploadConflictDuplicates) {
+          const nextName = String(this.uploadConflictForm.renameNames[String(item.fileId)] || '').trim()
+          if (!nextName) {
+            this.$message.warning(`请为“${item.fileName || item.patternName || item.fileId}”输入新名称`)
+            return
+          }
+          renameNames[String(item.fileId)] = nextName
+        }
+        this.resolveUploadConflict({ mode: 'rename', renameNames })
+        return
+      }
+      this.resolveUploadConflict({ mode: 'overwrite', renameNames: {} })
+    },
+    handleUploadConflictDialogClosed() {
+      if (this.uploadConflictResolver) {
+        this.resolveUploadConflict({ mode: '', renameNames: {} })
       }
     },
     openUploadQueueDialog() {
@@ -1569,6 +1694,38 @@ export default {
 
 .danger-text {
   color: #F56C6C !important;
+}
+
+.conflict-dialog-intro {
+  margin-bottom: 14px;
+  color: #606266;
+  line-height: 1.7;
+}
+
+.conflict-mode-group {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 16px;
+}
+
+.conflict-rename-list,
+.conflict-overwrite-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.conflict-rename-item,
+.conflict-overwrite-item {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f7f8fa;
+}
+
+.conflict-rename-label {
+  margin-bottom: 8px;
+  color: #303133;
+  font-size: 13px;
 }
 
 .device-file-card {

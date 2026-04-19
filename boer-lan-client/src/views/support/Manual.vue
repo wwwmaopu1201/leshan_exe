@@ -22,7 +22,7 @@
             <p>帮助安装、登录、设备管理和日常排查快速上手。</p>
           </div>
           <div class="header-actions">
-            <div class="version">{{ $t('support.version') }}: v1.0.14</div>
+            <div class="version">{{ $t('support.version') }}: v1.0.15</div>
             <el-button size="small" type="primary" icon="el-icon-download" @click="downloadManual">
               下载说明
             </el-button>
@@ -63,7 +63,7 @@
             <ol>
               <li>下载安装包 `boer-lan-client-setup.exe`。</li>
               <li>双击启动安装程序并完成安装。</li>
-              <li>首次运行前，确认服务端地址和端口。</li>
+              <li>首次运行前，确认服务端地址可访问。</li>
             </ol>
           </section>
 
@@ -71,8 +71,8 @@
             <h3>3. 登录使用</h3>
             <ol>
               <li>输入服务器 IP 地址。</li>
-              <li>输入管理端口，默认 `8088`。</li>
               <li>填写账号和密码，点击登录。</li>
+              <li>客户端默认连接管理端口 `8088`。</li>
               <li>需要时可勾选“记住密码”。</li>
             </ol>
             <div class="tip-box">
@@ -114,7 +114,7 @@
             <h3>7. 常见问题</h3>
             <div class="faq-item">
               <div class="faq-q">Q：无法连接服务器怎么办？</div>
-              <div class="faq-a">A：请检查网络连接，确认服务器 IP 和管理端口是否正确。</div>
+              <div class="faq-a">A：请检查网络连接，确认服务器 IP 是否正确，客户端默认使用 8088 端口。</div>
             </div>
             <div class="faq-item">
               <div class="faq-q">Q：设备显示离线怎么处理？</div>
@@ -166,7 +166,7 @@ export default {
           throw new Error(`HTTP ${response.status}`)
         }
         const blob = await response.blob()
-        const saved = await saveBlobWithDialog(blob, '局域网客户端操作说明-v1.0.14.pdf', {
+        const saved = await saveBlobWithDialog(blob, '局域网客户端操作说明-v1.0.15.pdf', {
           mimeType: 'application/pdf',
           description: 'PDF 文件',
           extensions: ['pdf']

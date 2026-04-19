@@ -12,10 +12,6 @@
           <strong>{{ serverIpText }}</strong>
         </div>
         <div class="server-chip">
-          <span class="server-chip__label">管理端口</span>
-          <strong>{{ serverInfo.port || '-' }}</strong>
-        </div>
-        <div class="server-chip">
           <span class="server-chip__label">设备 TCP 端口</span>
           <strong>{{ serverInfo.tcpPort || '-' }}</strong>
         </div>
@@ -57,8 +53,6 @@ export default {
         { path: '/home', label: '主界面', icon: 'el-icon-data-analysis' },
         { path: '/tools', label: '辅助工具', icon: 'el-icon-s-tools' },
         { path: '/database', label: '连接数据库', icon: 'el-icon-connection' },
-        { path: '/patterns', label: '花型列表', icon: 'el-icon-document' },
-        { path: '/pattern-stats', label: '花型统计', icon: 'el-icon-data-line' },
         { path: '/roles', label: '权限角色', icon: 'el-icon-s-check' },
         { path: '/users', label: '账号管理', icon: 'el-icon-user' },
         { path: '/devices', label: '设备管理', icon: 'el-icon-monitor' }

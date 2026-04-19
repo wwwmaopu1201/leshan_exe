@@ -28,6 +28,14 @@ type deleteAttempt struct {
 	options DeletePatternOptions
 }
 
+type UploadConflictMode string
+
+const (
+	UploadConflictModeAsk       UploadConflictMode = "ask"
+	UploadConflictModeOverwrite UploadConflictMode = "overwrite"
+	UploadConflictModeRename    UploadConflictMode = "rename"
+)
+
 type PatternTransferService struct {
 	db      *gorm.DB
 	connMgr *ConnectionManager
@@ -174,6 +182,20 @@ func (s *PatternTransferService) DeleteDevicePatternFile(device model.Device, fi
 }
 
 func (s *PatternTransferService) UploadPatternFromDevice(device model.Device, file model.DevicePatternFile, userID uint) (*model.Pattern, error) {
+	return s.UploadPatternFromDeviceWithMode(device, file, userID, UploadConflictModeAsk)
+}
+
+func (s *PatternTransferService) UploadPatternFromDeviceWithMode(device model.Device, file model.DevicePatternFile, userID uint, conflictMode UploadConflictMode) (*model.Pattern, error) {
+	return s.UploadPatternFromDeviceWithOptions(device, file, userID, conflictMode, "")
+}
+
+func (s *PatternTransferService) UploadPatternFromDeviceWithOptions(
+	device model.Device,
+	file model.DevicePatternFile,
+	userID uint,
+	conflictMode UploadConflictMode,
+	targetName string,
+) (*model.Pattern, error) {
 	dc, err := s.getDeviceConnection(device)
 	if err != nil {
 		return nil, err
@@ -331,14 +353,116 @@ func (s *PatternTransferService) UploadPatternFromDevice(device model.Device, fi
 		return nil, err
 	}
 
+	pattern, err := s.saveUploadedPattern(device, file, savePath, payload, userID, conflictMode, targetName)
+	if err != nil {
+		return nil, err
+	}
+
+	emitTCPLog(s.db, "info", true, "[TCP] Device upload completed: device=%s patternNo=%d file=%s bytes=%d patternId=%d", device.Code, file.PatternNo, file.FileName, len(payload), pattern.ID)
+
+	return pattern, nil
+}
+
+func NormalizeUploadConflictMode(raw string) UploadConflictMode {
+	switch UploadConflictMode(strings.ToLower(strings.TrimSpace(raw))) {
+	case UploadConflictModeOverwrite:
+		return UploadConflictModeOverwrite
+	case UploadConflictModeRename:
+		return UploadConflictModeRename
+	default:
+		return UploadConflictModeAsk
+	}
+}
+
+func ResolveUploadedPatternName(file model.DevicePatternFile, deviceID uint) string {
 	patternName := strings.TrimSpace(strings.TrimSuffix(file.FileName, filepath.Ext(file.FileName)))
 	if patternName == "" {
 		patternName = strings.TrimSpace(file.FileName)
 	}
 	if patternName == "" {
-		patternName = fmt.Sprintf("device_%d_pattern_%d", device.ID, file.PatternNo)
+		patternName = fmt.Sprintf("device_%d_pattern_%d", deviceID, file.PatternNo)
+	}
+	return patternName
+}
+
+func (s *PatternTransferService) saveUploadedPattern(
+	device model.Device,
+	file model.DevicePatternFile,
+	savePath string,
+	payload []byte,
+	userID uint,
+	conflictMode UploadConflictMode,
+	targetName string,
+) (*model.Pattern, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("pattern transfer service unavailable")
 	}
 
+	baseName := ResolveUploadedPatternName(file, device.ID)
+	targetName = strings.TrimSpace(targetName)
+	conflictMode = NormalizeUploadConflictMode(string(conflictMode))
+
+	var existing model.Pattern
+	existingErr := s.db.Where("name = ?", baseName).First(&existing).Error
+	hasExisting := existingErr == nil
+	if existingErr != nil && !errors.Is(existingErr, gorm.ErrRecordNotFound) {
+		return nil, existingErr
+	}
+
+	switch conflictMode {
+	case UploadConflictModeAsk:
+		if hasExisting {
+			return nil, fmt.Errorf("pattern name conflict: %s", baseName)
+		}
+		return s.createUploadedPattern(file, savePath, payload, userID, baseName)
+	case UploadConflictModeRename:
+		renameBase := baseName
+		if targetName != "" {
+			renameBase = targetName
+		}
+		finalName, err := s.nextAvailablePatternName(renameBase, 0)
+		if err != nil {
+			return nil, err
+		}
+		return s.createUploadedPattern(file, savePath, payload, userID, finalName)
+	case UploadConflictModeOverwrite:
+		if !hasExisting {
+			return s.createUploadedPattern(file, savePath, payload, userID, baseName)
+		}
+		oldPath := strings.TrimSpace(existing.FilePath)
+		updates := map[string]interface{}{
+			"name":         baseName,
+			"pattern_type": file.PatternType,
+			"file_name":    file.FileName,
+			"file_path":    savePath,
+			"file_size":    int64(len(payload)),
+			"stitches":     file.Stitches,
+			"unit_price":   file.UnitPrice,
+			"order_no":     file.OrderNo,
+			"uploaded_by":  userID,
+		}
+		if err := s.db.Model(&existing).Updates(updates).Error; err != nil {
+			return nil, err
+		}
+		if oldPath != "" && oldPath != savePath {
+			_ = os.Remove(oldPath)
+		}
+		if err := s.db.First(&existing, existing.ID).Error; err != nil {
+			return nil, err
+		}
+		return &existing, nil
+	default:
+		return nil, fmt.Errorf("unsupported upload conflict mode: %s", conflictMode)
+	}
+}
+
+func (s *PatternTransferService) createUploadedPattern(
+	file model.DevicePatternFile,
+	savePath string,
+	payload []byte,
+	userID uint,
+	patternName string,
+) (*model.Pattern, error) {
 	pattern := &model.Pattern{
 		Name:        patternName,
 		PatternType: file.PatternType,
@@ -353,10 +477,32 @@ func (s *PatternTransferService) UploadPatternFromDevice(device model.Device, fi
 	if err := s.db.Create(pattern).Error; err != nil {
 		return nil, err
 	}
-
-	emitTCPLog(s.db, "info", true, "[TCP] Device upload completed: device=%s patternNo=%d file=%s bytes=%d patternId=%d", device.Code, file.PatternNo, file.FileName, len(payload), pattern.ID)
-
 	return pattern, nil
+}
+
+func (s *PatternTransferService) nextAvailablePatternName(baseName string, excludeID uint) (string, error) {
+	baseName = strings.TrimSpace(baseName)
+	if baseName == "" {
+		baseName = "未命名花型"
+	}
+	for index := 0; index < 1000; index++ {
+		candidate := baseName
+		if index > 0 {
+			candidate = fmt.Sprintf("%s(%d)", baseName, index)
+		}
+		query := s.db.Model(&model.Pattern{}).Where("name = ?", candidate)
+		if excludeID > 0 {
+			query = query.Where("id <> ?", excludeID)
+		}
+		var count int64
+		if err := query.Count(&count).Error; err != nil {
+			return "", err
+		}
+		if count == 0 {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("failed to allocate unique pattern name for %s", baseName)
 }
 
 func resolveLiveDevicePatternFile(refreshed []model.DevicePatternFile, fallback model.DevicePatternFile) (model.DevicePatternFile, bool) {

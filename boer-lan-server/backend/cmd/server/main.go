@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -227,7 +228,15 @@ func main() {
 	// Start server
 	addr := fmt.Sprintf(":%d", config.Server.Port)
 	log.Printf("Server starting on %s", addr)
-	if err := r.Run(addr); err != nil {
+	httpServer := &http.Server{
+		Addr:              addr,
+		Handler:           r,
+		ReadHeaderTimeout: 30 * time.Second,
+		ReadTimeout:       5 * time.Minute,
+		WriteTimeout:      30 * time.Minute,
+		IdleTimeout:       5 * time.Minute,
+	}
+	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }

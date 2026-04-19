@@ -21,7 +21,7 @@ function normalizePort(value) {
 
 const request = axios.create({
   baseURL: import.meta.env.DEV ? '/api' : buildBaseURL(),
-  timeout: 10000
+  timeout: 2 * 60 * 1000
 })
 
 function redirectToLogin() {

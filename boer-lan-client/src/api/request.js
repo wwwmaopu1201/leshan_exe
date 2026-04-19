@@ -5,7 +5,7 @@ import { Message } from 'element-ui'
 
 // 创建axios实例
 const service = axios.create({
-  timeout: 30000
+  timeout: 2 * 60 * 1000
 })
 
 function resolveErrorMessage(error) {

@@ -4,9 +4,6 @@
       <div class="topbar-left">
         <img src="@/assets/images/logo.png" alt="Logo" class="topbar-logo" />
         <span class="topbar-title">局域网管理软件客户端</span>
-        <button class="collapse-btn" type="button" @click="toggleSidebar">
-          <i :class="isCollapsed ? 'el-icon-s-unfold' : 'el-icon-s-fold'"></i>
-        </button>
       </div>
       <div class="topbar-right">
         <div class="server-tag" v-if="serverAddress">
@@ -49,30 +46,30 @@
     </header>
 
     <div class="shell-body">
-      <aside class="sidebar" :class="{ collapsed: isCollapsed }">
+      <aside class="sidebar">
         <el-menu
           :default-active="activeMenu"
           class="sidebar-menu"
           background-color="transparent"
           text-color="#4c5768"
           active-text-color="#3388ff"
-          :collapse="isCollapsed"
+          :collapse="false"
           :unique-opened="true"
           router
         >
           <el-menu-item v-if="canAccess.home" index="/home">
-            <span class="menu-icon"><i class="el-icon-s-home"></i></span>
+            <i class="menu-icon el-icon-s-home"></i>
             <span slot="title">{{ $t('menu.home') }}</span>
           </el-menu-item>
 
           <el-menu-item v-if="canAccess.dashboard" index="/dashboard">
-            <span class="menu-icon"><i class="el-icon-data-board"></i></span>
+            <i class="menu-icon el-icon-data-board"></i>
             <span slot="title">{{ $t('menu.dashboard') }}</span>
           </el-menu-item>
 
           <el-submenu v-if="canAccess.deviceSection" index="/device">
             <template slot="title">
-              <span class="menu-icon"><i class="el-icon-monitor"></i></span>
+              <i class="menu-icon el-icon-monitor"></i>
               <span>{{ $t('menu.device') }}</span>
             </template>
             <el-menu-item v-if="canAccess.deviceManagement" index="/device/list">
@@ -85,7 +82,7 @@
 
           <el-submenu v-if="canAccess.fileManagement" index="/file">
             <template slot="title">
-              <span class="menu-icon"><i class="el-icon-folder"></i></span>
+              <i class="menu-icon el-icon-folder"></i>
               <span>{{ $t('menu.file') }}</span>
             </template>
             <el-menu-item index="/file/pattern">{{ $t('menu.patternList') }}</el-menu-item>
@@ -97,7 +94,7 @@
 
           <el-submenu v-if="canAccess.statistics" index="/statistics">
             <template slot="title">
-              <span class="menu-icon"><i class="el-icon-s-data"></i></span>
+              <i class="menu-icon el-icon-s-data"></i>
               <span>{{ $t('menu.statistics') }}</span>
             </template>
             <el-menu-item index="/statistics/salary">{{ $t('menu.salaryStats') }}</el-menu-item>
@@ -108,7 +105,7 @@
 
           <el-submenu v-if="canAccess.employeeManagement" index="/employee">
             <template slot="title">
-              <span class="menu-icon"><i class="el-icon-user"></i></span>
+              <i class="menu-icon el-icon-user"></i>
               <span>{{ $t('menu.employee') }}</span>
             </template>
             <el-menu-item index="/employee/list">{{ $t('menu.employeeList') }}</el-menu-item>
@@ -116,7 +113,7 @@
 
           <el-submenu index="/profile">
             <template slot="title">
-              <span class="menu-icon"><i class="el-icon-user-solid"></i></span>
+              <i class="menu-icon el-icon-user-solid"></i>
               <span>{{ $t('menu.profile') }}</span>
             </template>
             <el-menu-item index="/profile/info">{{ $t('menu.basicInfo') }}</el-menu-item>
@@ -125,7 +122,7 @@
 
           <el-submenu index="/support">
             <template slot="title">
-              <span class="menu-icon"><i class="el-icon-service"></i></span>
+              <i class="menu-icon el-icon-service"></i>
               <span>{{ $t('menu.support') }}</span>
             </template>
             <el-menu-item index="/support/contact">{{ $t('menu.contact') }}</el-menu-item>
@@ -145,7 +142,7 @@
 
 <script>
 import defaultAvatar from '@/assets/images/default-avatar.svg'
-import { mapState, mapMutations, mapActions } from 'vuex'
+import { mapState, mapActions } from 'vuex'
 
 export default {
   name: 'MainLayout',
@@ -158,7 +155,7 @@ export default {
     }
   },
   computed: {
-    ...mapState(['user', 'sidebarCollapsed', 'language', 'serverConfig']),
+    ...mapState(['user', 'language', 'serverConfig']),
     avatarSrc() {
       const avatar = String(this.user?.avatar || '').trim()
       if (!avatar) {
@@ -186,9 +183,6 @@ export default {
         remoteMonitoring,
         deviceSection: deviceManagement || remoteMonitoring
       }
-    },
-    isCollapsed() {
-      return this.sidebarCollapsed
     },
     activeMenu() {
       return this.$route.path
@@ -223,11 +217,7 @@ export default {
     }
   },
   methods: {
-    ...mapMutations(['TOGGLE_SIDEBAR']),
     ...mapActions(['logout', 'setLanguage']),
-    toggleSidebar() {
-      this.TOGGLE_SIDEBAR()
-    },
     changeLang(lang) {
       if (lang === this.currentLang) {
         return
@@ -370,6 +360,10 @@ export default {
     padding: 0 !important;
     justify-content: center;
   }
+
+  ::v-deep .el-menu--collapse .menu-icon {
+    margin-right: 0;
+  }
 }
 
 .menu-icon {
@@ -389,22 +383,6 @@ export default {
   display: flex;
   flex-direction: column;
   min-width: 0;
-}
-
-.collapse-btn {
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.12);
-  color: #ffffff;
-  font-size: 14px;
-  cursor: pointer;
-  transition: background-color 0.2s ease;
-
-  &:hover {
-    background: rgba(255, 255, 255, 0.2);
-  }
 }
 
 .server-tag {
