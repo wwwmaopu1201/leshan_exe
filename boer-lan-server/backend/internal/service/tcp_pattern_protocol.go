@@ -104,6 +104,13 @@ func buildDownloadPatternCommand(patternName string) *Packet {
 	return buildPatternCommand(PNDownloadPatternCommand, encodeUTF16LE(patternName))
 }
 
+func buildDownloadPatternCommandWithAddr(patternName string, addr1, addr2 uint32) *Packet {
+	pkt := buildDownloadPatternCommand(patternName)
+	pkt.Addr1 = addr1
+	pkt.Addr2 = addr2
+	return pkt
+}
+
 func buildUploadPatternCommand(patternNo uint, patternName string) *Packet {
 	payload := make([]byte, 2)
 	binary.BigEndian.PutUint16(payload, uint16(patternNo))
@@ -273,13 +280,15 @@ func parsePatternListPayloadWithOptions(data []byte, includeID bool) []PatternLi
 	return entries
 }
 
-func buildDownloadPatternFrames(data []byte) []*Packet {
+func buildDownloadPatternFrames(data []byte, addr1, addr2 uint32) []*Packet {
 	if len(data) == 0 {
 		return []*Packet{{
 			ParamType:   PTPattern,
 			ParamNo:     PNDownloadPatternData,
 			TotalFrames: 1,
 			FrameNo:     1,
+			Addr1:       addr1,
+			Addr2:       addr2,
 			Data:        nil,
 		}}
 	}
@@ -297,6 +306,8 @@ func buildDownloadPatternFrames(data []byte) []*Packet {
 			ParamNo:     PNDownloadPatternData,
 			TotalFrames: uint8(totalFrames),
 			FrameNo:     uint8(index + 1),
+			Addr1:       addr1,
+			Addr2:       addr2,
 			Data:        append([]byte(nil), data[start:end]...),
 		})
 	}

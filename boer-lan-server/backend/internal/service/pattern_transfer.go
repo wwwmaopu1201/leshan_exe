@@ -15,8 +15,12 @@ import (
 )
 
 const (
-	transferTypeUpload   = 1
-	transferTypeDownload = 2
+	transferTypeUpload             = 1
+	transferTypeDownload           = 2
+	patternTransferResponseTimeout = 5 * time.Minute
+	patternUploadStartTimeout      = 30 * time.Second
+	patternUploadIdleTimeout       = 3 * time.Second
+	patternUploadResumeInterval    = 3 * time.Second
 )
 
 type deleteAttempt struct {
@@ -58,7 +62,7 @@ func (s *PatternTransferService) RefreshDevicePatternFiles(device model.Device) 
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), patternTransferResponseTimeout)
 	defer cancel()
 
 	totalFrames := 0
@@ -175,32 +179,72 @@ func (s *PatternTransferService) UploadPatternFromDevice(device model.Device, fi
 		return nil, err
 	}
 
+	if refreshed, refreshErr := s.RefreshDevicePatternFiles(device); refreshErr == nil {
+		if resolved, ok := resolveLiveDevicePatternFile(refreshed, file); ok {
+			file = resolved
+		}
+	} else {
+		emitTCPLog(s.db, "warn", true, "[TCP] Refresh device pattern list before upload failed: device=%s id=%d err=%v", device.Code, device.ID, refreshErr)
+	}
+
 	ch, cleanup, err := dc.beginPatternSession()
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
 
+	emitTCPLog(s.db, "info", true, "[TCP] Request device upload pattern: device=%s id=%d patternNo=%d file=%s", device.Code, device.ID, file.PatternNo, file.FileName)
 	if err := dc.writePacket(buildUploadPatternCommand(file.PatternNo, file.FileName)); err != nil {
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), patternTransferResponseTimeout)
 	defer cancel()
 
 	totalFrames := 0
 	frames := make(map[int][]byte)
 	uploadFinished := false
+	lastResumeFrame := 0
+	var lastResumeAt time.Time
 
 	for {
 		if uploadFinished && totalFrames > 0 && len(frames) >= totalFrames {
 			break
 		}
 
-		pkt, err := waitPatternPacket(ctx, ch, func(pkt *Packet) bool {
-			return pkt.ParamType == PTPattern && (pkt.ParamNo == PNUploadPatternCommand || pkt.ParamNo == PNUploadPatternData)
+		waitTimeout := patternUploadStartTimeout
+		if totalFrames > 0 {
+			waitTimeout = patternUploadIdleTimeout
+		}
+		waitCtx, cancelWait := context.WithTimeout(ctx, waitTimeout)
+		pkt, err := waitPatternPacket(waitCtx, ch, func(pkt *Packet) bool {
+			return pkt.ParamType == PTPattern && (pkt.ParamNo == PNUploadPatternCommand || pkt.ParamNo == PNUploadPatternData || pkt.ParamNo == PNTransferResume)
 		})
+		cancelWait()
 		if err != nil {
+			if isWaitPatternPacketTimeout(err) && totalFrames > 0 && len(frames) < totalFrames {
+				missingFrame := firstMissingUploadFrame(totalFrames, frames)
+				if missingFrame > 0 && (missingFrame != lastResumeFrame || time.Since(lastResumeAt) >= patternUploadResumeInterval) {
+					emitTCPLog(
+						s.db,
+						"warn",
+						true,
+						"[TCP] Upload stalled, requesting resume: device=%s patternNo=%d file=%s nextFrame=%d received=%d/%d",
+						device.Code,
+						file.PatternNo,
+						file.FileName,
+						missingFrame,
+						len(frames),
+						totalFrames,
+					)
+					if err := dc.writePacket(buildTransferResume(transferTypeUpload, uint8(missingFrame))); err != nil {
+						return nil, err
+					}
+					lastResumeFrame = missingFrame
+					lastResumeAt = time.Now()
+					continue
+				}
+			}
 			return nil, err
 		}
 
@@ -210,6 +254,7 @@ func (s *PatternTransferService) UploadPatternFromDevice(device model.Device, fi
 			if !ok {
 				continue
 			}
+			emitTCPLog(s.db, "info", true, "[TCP] Device upload status: device=%s patternNo=%d file=%s status=%d", device.Code, file.PatternNo, file.FileName, status)
 			switch status {
 			case 0:
 				continue
@@ -224,6 +269,23 @@ func (s *PatternTransferService) UploadPatternFromDevice(device model.Device, fi
 			default:
 				return nil, fmt.Errorf("device upload finished with result=%d", status)
 			}
+		case PNTransferResume:
+			resume, ok := parseTransferResume(pkt.Data)
+			if !ok {
+				continue
+			}
+			if resume.TransferType == transferTypeUpload {
+				reqFrame := resume.FrameNo
+				if reqFrame < 1 {
+					reqFrame = 1
+				}
+				emitTCPLog(s.db, "info", true, "[TCP] Device upload resume requested: device=%s patternNo=%d file=%s frame=%d", device.Code, file.PatternNo, file.FileName, reqFrame)
+				if err := dc.writePacket(buildTransferResume(transferTypeUpload, reqFrame)); err != nil {
+					return nil, err
+				}
+				lastResumeFrame = int(reqFrame)
+				lastResumeAt = time.Now()
+			}
 		case PNUploadPatternData:
 			if totalFrames == 0 {
 				totalFrames = int(pkt.TotalFrames)
@@ -232,9 +294,12 @@ func (s *PatternTransferService) UploadPatternFromDevice(device model.Device, fi
 				}
 			}
 			frames[int(pkt.FrameNo)] = append([]byte(nil), pkt.Data...)
+			emitTCPLog(s.db, "info", false, "[TCP] Device upload data frame: device=%s patternNo=%d frame=%d/%d size=%d", device.Code, file.PatternNo, pkt.FrameNo, pkt.TotalFrames, len(pkt.Data))
 			if err := dc.writePacket(buildUploadPatternDataAck(pkt.TotalFrames, pkt.FrameNo, 0)); err != nil {
 				return nil, err
 			}
+			emitTCPLog(s.db, "info", false, "[TCP] Device upload data ack sent: device=%s patternNo=%d frame=%d/%d result=0", device.Code, file.PatternNo, pkt.FrameNo, pkt.TotalFrames)
+			lastResumeFrame = 0
 		}
 	}
 
@@ -289,7 +354,32 @@ func (s *PatternTransferService) UploadPatternFromDevice(device model.Device, fi
 		return nil, err
 	}
 
+	emitTCPLog(s.db, "info", true, "[TCP] Device upload completed: device=%s patternNo=%d file=%s bytes=%d patternId=%d", device.Code, file.PatternNo, file.FileName, len(payload), pattern.ID)
+
 	return pattern, nil
+}
+
+func resolveLiveDevicePatternFile(refreshed []model.DevicePatternFile, fallback model.DevicePatternFile) (model.DevicePatternFile, bool) {
+	if len(refreshed) == 0 {
+		return model.DevicePatternFile{}, false
+	}
+
+	for _, item := range refreshed {
+		if fallback.PatternNo > 0 && item.PatternNo == fallback.PatternNo {
+			return item, true
+		}
+	}
+
+	fallbackName := strings.TrimSpace(fallback.FileName)
+	if fallbackName == "" {
+		return model.DevicePatternFile{}, false
+	}
+	for _, item := range refreshed {
+		if strings.EqualFold(strings.TrimSpace(item.FileName), fallbackName) {
+			return item, true
+		}
+	}
+	return model.DevicePatternFile{}, false
 }
 
 func buildDeleteAttempts(file model.DevicePatternFile) []deleteAttempt {
@@ -398,15 +488,18 @@ func (s *PatternTransferService) ExecuteDownloadTask(taskID uint) error {
 		return err
 	}
 
-	commandCtx, cancelCommand := context.WithTimeout(context.Background(), 8*time.Second)
+	commandCtx, cancelCommand := context.WithTimeout(context.Background(), patternTransferResponseTimeout)
 	defer cancelCommand()
-	if _, err := waitPatternPacket(commandCtx, ch, func(pkt *Packet) bool {
+	commandAck, err := waitPatternPacket(commandCtx, ch, func(pkt *Packet) bool {
 		return pkt.ParamType == PTPattern && pkt.ParamNo == PNDownloadPatternCommand
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
 
-	frames := buildDownloadPatternFrames(data)
+	addr1 := commandAck.Addr1
+	addr2 := commandAck.Addr2
+	frames := buildDownloadPatternFrames(data, addr1, addr2)
 	totalFrames := len(frames)
 
 	for index, frame := range frames {
@@ -426,7 +519,7 @@ func (s *PatternTransferService) ExecuteDownloadTask(taskID uint) error {
 		}
 
 		for {
-			frameCtx, cancelFrame := context.WithTimeout(context.Background(), 8*time.Second)
+			frameCtx, cancelFrame := context.WithTimeout(context.Background(), patternTransferResponseTimeout)
 			pkt, err := waitPatternPacket(frameCtx, ch, func(pkt *Packet) bool {
 				return pkt.ParamType == PTPattern &&
 					(pkt.ParamNo == PNCommunicationError || pkt.ParamNo == PNTransferResume)
@@ -470,7 +563,7 @@ func (s *PatternTransferService) ExecuteDownloadTask(taskID uint) error {
 		return err
 	}
 
-	resultCtx, cancelResult := context.WithTimeout(context.Background(), 8*time.Second)
+	resultCtx, cancelResult := context.WithTimeout(context.Background(), patternTransferResponseTimeout)
 	defer cancelResult()
 	pkt, err := waitPatternPacket(resultCtx, ch, func(pkt *Packet) bool {
 		return pkt.ParamType == PTPattern && pkt.ParamNo == PNDownloadPatternData
@@ -598,6 +691,22 @@ func waitPatternPacket(ctx context.Context, ch <-chan *Packet, match func(*Packe
 			}
 		}
 	}
+}
+
+func isWaitPatternPacketTimeout(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "timeout waiting for device response")
+}
+
+func firstMissingUploadFrame(totalFrames int, frames map[int][]byte) int {
+	if totalFrames <= 0 {
+		return 0
+	}
+	for frameNo := 1; frameNo <= totalFrames; frameNo++ {
+		if _, ok := frames[frameNo]; !ok {
+			return frameNo
+		}
+	}
+	return 0
 }
 
 func (s *PatternTransferService) updateDownloadTask(taskID uint, updates map[string]interface{}) error {
