@@ -78,16 +78,16 @@ func Ensure() (*Status, error) {
 		return buildStatus(statePath, state, now, false), nil
 	}
 
-	if reason := trialResetReason(state); reason != "" {
-		log.Printf("Resetting trial state: %s", reason)
-		resetState(state, machineHash, currentVersion, now)
-	}
-
-	if state.MachineHash != machineHash {
+	if state.MachineHash != "" && state.MachineHash != machineHash {
 		status := buildStatus(statePath, state, now, false)
 		status.Valid = false
 		status.Message = "试用授权已绑定到其他设备，无法继续使用"
 		return status, errors.New(status.Message)
+	}
+
+	if reason := trialResetReason(state, currentVersion); reason != "" {
+		log.Printf("Resetting trial state: %s", reason)
+		resetState(state, machineHash, currentVersion, now)
 	}
 
 	lastSeen := time.Unix(state.LastSeenAt, 0)
@@ -105,7 +105,7 @@ func Ensure() (*Status, error) {
 		return status, errors.New(status.Message)
 	}
 
-	if appversion.Normalize(state.AppVersion) != currentVersion {
+	if appversion.Compare(currentVersion, state.AppVersion) == 0 && state.AppVersion != currentVersion {
 		state.AppVersion = currentVersion
 	}
 	state.LastSeenAt = now.Unix()
@@ -118,9 +118,12 @@ func Ensure() (*Status, error) {
 	return status, nil
 }
 
-func trialResetReason(state *State) string {
+func trialResetReason(state *State, currentVersion string) string {
 	if state.PolicyVersion < trialPolicyVersion {
 		return fmt.Sprintf("policy version changed %d -> %d", state.PolicyVersion, trialPolicyVersion)
+	}
+	if appversion.Compare(currentVersion, state.AppVersion) > 0 {
+		return fmt.Sprintf("app version upgraded %q -> %q", appversion.Normalize(state.AppVersion), currentVersion)
 	}
 	return ""
 }

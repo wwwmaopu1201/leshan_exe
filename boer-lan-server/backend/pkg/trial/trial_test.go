@@ -7,10 +7,10 @@ import (
 	appversion "boer-lan-server/pkg/version"
 )
 
-func TestEnsureKeepsTrialWhenVersionChanges(t *testing.T) {
+func TestEnsureResetsTrialWhenUpgradingVersion(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("DATA_DIR", tempDir)
-	t.Setenv("APP_VERSION", "1.0.10")
+	t.Setenv("APP_VERSION", "1.0.13")
 
 	statePath, err := resolveStatePath()
 	if err != nil {
@@ -31,12 +31,14 @@ func TestEnsureKeepsTrialWhenVersionChanges(t *testing.T) {
 		LastSeenAt:    lastSeenAt,
 		LaunchCount:   7,
 		PolicyVersion: trialPolicyVersion,
-		AppVersion:    "1.0.8",
+		AppVersion:    "1.0.12",
 	}); err != nil {
 		t.Fatalf("writeState failed: %v", err)
 	}
 
+	beforeEnsure := time.Now().Unix()
 	status, err := Ensure()
+	afterEnsure := time.Now().Unix()
 	if err != nil {
 		t.Fatalf("Ensure failed: %v", err)
 	}
@@ -54,18 +56,21 @@ func TestEnsureKeepsTrialWhenVersionChanges(t *testing.T) {
 	if state.AppVersion != appversion.Resolve() {
 		t.Fatalf("expected app version %q, got %q", appversion.Resolve(), state.AppVersion)
 	}
-	if state.LaunchCount != 8 {
-		t.Fatalf("expected launch count to increment to 8, got %d", state.LaunchCount)
+	if state.LaunchCount != 1 {
+		t.Fatalf("expected launch count to reset to 1, got %d", state.LaunchCount)
 	}
-	if state.FirstSeenAt != firstSeenAt {
-		t.Fatalf("expected firstSeenAt to stay %d, got %d", firstSeenAt, state.FirstSeenAt)
+	if state.FirstSeenAt <= firstSeenAt {
+		t.Fatalf("expected firstSeenAt to reset after %d, got %d", firstSeenAt, state.FirstSeenAt)
+	}
+	if state.FirstSeenAt < beforeEnsure || state.FirstSeenAt > afterEnsure {
+		t.Fatalf("expected firstSeenAt to reset within ensure window [%d,%d], got %d", beforeEnsure, afterEnsure, state.FirstSeenAt)
 	}
 }
 
 func TestEnsureKeepsTrialForSameVersion(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("DATA_DIR", tempDir)
-	t.Setenv("APP_VERSION", "1.0.10")
+	t.Setenv("APP_VERSION", "1.0.13")
 
 	statePath, err := resolveStatePath()
 	if err != nil {
@@ -86,7 +91,7 @@ func TestEnsureKeepsTrialForSameVersion(t *testing.T) {
 		LastSeenAt:    lastSeenAt,
 		LaunchCount:   3,
 		PolicyVersion: trialPolicyVersion,
-		AppVersion:    "V1.0.10",
+		AppVersion:    "V1.0.13",
 	}); err != nil {
 		t.Fatalf("writeState failed: %v", err)
 	}
@@ -106,6 +111,9 @@ func TestEnsureKeepsTrialForSameVersion(t *testing.T) {
 	if !exists {
 		t.Fatal("expected state file to exist")
 	}
+	if state.AppVersion != appversion.Resolve() {
+		t.Fatalf("expected app version %q, got %q", appversion.Resolve(), state.AppVersion)
+	}
 	if state.FirstSeenAt != firstSeenAt {
 		t.Fatalf("expected firstSeenAt to stay %d, got %d", firstSeenAt, state.FirstSeenAt)
 	}
@@ -117,7 +125,7 @@ func TestEnsureKeepsTrialForSameVersion(t *testing.T) {
 func TestEnsureKeepsTrialWhenDowngradingVersion(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("DATA_DIR", tempDir)
-	t.Setenv("APP_VERSION", "1.0.10")
+	t.Setenv("APP_VERSION", "1.0.12")
 
 	statePath, err := resolveStatePath()
 	if err != nil {
@@ -138,7 +146,7 @@ func TestEnsureKeepsTrialWhenDowngradingVersion(t *testing.T) {
 		LastSeenAt:    lastSeenAt,
 		LaunchCount:   5,
 		PolicyVersion: trialPolicyVersion,
-		AppVersion:    "1.1.0",
+		AppVersion:    "1.0.13",
 	}); err != nil {
 		t.Fatalf("writeState failed: %v", err)
 	}
@@ -158,8 +166,8 @@ func TestEnsureKeepsTrialWhenDowngradingVersion(t *testing.T) {
 	if !exists {
 		t.Fatal("expected state file to exist")
 	}
-	if state.AppVersion != appversion.Resolve() {
-		t.Fatalf("expected downgraded app version %q, got %q", appversion.Resolve(), state.AppVersion)
+	if state.AppVersion != "1.0.13" {
+		t.Fatalf("expected stored app version to remain at newest seen version %q, got %q", "1.0.13", state.AppVersion)
 	}
 	if state.LaunchCount != 6 {
 		t.Fatalf("expected launch count to increment to 6, got %d", state.LaunchCount)

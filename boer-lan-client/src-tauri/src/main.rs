@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
 use std::env;
 use std::fs;
@@ -87,8 +88,41 @@ fn machine_hash() -> String {
     format!("{:016x}", hasher.finish())
 }
 
+fn normalize_version(raw: &str) -> String {
+    raw.trim().trim_start_matches(['v', 'V']).to_string()
+}
+
+fn parse_version_parts(raw: &str) -> Vec<u32> {
+    let normalized = normalize_version(raw);
+    if normalized.is_empty() {
+        return Vec::new();
+    }
+
+    normalized
+        .split('.')
+        .map(|part| part.parse::<u32>().unwrap_or(0))
+        .collect()
+}
+
+fn compare_versions(left: &str, right: &str) -> Ordering {
+    let left_parts = parse_version_parts(left);
+    let right_parts = parse_version_parts(right);
+    let max_len = left_parts.len().max(right_parts.len());
+
+    for index in 0..max_len {
+        let left_part = *left_parts.get(index).unwrap_or(&0);
+        let right_part = *right_parts.get(index).unwrap_or(&0);
+        match left_part.cmp(&right_part) {
+            Ordering::Equal => continue,
+            ordering => return ordering,
+        }
+    }
+
+    Ordering::Equal
+}
+
 fn current_app_version(app: &tauri::AppHandle) -> String {
-    app.package_info().version.to_string()
+    normalize_version(&app.package_info().version.to_string())
 }
 
 fn trial_state_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -100,11 +134,19 @@ fn trial_state_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 
 fn reset_trial_state(state: &mut TrialState, machine_hash: &str, app_version: &str, now: u64) {
     state.machine_hash = machine_hash.to_string();
-    state.app_version = Some(app_version.to_string());
+    state.app_version = Some(normalize_version(app_version));
     state.first_seen_at = now;
     state.last_seen_at = now;
     state.launch_count = 0;
     state.policy_version = TRIAL_POLICY_VERSION;
+}
+
+fn should_reset_trial_state(state: &TrialState, current_app_version: &str) -> bool {
+    state.policy_version < TRIAL_POLICY_VERSION
+        || compare_versions(
+            current_app_version,
+            state.app_version.as_deref().unwrap_or_default(),
+        ) == Ordering::Greater
 }
 
 fn write_state(path: &PathBuf, state: &TrialState) -> Result<(), String> {
@@ -182,7 +224,7 @@ fn inspect_trial_status(app: &tauri::AppHandle) -> TrialStatus {
         }
     };
 
-    if state.machine_hash != current_machine_hash {
+    if !state.machine_hash.is_empty() && state.machine_hash != current_machine_hash {
         return TrialStatus {
             valid: false,
             message: "试用授权已绑定到其他设备，无法继续使用".to_string(),
@@ -191,9 +233,14 @@ fn inspect_trial_status(app: &tauri::AppHandle) -> TrialStatus {
         };
     }
 
-    if state.policy_version < TRIAL_POLICY_VERSION {
+    if should_reset_trial_state(&state, &current_app_version) {
         reset_trial_state(&mut state, &current_machine_hash, &current_app_version, now);
-    } else if state.app_version.as_deref() != Some(current_app_version.as_str()) {
+    } else if compare_versions(
+        state.app_version.as_deref().unwrap_or_default(),
+        &current_app_version,
+    ) == Ordering::Equal
+        && state.app_version.as_deref() != Some(current_app_version.as_str())
+    {
         state.app_version = Some(current_app_version.clone());
     }
 
