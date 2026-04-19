@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::fs;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -57,11 +58,47 @@ fn current_app_version(app: &tauri::AppHandle) -> String {
     normalize_version(&app.package_info().version.to_string())
 }
 
-fn trial_reset_reason(state: &TrialState) -> Option<String> {
+fn parse_version_parts(raw: &str) -> Vec<u32> {
+    let normalized = normalize_version(raw);
+    if normalized.is_empty() {
+        return Vec::new();
+    }
+
+    normalized
+        .split('.')
+        .map(|part| part.parse::<u32>().unwrap_or(0))
+        .collect()
+}
+
+fn compare_versions(left: &str, right: &str) -> Ordering {
+    let left_parts = parse_version_parts(left);
+    let right_parts = parse_version_parts(right);
+    let max_len = left_parts.len().max(right_parts.len());
+
+    for index in 0..max_len {
+        let left_part = *left_parts.get(index).unwrap_or(&0);
+        let right_part = *right_parts.get(index).unwrap_or(&0);
+        match left_part.cmp(&right_part) {
+            Ordering::Equal => continue,
+            ordering => return ordering,
+        }
+    }
+
+    Ordering::Equal
+}
+
+fn trial_reset_reason(state: &TrialState, current_version: &str) -> Option<String> {
     if state.policy_version < TRIAL_POLICY_VERSION {
         return Some(format!(
             "policy version changed {} -> {}",
             state.policy_version, TRIAL_POLICY_VERSION
+        ));
+    }
+    if compare_versions(current_version, &state.app_version) == Ordering::Greater {
+        return Some(format!(
+            "app version upgraded {} -> {}",
+            normalize_version(&state.app_version),
+            current_version
         ));
     }
     None
@@ -69,12 +106,16 @@ fn trial_reset_reason(state: &TrialState) -> Option<String> {
 
 fn sync_trial_version(state: &mut TrialState, current_version: &str) -> bool {
     let stored_version = normalize_version(&state.app_version);
-    if stored_version == current_version {
-        return false;
+    if compare_versions(&stored_version, current_version) == Ordering::Equal {
+        if state.app_version == current_version {
+            return false;
+        }
+
+        state.app_version = current_version.to_string();
+        return true;
     }
 
-    state.app_version = current_version.to_string();
-    true
+    false
 }
 
 fn reset_trial_state(state: &mut TrialState, current_version: &str, now: u64) {
@@ -236,7 +277,7 @@ fn inspect_trial_status(app: &tauri::AppHandle) -> TrialStatus {
 
     let mut state_changed = false;
 
-    if let Some(reason) = trial_reset_reason(&state) {
+    if let Some(reason) = trial_reset_reason(&state, &current_version) {
         println!("Resetting trial state: {reason}");
         reset_trial_state(&mut state, &current_version, now);
         state_changed = true;
