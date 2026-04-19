@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,6 +14,7 @@ const (
 	TCPPort               = 38400
 	ConnectionIdleTimeout = 3 * time.Minute
 	OfflineCheckInterval  = 15 * time.Second
+	ReconnectGracePeriod  = 5 * time.Second
 )
 
 // ConnectionManager 管理所有设备TCP连接
@@ -64,6 +66,29 @@ func (cm *ConnectionManager) Get(code string) *DeviceConnection {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 	return cm.conns[code]
+}
+
+func (cm *ConnectionManager) HasBoundDevice(deviceID uint, code, mainboardSN string, exclude *DeviceConnection) bool {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	trimmedCode := strings.TrimSpace(code)
+	trimmedMainboardSN := strings.TrimSpace(mainboardSN)
+	for _, dc := range cm.conns {
+		if dc == nil || dc == exclude {
+			continue
+		}
+		if deviceID > 0 && dc.deviceID == deviceID {
+			return true
+		}
+		if trimmedMainboardSN != "" && strings.TrimSpace(dc.deviceFlag) == trimmedMainboardSN {
+			return true
+		}
+		if trimmedCode != "" && strings.TrimSpace(dc.deviceCode) == trimmedCode {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *TCPServer) ConnectionManager() *ConnectionManager {

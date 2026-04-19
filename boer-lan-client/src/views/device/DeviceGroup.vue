@@ -629,7 +629,10 @@ export default {
       return ''
     },
     formatDeviceName(row) {
-      const name = String(row?.name || '').trim()
+      const displayName = String(row?.displayName || '').trim()
+      const initialName = String(row?.initialName || '').trim()
+      const code = String(row?.code || '').trim()
+      const name = displayName || initialName || code || String(row?.name || '').trim()
       const employeeName = String(row?.employeeName || '').trim()
       if (!employeeName) {
         return name

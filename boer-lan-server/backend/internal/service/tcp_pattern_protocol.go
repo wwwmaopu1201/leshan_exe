@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"unicode/utf16"
+	"unicode/utf8"
 )
 
 const (
@@ -266,7 +267,7 @@ func parsePatternListPayloadWithOptions(data []byte, includeID bool) []PatternLi
 			entry.PatternNo = uint(binary.BigEndian.Uint16(data[offset : offset+2]))
 			nameOffset += 2
 		}
-		entry.FileName = strings.TrimSpace(normalizeProtocolText(data[nameOffset : nameOffset+patternNameFixedBytes]))
+		entry.FileName = strings.TrimSpace(decodeCompatibleProtocolText(data[nameOffset : nameOffset+patternNameFixedBytes]))
 		entries = append(entries, entry)
 	}
 	return entries
@@ -393,4 +394,30 @@ func decodeUTF16LECString(data []byte) string {
 
 func decodeUTF16LEFixed(data []byte) string {
 	return decodeUTF16LECString(data)
+}
+
+func decodeCompatibleProtocolText(data []byte) string {
+	if len(data) == 0 {
+		return ""
+	}
+
+	rawUTF8Text := string(data)
+	looksBrokenUTF8 := !utf8.Valid(data) || strings.ContainsRune(rawUTF8Text, '\u0000')
+
+	if !looksBrokenUTF8 {
+		for _, r := range rawUTF8Text {
+			if r >= '\u0001' && r <= '\u001f' && r != '\n' && r != '\r' && r != '\t' {
+				looksBrokenUTF8 = true
+				break
+			}
+		}
+	}
+
+	if looksBrokenUTF8 && len(data)%2 == 0 {
+		if unicodeText := decodeUTF16LECString(data); unicodeText != "" && !strings.ContainsRune(unicodeText, utf8.RuneError) {
+			return strings.TrimSpace(unicodeText)
+		}
+	}
+
+	return strings.TrimSpace(trimNullBytes(data))
 }

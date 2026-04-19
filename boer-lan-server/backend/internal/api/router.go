@@ -61,6 +61,8 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, se
 		protected.PUT("/device/:id", permDevice, deviceHandler.UpdateDevice)
 		protected.DELETE("/device/:id", permDevice, deviceHandler.DeleteDevice)
 		protected.DELETE("/device/batch", permDevice, deviceHandler.BatchDeleteDevices)
+		protected.DELETE("/device/:id/hard", permDevice, deviceHandler.HardDeleteDevice)
+		protected.DELETE("/device/batch/hard", permDevice, deviceHandler.HardDeleteDevices)
 		protected.POST("/device/move", permDevice, deviceHandler.MoveToGroup)
 		protected.POST("/device/:id/control/confirm", permRemoteMonitoring, deviceHandler.ConfirmRemoteControl)
 
@@ -98,6 +100,7 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, se
 
 		// Device Files (upload back to server)
 		protected.GET("/pattern/device-files", permDevicePatternFiles, patternHandler.GetDevicePatternFiles)
+		protected.POST("/pattern/device-files/refresh", permDevicePatternFiles, patternHandler.RefreshDevicePatternFiles)
 		protected.DELETE("/pattern/device-files/:id", permDevicePatternFiles, patternHandler.DeleteDevicePatternFile)
 		protected.POST("/pattern/device-files/upload", permDevicePatternFiles, patternHandler.UploadDeviceFilesToServer)
 		protected.GET("/pattern/upload-queue", permDevicePatternFiles, patternHandler.GetUploadQueue)
@@ -114,6 +117,7 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, se
 		protected.GET("/statistics/dashboard", permDashboard, statsHandler.GetDashboardData)
 		protected.GET("/statistics/salary", permSalaryStats, statsHandler.GetSalaryStats)
 		protected.GET("/statistics/salary/detail", permSalaryStats, statsHandler.GetSalaryDetail)
+		protected.GET("/statistics/device-patterns", permStatusStats, statsHandler.GetDevicePatternStats)
 		protected.GET("/statistics/process", permStatusStats, statsHandler.GetProcessOverview)
 		protected.GET("/statistics/duration", permStatusStats, statsHandler.GetDurationStats)
 		protected.GET("/statistics/alarm", permStatusStats, statsHandler.GetAlarmStats)

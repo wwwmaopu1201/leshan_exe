@@ -224,9 +224,9 @@ func (h *DeviceHandler) GetDeviceTree(c *gin.Context) {
 func (h *DeviceHandler) buildDeviceNodes(devices []model.Device) []gin.H {
 	nodes := make([]gin.H, 0, len(devices))
 	for _, d := range devices {
-		label := d.Name
+		label := resolveDeviceDisplayName(d.Name, d.InitialName, d.Code)
 		if strings.TrimSpace(d.EmployeeName) != "" {
-			label = d.Name + "（" + strings.TrimSpace(d.EmployeeName) + "）"
+			label = label + "（" + strings.TrimSpace(d.EmployeeName) + "）"
 		}
 		nodes = append(nodes, gin.H{
 			"id":           d.ID,
@@ -271,6 +271,41 @@ func (h *DeviceHandler) buildTree(groups []model.Group) []gin.H {
 		result = append(result, node)
 	}
 	return result
+}
+
+func resolveDeviceDisplayName(name, initialName, code string) string {
+	name = strings.TrimSpace(name)
+	initialName = strings.TrimSpace(initialName)
+	code = strings.TrimSpace(code)
+
+	if name != "" && name != initialName && !isPlaceholderDisplayName(name, code) {
+		return name
+	}
+	if initialName != "" && !isPlaceholderDisplayName(initialName, code) {
+		return initialName
+	}
+	if code != "" {
+		return code
+	}
+	if name != "" {
+		return name
+	}
+	return initialName
+}
+
+func isPlaceholderDisplayName(value, code string) bool {
+	value = strings.TrimSpace(value)
+	code = strings.TrimSpace(code)
+	if value == "" {
+		return false
+	}
+	if strings.HasPrefix(value, "待识别设备") {
+		return true
+	}
+	if code != "" && value == "设备 "+code {
+		return true
+	}
+	return false
 }
 
 func (h *DeviceHandler) GetDeviceList(c *gin.Context) {
@@ -354,10 +389,12 @@ func (h *DeviceHandler) GetDeviceList(c *gin.Context) {
 
 	list := make([]gin.H, 0)
 	for _, d := range devices {
+		displayName := resolveDeviceDisplayName(d.Name, d.InitialName, d.Code)
 		item := gin.H{
 			"id":                 d.ID,
 			"code":               d.Code,
 			"name":               d.Name,
+			"displayName":        displayName,
 			"initialName":        d.InitialName,
 			"type":               d.Type,
 			"model":              d.ModelName,
@@ -779,6 +816,121 @@ func (h *DeviceHandler) BatchDeleteDevices(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "设备已批量移出分组",
+	})
+}
+
+func (h *DeviceHandler) HardDeleteDevice(c *gin.Context) {
+	id := c.Param("id")
+	var device model.Device
+	if err := h.db.First(&device, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": "设备不存在",
+		})
+		return
+	}
+
+	scope := h.getCurrentUserScope(c)
+	if !h.canAccessDevice(scope, device) {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code":    403,
+			"message": "无权操作该设备",
+		})
+		return
+	}
+
+	if err := h.softDeleteDevices([]uint{device.ID}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "删除设备失败",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "设备已删除",
+	})
+}
+
+func (h *DeviceHandler) HardDeleteDevices(c *gin.Context) {
+	var req struct {
+		IDs []uint `json:"ids"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "参数错误",
+		})
+		return
+	}
+
+	deviceIDs := normalizeGroupIDs(req.IDs)
+	if len(deviceIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "设备ID不能为空",
+		})
+		return
+	}
+
+	scope := h.getCurrentUserScope(c)
+	var devices []model.Device
+	if err := h.db.Select("id", "group_id").Where("id IN ?", deviceIDs).Find(&devices).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "读取设备失败",
+		})
+		return
+	}
+	if len(devices) != len(deviceIDs) {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": "设备不存在",
+		})
+		return
+	}
+	if !scope.All {
+		for _, device := range devices {
+			if !h.canAccessDevice(scope, device) {
+				c.JSON(http.StatusForbidden, gin.H{
+					"code":    403,
+					"message": "包含无权操作的设备",
+				})
+				return
+			}
+		}
+	}
+
+	if err := h.softDeleteDevices(deviceIDs); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "批量删除设备失败",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "设备已批量删除",
+	})
+}
+
+func (h *DeviceHandler) softDeleteDevices(deviceIDs []uint) error {
+	return h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("device_id IN ?", deviceIDs).Delete(&model.EmployeeDevice{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("device_id IN ?", deviceIDs).Delete(&model.DevicePatternFile{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("device_id IN ?", deviceIDs).Delete(&model.UploadTask{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("device_id IN ?", deviceIDs).Delete(&model.DownloadTask{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("id IN ?", deviceIDs).Delete(&model.Device{}).Error
 	})
 }
 

@@ -58,7 +58,7 @@ func (s *PatternTransferService) RefreshDevicePatternFiles(device model.Device) 
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
 	totalFrames := 0
@@ -533,17 +533,6 @@ func (s *PatternTransferService) findDeviceConnection(device model.Device) *Devi
 	ip := strings.TrimSpace(device.IP)
 	pendingCode := pendingDeviceCodeForIP(ip)
 
-	if code != "" {
-		if dc := s.connMgr.Get(code); dc != nil {
-			return dc
-		}
-	}
-	if pendingCode != "" && pendingCode != code {
-		if dc := s.connMgr.Get(pendingCode); dc != nil {
-			return dc
-		}
-	}
-
 	var matchedByMainboard *DeviceConnection
 	var matchedByIP *DeviceConnection
 	for _, dc := range s.connMgr.GetAll() {
@@ -551,20 +540,18 @@ func (s *PatternTransferService) findDeviceConnection(device model.Device) *Devi
 			continue
 		}
 
-		if device.ID > 0 && dc.deviceID == device.ID {
+		dcCode := strings.TrimSpace(dc.deviceCode)
+		if mainboardSN != "" && strings.TrimSpace(dc.deviceFlag) == mainboardSN {
 			return dc
 		}
-
-		dcCode := strings.TrimSpace(dc.deviceCode)
-		if code != "" && dcCode == code {
-			return dc
+		if device.ID > 0 && dc.deviceID == device.ID {
+			matchedByMainboard = dc
+		}
+		if code != "" && dcCode == code && matchedByMainboard == nil {
+			matchedByMainboard = dc
 		}
 		if pendingCode != "" && dcCode == pendingCode {
 			matchedByIP = dc
-		}
-
-		if mainboardSN != "" && strings.TrimSpace(dc.deviceFlag) == mainboardSN {
-			matchedByMainboard = dc
 		}
 		if ip != "" && extractIP(dc.conn.RemoteAddr().String()) == ip {
 			matchedByIP = dc

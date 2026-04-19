@@ -51,6 +51,57 @@ func (h *StatisticsHandler) alarmInfoAggregateExpr(alias string) string {
 	return expr
 }
 
+func (h *StatisticsHandler) productionDurationHoursExpr(recordAlias, alias string) string {
+	qualified := func(field string) string {
+		if strings.TrimSpace(recordAlias) == "" {
+			return field
+		}
+		return recordAlias + "." + field
+	}
+
+	startField := qualified("start_time")
+	endField := qualified("end_time")
+	runningField := qualified("running_time")
+
+	expr := fmt.Sprintf(
+		"CASE WHEN %s IS NOT NULL AND %s IS NOT NULL AND julianday(%s) > julianday(%s) THEN (julianday(%s) - julianday(%s)) * 24.0 ELSE COALESCE(%s, 0) END",
+		startField,
+		endField,
+		endField,
+		startField,
+		endField,
+		startField,
+		runningField,
+	)
+	if !h.isSQLite() {
+		expr = fmt.Sprintf(
+			"CASE WHEN %s IS NOT NULL AND %s IS NOT NULL AND %s > %s THEN TIMESTAMPDIFF(SECOND, %s, %s) / 3600.0 ELSE COALESCE(%s, 0) END",
+			startField,
+			endField,
+			endField,
+			startField,
+			startField,
+			endField,
+			runningField,
+		)
+	}
+
+	if alias != "" {
+		expr = fmt.Sprintf("%s as %s", expr, alias)
+	}
+	return expr
+}
+
+func resolveProductionDurationHours(startTime, endTime *time.Time, fallback float64) float64 {
+	if startTime != nil && endTime != nil && !startTime.IsZero() && !endTime.IsZero() && endTime.After(*startTime) {
+		return endTime.Sub(*startTime).Hours()
+	}
+	if fallback < 0 {
+		return 0
+	}
+	return fallback
+}
+
 func (h *StatisticsHandler) GetHomeStats(c *gin.Context) {
 	_, scopedDeviceIDs := h.scopeDeviceFilter(c, "", nil)
 
@@ -169,18 +220,23 @@ func (h *StatisticsHandler) getPatternUsage(deviceIDs []uint) []gin.H {
 		Count     int
 	}
 
+	patternNameExpr := "COALESCE(NULLIF(TRIM(pr.pattern_name), ''), NULLIF(TRIM(p.name), ''), '未知花型')"
 	query := h.db.Table("production_records pr").
-		Select("pr.pattern_id, p.name, COUNT(*) as count").
+		Select(patternNameExpr + " as name, pr.pattern_id, COUNT(*) as count").
 		Joins("LEFT JOIN patterns p ON pr.pattern_id = p.id").
 		Where("pr.pattern_id IS NOT NULL")
 	if len(deviceIDs) > 0 {
 		query = query.Where("pr.device_id IN ?", deviceIDs)
 	}
-	query.Group("pr.pattern_id, p.name").Order("count DESC").Limit(10).Scan(&results)
+	query.
+		Group("pr.pattern_id, " + patternNameExpr).
+		Order("count DESC, name ASC").
+		Limit(10).
+		Scan(&results)
 
-	patternUsage := make([]gin.H, 0)
+	patternUsage := make([]gin.H, 0, len(results))
 	for _, r := range results {
-		name := r.Name
+		name := strings.TrimSpace(r.Name)
 		if name == "" {
 			name = "未知花型"
 		}
@@ -188,10 +244,6 @@ func (h *StatisticsHandler) getPatternUsage(deviceIDs []uint) []gin.H {
 			"name":  name,
 			"value": r.Count,
 		})
-	}
-
-	if len(patternUsage) == 0 {
-		return []gin.H{}
 	}
 
 	return patternUsage
@@ -921,9 +973,10 @@ func (h *StatisticsHandler) GetSalaryDetail(c *gin.Context) {
 		PatternStitches int64
 		UnitPrice       float64
 		OrderNo         string
+		DurationHours   float64
 	}
 	query.Session(&gorm.Session{}).
-		Select(fmt.Sprintf("pr.*, %s, COALESCE(NULLIF(pr.pattern_name, ''), p.name, '未命名花型') as pattern_name, COALESCE(NULLIF(p.stitches, 0), pr.stitches, 0) as pattern_stitches, COALESCE(NULLIF(pr.unit_price, 0), p.unit_price, 0) as unit_price, COALESCE(NULLIF(pr.order_no, ''), p.order_no, '') as order_no", h.deviceNameExpr("pr.device_id", "device_name"))).
+		Select(fmt.Sprintf("pr.*, %s, COALESCE(NULLIF(pr.pattern_name, ''), p.name, '未命名花型') as pattern_name, COALESCE(NULLIF(p.stitches, 0), pr.stitches, 0) as pattern_stitches, COALESCE(NULLIF(pr.unit_price, 0), p.unit_price, 0) as unit_price, COALESCE(NULLIF(pr.order_no, ''), p.order_no, '') as order_no, %s", h.deviceNameExpr("pr.device_id", "device_name"), h.productionDurationHoursExpr("pr", "duration_hours"))).
 		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
 		Joins("LEFT JOIN patterns p ON pr.pattern_id = p.id").
 		Order("pr.record_date DESC, pr.created_at DESC, pr.id DESC").
@@ -931,7 +984,8 @@ func (h *StatisticsHandler) GetSalaryDetail(c *gin.Context) {
 
 	list := make([]gin.H, 0, len(results))
 	for _, r := range results {
-		startTime, endTime := deriveProductionTimeRange(r.RecordDate, r.CreatedAt, r.RunningTime)
+		runningHours := resolveProductionDurationHours(r.StartTime, r.EndTime, r.DurationHours)
+		startTime, endTime := deriveProductionTimeRange(r.RecordDate, r.CreatedAt, runningHours)
 		if r.StartTime != nil && !r.StartTime.IsZero() {
 			startTime = *r.StartTime
 		}
@@ -941,7 +995,7 @@ func (h *StatisticsHandler) GetSalaryDetail(c *gin.Context) {
 		totalAmount := roundFloat(float64(r.Pieces)*r.UnitPrice, 2)
 		avgSewDuration := 0.0
 		if r.Pieces > 0 {
-			avgSewDuration = (r.RunningTime * 60) / float64(r.Pieces)
+			avgSewDuration = (runningHours * 60) / float64(r.Pieces)
 		}
 		list = append(list, gin.H{
 			"id":              r.ID,
@@ -951,7 +1005,7 @@ func (h *StatisticsHandler) GetSalaryDetail(c *gin.Context) {
 			"startTime":       startTime.Format("2006-01-02 15:04:05"),
 			"endTime":         endTime.Format("2006-01-02 15:04:05"),
 			"sewCount":        r.Pieces,
-			"sewDuration":     roundFloat(r.RunningTime, 2),
+			"sewDuration":     roundFloat(runningHours, 2),
 			"avgSewDuration":  roundFloat(avgSewDuration, 2),
 			"unitPrice":       roundFloat(r.UnitPrice, 3),
 			"orderNo":         strings.TrimSpace(r.OrderNo),
@@ -978,6 +1032,7 @@ func (h *StatisticsHandler) GetProcessOverview(c *gin.Context) {
 	page, pageSize = normalizePagination(page, pageSize)
 
 	baseQuery := h.buildProductionStatsBaseQuery(startDate, endDate, deviceId, deviceIDs)
+	durationExpr := h.productionDurationHoursExpr("pr", "")
 
 	var summaryRow struct {
 		TotalPieces  int64
@@ -986,7 +1041,7 @@ func (h *StatisticsHandler) GetProcessOverview(c *gin.Context) {
 		TotalIdle    float64
 	}
 	baseQuery.Session(&gorm.Session{}).
-		Select("COALESCE(SUM(pr.pieces), 0) as total_pieces, COALESCE(SUM(pr.thread_length), 0) as total_thread, COALESCE(SUM(pr.running_time), 0) as total_running, COALESCE(SUM(pr.idle_time), 0) as total_idle").
+		Select(fmt.Sprintf("COALESCE(SUM(pr.pieces), 0) as total_pieces, COALESCE(SUM(pr.thread_length), 0) as total_thread, COALESCE(SUM(%s), 0) as total_running, COALESCE(SUM(pr.idle_time), 0) as total_idle", durationExpr)).
 		Scan(&summaryRow)
 
 	totalHours := summaryRow.TotalRunning + summaryRow.TotalIdle
@@ -1006,10 +1061,11 @@ func (h *StatisticsHandler) GetProcessOverview(c *gin.Context) {
 		EmployeeName    string
 		PatternName     string
 		PatternStitches int64
+		DurationHours   float64
 	}
 	offset := (page - 1) * pageSize
 	baseQuery.Session(&gorm.Session{}).
-		Select(fmt.Sprintf("pr.*, %s, COALESCE(e.code, '-') as employee_code, COALESCE(e.name, '-') as employee_name, COALESCE(p.name, '未命名花型') as pattern_name, COALESCE(NULLIF(p.stitches, 0), pr.stitches, 0) as pattern_stitches", h.deviceNameExpr("pr.device_id", "device_name"))).
+		Select(fmt.Sprintf("pr.*, %s, COALESCE(e.code, '-') as employee_code, COALESCE(e.name, '-') as employee_name, COALESCE(NULLIF(pr.pattern_name, ''), p.name, '未命名花型') as pattern_name, COALESCE(NULLIF(p.stitches, 0), pr.stitches, 0) as pattern_stitches, %s", h.deviceNameExpr("pr.device_id", "device_name"), h.productionDurationHoursExpr("pr", "duration_hours"))).
 		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
 		Joins("LEFT JOIN employees e ON pr.employee_id = e.id").
 		Joins("LEFT JOIN patterns p ON pr.pattern_id = p.id").
@@ -1024,20 +1080,21 @@ func (h *StatisticsHandler) GetProcessOverview(c *gin.Context) {
 	list := make([]gin.H, 0, len(listRows))
 	for _, row := range listRows {
 		efficiency := 0.0
-		if row.RunningTime+row.IdleTime > 0 {
-			efficiency = row.RunningTime / (row.RunningTime + row.IdleTime) * 100
+		runningHours := resolveProductionDurationHours(row.StartTime, row.EndTime, row.DurationHours)
+		if runningHours+row.IdleTime > 0 {
+			efficiency = runningHours / (runningHours + row.IdleTime) * 100
 		}
-		startTime, _ := deriveProductionTimeRange(row.RecordDate, row.CreatedAt, row.RunningTime)
+		startTime, _ := deriveProductionTimeRange(row.RecordDate, row.CreatedAt, runningHours)
 		sewSpeed := 0.0
-		if row.RunningTime > 0 {
-			sewSpeed = float64(row.Stitches) / (row.RunningTime * 60)
+		if runningHours > 0 {
+			sewSpeed = float64(row.Stitches) / (runningHours * 60)
 		}
 		avgProcessDuration := 0.0
 		if row.Pieces > 0 {
-			avgProcessDuration = (row.RunningTime * 60) / float64(row.Pieces)
+			avgProcessDuration = (runningHours * 60) / float64(row.Pieces)
 		}
 		dateKey := row.RecordDate.Format("2006-01-02")
-		patternCountKey := makeDevicePatternDateKey(row.DeviceID, row.PatternID, dateKey)
+		patternCountKey := makeDevicePatternDateKey(row.DeviceID, row.PatternID, row.PatternName, dateKey)
 		patternSewCount := patternSewCountMap[patternCountKey]
 		alarmInfo := alarmInfoMap[makeDeviceDateKey(row.DeviceID, dateKey)]
 		alarmText := "-"
@@ -1063,11 +1120,11 @@ func (h *StatisticsHandler) GetProcessOverview(c *gin.Context) {
 			"patternSewCount":    patternSewCount,
 			"alarmInfo":          alarmText,
 			"alarmTime":          alarmTime,
-			"cumulativeUpTime":   roundFloat(row.RunningTime+row.IdleTime, 2),
+			"cumulativeUpTime":   roundFloat(runningHours+row.IdleTime, 2),
 			"totalPieces":        row.Pieces,
 			"totalStitches":      row.Stitches,
 			"threadLength":       roundFloat(row.ThreadLength, 2),
-			"runningTime":        roundFloat(row.RunningTime, 2),
+			"runningTime":        roundFloat(runningHours, 2),
 			"efficiency":         roundFloat(efficiency, 2),
 		})
 	}
@@ -1079,7 +1136,7 @@ func (h *StatisticsHandler) GetProcessOverview(c *gin.Context) {
 		IdleTime    float64
 	}
 	baseQuery.Session(&gorm.Session{}).
-		Select("DATE(pr.record_date) as date, COALESCE(SUM(pr.pieces), 0) as pieces, COALESCE(SUM(pr.running_time), 0) as running_time, COALESCE(SUM(pr.idle_time), 0) as idle_time").
+		Select(fmt.Sprintf("DATE(pr.record_date) as date, COALESCE(SUM(pr.pieces), 0) as pieces, COALESCE(SUM(%s), 0) as running_time, COALESCE(SUM(pr.idle_time), 0) as idle_time", durationExpr)).
 		Group("DATE(pr.record_date)").
 		Order("date").
 		Scan(&trendRows)
@@ -1142,6 +1199,136 @@ func (h *StatisticsHandler) GetProcessOverview(c *gin.Context) {
 	})
 }
 
+func (h *StatisticsHandler) GetDevicePatternStats(c *gin.Context) {
+	startDate := c.Query("startDate")
+	endDate := c.Query("endDate")
+	deviceId := c.Query("deviceId")
+	deviceIDs := parseDeviceIDs(c.Query("deviceIds"))
+	deviceId, deviceIDs = h.scopeDeviceFilter(c, deviceId, deviceIDs)
+
+	query := h.buildProductionStatsBaseQuery(startDate, endDate, deviceId, deviceIDs)
+
+	var rows []struct {
+		model.ProductionRecord
+		DeviceName    string
+		PatternName   string
+		DurationHours float64
+	}
+	query.Session(&gorm.Session{}).
+		Select(fmt.Sprintf("pr.*, %s, COALESCE(NULLIF(pr.pattern_name, ''), p.name, '未命名花型') as pattern_name, %s", h.deviceNameExpr("pr.device_id", "device_name"), h.productionDurationHoursExpr("pr", "duration_hours"))).
+		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
+		Joins("LEFT JOIN patterns p ON pr.pattern_id = p.id").
+		Order("COALESCE(pr.end_time, pr.start_time, pr.created_at) ASC, pr.id ASC").
+		Scan(&rows)
+
+	type aggregateRow struct {
+		Key           string
+		PatternNo     uint
+		PatternName   string
+		TotalPieces   int
+		TotalDuration float64
+		LastCompleted time.Time
+		RecentInfo    string
+	}
+
+	aggregates := make(map[string]*aggregateRow)
+	pieceCounters := make(map[string]int)
+	aggregateList := make([]*aggregateRow, 0)
+	detailList := make([]gin.H, 0, len(rows))
+
+	for _, row := range rows {
+		patternNo := row.PatternNo
+		patternName := strings.TrimSpace(row.PatternName)
+		if patternName == "" {
+			patternName = "未命名花型"
+		}
+
+		key := fmt.Sprintf("id:%d", row.PatternID)
+		if row.PatternID == 0 {
+			key = "name:" + strings.ToLower(patternName)
+		}
+
+		item, exists := aggregates[key]
+		if !exists {
+			item = &aggregateRow{
+				Key:         key,
+				PatternNo:   patternNo,
+				PatternName: patternName,
+			}
+			aggregates[key] = item
+			aggregateList = append(aggregateList, item)
+		}
+
+		runningHours := resolveProductionDurationHours(row.StartTime, row.EndTime, row.DurationHours)
+		item.TotalPieces += row.Pieces
+		item.TotalDuration += runningHours
+
+		completedAt := row.CreatedAt
+		if row.EndTime != nil && !row.EndTime.IsZero() {
+			completedAt = *row.EndTime
+		} else if row.StartTime != nil && !row.StartTime.IsZero() {
+			completedAt = *row.StartTime
+		}
+		if completedAt.After(item.LastCompleted) {
+			item.LastCompleted = completedAt
+			item.RecentInfo = fmt.Sprintf("设备:%s / 工号:%s / 停止原因:%d", strings.TrimSpace(row.DeviceName), strings.TrimSpace(row.ProtocolUserID), row.StopReason)
+		}
+
+		startTime, endTime := deriveProductionTimeRange(row.RecordDate, row.CreatedAt, runningHours)
+		if row.StartTime != nil && !row.StartTime.IsZero() {
+			startTime = *row.StartTime
+		}
+		if row.EndTime != nil && !row.EndTime.IsZero() {
+			endTime = *row.EndTime
+		}
+
+		pieceCounters[key] += 1
+		detailList = append(detailList, gin.H{
+			"id":            row.ID,
+			"patternNo":     patternNo,
+			"patternName":   patternName,
+			"pieceIndex":    pieceCounters[key],
+			"startTime":     startTime.Format("2006-01-02 15:04:05"),
+			"endTime":       endTime.Format("2006-01-02 15:04:05"),
+			"durationHours": roundFloat(runningHours, 3),
+			"durationText":  formatStatsDurationHours(runningHours),
+		})
+	}
+
+	sort.Slice(aggregateList, func(i, j int) bool {
+		if aggregateList[i].LastCompleted.Equal(aggregateList[j].LastCompleted) {
+			return aggregateList[i].PatternName < aggregateList[j].PatternName
+		}
+		return aggregateList[i].LastCompleted.After(aggregateList[j].LastCompleted)
+	})
+
+	aggregateTable := make([]gin.H, 0, len(aggregateList))
+	for _, row := range aggregateList {
+		lastCompleted := "-"
+		if !row.LastCompleted.IsZero() {
+			lastCompleted = row.LastCompleted.Format("2006-01-02 15:04:05")
+		}
+		aggregateTable = append(aggregateTable, gin.H{
+			"patternNo":         row.PatternNo,
+			"patternName":       row.PatternName,
+			"totalPieces":       row.TotalPieces,
+			"totalDuration":     roundFloat(row.TotalDuration, 3),
+			"totalDurationText": formatStatsDurationHours(row.TotalDuration),
+			"lastCompleted":     lastCompleted,
+			"recentInfo":        row.RecentInfo,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": gin.H{
+			"patternTable": aggregateTable,
+			"detailTable":  detailList,
+		},
+		"message": "success",
+	})
+}
+
 func (h *StatisticsHandler) GetDurationStats(c *gin.Context) {
 	startDate := c.Query("startDate")
 	endDate := c.Query("endDate")
@@ -1154,13 +1341,14 @@ func (h *StatisticsHandler) GetDurationStats(c *gin.Context) {
 
 	baseProdQuery := h.buildProductionStatsBaseQuery(startDate, endDate, deviceId, deviceIDs)
 	baseAlarmQuery := h.buildAlarmStatsBaseQuery(startDate, endDate, deviceId, deviceIDs, "")
+	durationExpr := h.productionDurationHoursExpr("pr", "")
 
 	var prodSummary struct {
 		RunningTime float64
 		IdleTime    float64
 	}
 	baseProdQuery.Session(&gorm.Session{}).
-		Select("COALESCE(SUM(pr.running_time), 0) as running_time, COALESCE(SUM(pr.idle_time), 0) as idle_time").
+		Select(fmt.Sprintf("COALESCE(SUM(%s), 0) as running_time, COALESCE(SUM(pr.idle_time), 0) as idle_time", durationExpr)).
 		Scan(&prodSummary)
 
 	var alarmSummary struct {
@@ -1185,14 +1373,15 @@ func (h *StatisticsHandler) GetDurationStats(c *gin.Context) {
 
 	var listRows []struct {
 		model.ProductionRecord
-		DeviceName   string
-		EmployeeCode string
-		EmployeeName string
-		PatternName  string
+		DeviceName    string
+		EmployeeCode  string
+		EmployeeName  string
+		PatternName   string
+		DurationHours float64
 	}
 	offset := (page - 1) * pageSize
 	baseProdQuery.Session(&gorm.Session{}).
-		Select(fmt.Sprintf("pr.*, %s, COALESCE(e.code, '-') as employee_code, COALESCE(e.name, '-') as employee_name, COALESCE(p.name, '未命名花型') as pattern_name", h.deviceNameExpr("pr.device_id", "device_name"))).
+		Select(fmt.Sprintf("pr.*, %s, COALESCE(e.code, '-') as employee_code, COALESCE(e.name, '-') as employee_name, COALESCE(NULLIF(pr.pattern_name, ''), p.name, '未命名花型') as pattern_name, %s", h.deviceNameExpr("pr.device_id", "device_name"), h.productionDurationHoursExpr("pr", "duration_hours"))).
 		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
 		Joins("LEFT JOIN employees e ON pr.employee_id = e.id").
 		Joins("LEFT JOIN patterns p ON pr.pattern_id = p.id").
@@ -1203,10 +1392,17 @@ func (h *StatisticsHandler) GetDurationStats(c *gin.Context) {
 
 	list := make([]gin.H, 0, len(listRows))
 	for _, row := range listRows {
-		startTime, endTime := deriveProductionTimeRange(row.RecordDate, row.CreatedAt, row.RunningTime)
+		runningHours := resolveProductionDurationHours(row.StartTime, row.EndTime, row.DurationHours)
+		startTime, endTime := deriveProductionTimeRange(row.RecordDate, row.CreatedAt, runningHours)
+		if row.StartTime != nil && !row.StartTime.IsZero() {
+			startTime = *row.StartTime
+		}
+		if row.EndTime != nil && !row.EndTime.IsZero() {
+			endTime = *row.EndTime
+		}
 		avgSewDuration := 0.0
 		if row.Pieces > 0 {
-			avgSewDuration = (row.RunningTime * 60) / float64(row.Pieces)
+			avgSewDuration = (runningHours * 60) / float64(row.Pieces)
 		}
 		list = append(list, gin.H{
 			"id":             row.ID,
@@ -1217,10 +1413,10 @@ func (h *StatisticsHandler) GetDurationStats(c *gin.Context) {
 			"patternName":    row.PatternName,
 			"startTime":      startTime.Format("2006-01-02 15:04:05"),
 			"endTime":        endTime.Format("2006-01-02 15:04:05"),
-			"sewDuration":    roundFloat(row.RunningTime, 2),
+			"sewDuration":    roundFloat(runningHours, 2),
 			"avgSewDuration": roundFloat(avgSewDuration, 2),
-			"totalTime":      roundFloat(row.RunningTime+row.IdleTime, 2),
-			"runningTime":    roundFloat(row.RunningTime, 2),
+			"totalTime":      roundFloat(runningHours+row.IdleTime, 2),
+			"runningTime":    roundFloat(runningHours, 2),
 			"idleTime":       roundFloat(row.IdleTime, 2),
 		})
 	}
@@ -1237,7 +1433,7 @@ func (h *StatisticsHandler) GetDurationStats(c *gin.Context) {
 		IdleTime    float64
 	}
 	baseProdQuery.Session(&gorm.Session{}).
-		Select("DATE(pr.record_date) as date, COALESCE(SUM(pr.running_time), 0) as running_time, COALESCE(SUM(pr.idle_time), 0) as idle_time").
+		Select(fmt.Sprintf("DATE(pr.record_date) as date, COALESCE(SUM(%s), 0) as running_time, COALESCE(SUM(pr.idle_time), 0) as idle_time", durationExpr)).
 		Group("DATE(pr.record_date)").
 		Order("date").
 		Scan(&prodTrendRows)
@@ -1298,7 +1494,7 @@ func (h *StatisticsHandler) GetDurationStats(c *gin.Context) {
 		IdleTime    float64
 	}
 	baseProdQuery.Session(&gorm.Session{}).
-		Select(fmt.Sprintf("%s, COALESCE(SUM(pr.running_time), 0) as running_time, COALESCE(SUM(pr.idle_time), 0) as idle_time", h.deviceNameExpr("pr.device_id", "name"))).
+		Select(fmt.Sprintf("%s, COALESCE(SUM(%s), 0) as running_time, COALESCE(SUM(pr.idle_time), 0) as idle_time", h.deviceNameExpr("pr.device_id", "name"), durationExpr)).
 		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
 		Group("pr.device_id, d.name").
 		Order("running_time DESC").
@@ -1627,9 +1823,10 @@ func (h *StatisticsHandler) exportProcessCSV(c *gin.Context) {
 		EmployeeName    string
 		PatternName     string
 		PatternStitches int64
+		DurationHours   float64
 	}
 	baseQuery.Session(&gorm.Session{}).
-		Select(fmt.Sprintf("pr.*, %s, COALESCE(e.code, '-') as employee_code, COALESCE(e.name, '-') as employee_name, COALESCE(p.name, '未命名花型') as pattern_name, COALESCE(NULLIF(p.stitches, 0), pr.stitches, 0) as pattern_stitches", h.deviceNameExpr("pr.device_id", "device_name"))).
+		Select(fmt.Sprintf("pr.*, %s, COALESCE(e.code, '-') as employee_code, COALESCE(e.name, '-') as employee_name, COALESCE(NULLIF(pr.pattern_name, ''), p.name, '未命名花型') as pattern_name, COALESCE(NULLIF(p.stitches, 0), pr.stitches, 0) as pattern_stitches, %s", h.deviceNameExpr("pr.device_id", "device_name"), h.productionDurationHoursExpr("pr", "duration_hours"))).
 		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
 		Joins("LEFT JOIN employees e ON pr.employee_id = e.id").
 		Joins("LEFT JOIN patterns p ON pr.pattern_id = p.id").
@@ -1641,17 +1838,21 @@ func (h *StatisticsHandler) exportProcessCSV(c *gin.Context) {
 
 	rows := make([][]string, 0, len(rowsData))
 	for _, row := range rowsData {
-		startTime, _ := deriveProductionTimeRange(row.RecordDate, row.CreatedAt, row.RunningTime)
+		runningHours := resolveProductionDurationHours(row.StartTime, row.EndTime, row.DurationHours)
+		startTime, _ := deriveProductionTimeRange(row.RecordDate, row.CreatedAt, runningHours)
+		if row.StartTime != nil && !row.StartTime.IsZero() {
+			startTime = *row.StartTime
+		}
 		sewSpeed := 0.0
-		if row.RunningTime > 0 {
-			sewSpeed = float64(row.Stitches) / (row.RunningTime * 60)
+		if runningHours > 0 {
+			sewSpeed = float64(row.Stitches) / (runningHours * 60)
 		}
 		avgProcessDuration := 0.0
 		if row.Pieces > 0 {
-			avgProcessDuration = (row.RunningTime * 60) / float64(row.Pieces)
+			avgProcessDuration = (runningHours * 60) / float64(row.Pieces)
 		}
 		dateKey := row.RecordDate.Format("2006-01-02")
-		patternSewCount := patternSewCountMap[makeDevicePatternDateKey(row.DeviceID, row.PatternID, dateKey)]
+		patternSewCount := patternSewCountMap[makeDevicePatternDateKey(row.DeviceID, row.PatternID, row.PatternName, dateKey)]
 		alarmInfo := alarmInfoMap[makeDeviceDateKey(row.DeviceID, dateKey)]
 		alarmText := "-"
 		alarmTime := "-"
@@ -1675,7 +1876,7 @@ func (h *StatisticsHandler) exportProcessCSV(c *gin.Context) {
 			strconv.FormatInt(patternSewCount, 10),
 			alarmText,
 			alarmTime,
-			csvFloat(row.RunningTime+row.IdleTime, 2),
+			csvFloat(runningHours+row.IdleTime, 2),
 		})
 	}
 
@@ -1697,13 +1898,14 @@ func (h *StatisticsHandler) exportDurationCSV(c *gin.Context) {
 
 	var rowsData []struct {
 		model.ProductionRecord
-		DeviceName   string
-		EmployeeCode string
-		EmployeeName string
-		PatternName  string
+		DeviceName    string
+		EmployeeCode  string
+		EmployeeName  string
+		PatternName   string
+		DurationHours float64
 	}
 	baseProdQuery.Session(&gorm.Session{}).
-		Select(fmt.Sprintf("pr.*, %s, COALESCE(e.code, '-') as employee_code, COALESCE(e.name, '-') as employee_name, COALESCE(p.name, '未命名花型') as pattern_name", h.deviceNameExpr("pr.device_id", "device_name"))).
+		Select(fmt.Sprintf("pr.*, %s, COALESCE(e.code, '-') as employee_code, COALESCE(e.name, '-') as employee_name, COALESCE(NULLIF(pr.pattern_name, ''), p.name, '未命名花型') as pattern_name, %s", h.deviceNameExpr("pr.device_id", "device_name"), h.productionDurationHoursExpr("pr", "duration_hours"))).
 		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
 		Joins("LEFT JOIN employees e ON pr.employee_id = e.id").
 		Joins("LEFT JOIN patterns p ON pr.pattern_id = p.id").
@@ -1712,10 +1914,17 @@ func (h *StatisticsHandler) exportDurationCSV(c *gin.Context) {
 
 	rows := make([][]string, 0, len(rowsData))
 	for _, row := range rowsData {
-		startTime, endTime := deriveProductionTimeRange(row.RecordDate, row.CreatedAt, row.RunningTime)
+		runningHours := resolveProductionDurationHours(row.StartTime, row.EndTime, row.DurationHours)
+		startTime, endTime := deriveProductionTimeRange(row.RecordDate, row.CreatedAt, runningHours)
+		if row.StartTime != nil && !row.StartTime.IsZero() {
+			startTime = *row.StartTime
+		}
+		if row.EndTime != nil && !row.EndTime.IsZero() {
+			endTime = *row.EndTime
+		}
 		avgSewDuration := 0.0
 		if row.Pieces > 0 {
-			avgSewDuration = (row.RunningTime * 60) / float64(row.Pieces)
+			avgSewDuration = (runningHours * 60) / float64(row.Pieces)
 		}
 		rows = append(rows, []string{
 			row.DeviceName,
@@ -1725,7 +1934,7 @@ func (h *StatisticsHandler) exportDurationCSV(c *gin.Context) {
 			row.PatternName,
 			startTime.Format("2006-01-02 15:04:05"),
 			endTime.Format("2006-01-02 15:04:05"),
-			csvFloat(row.RunningTime, 2),
+			csvFloat(runningHours, 2),
 			csvFloat(avgSewDuration, 2),
 		})
 	}
@@ -1822,8 +2031,11 @@ func makeDeviceDateKey(deviceID uint, date string) string {
 	return fmt.Sprintf("%d_%s", deviceID, date)
 }
 
-func makeDevicePatternDateKey(deviceID, patternID uint, date string) string {
-	return fmt.Sprintf("%d_%d_%s", deviceID, patternID, date)
+func makeDevicePatternDateKey(deviceID, patternID uint, patternName, date string) string {
+	if patternID > 0 {
+		return fmt.Sprintf("%d_id_%d_%s", deviceID, patternID, date)
+	}
+	return fmt.Sprintf("%d_name_%s_%s", deviceID, strings.ToLower(strings.TrimSpace(patternName)), date)
 }
 
 func deriveProductionTimeRange(recordDate, createdAt time.Time, runningHours float64) (time.Time, time.Time) {
@@ -1844,21 +2056,24 @@ func deriveProductionTimeRange(recordDate, createdAt time.Time, runningHours flo
 
 func (h *StatisticsHandler) loadPatternSewCountByDevicePatternDate(startDate, endDate, deviceId string, deviceIDs []uint) map[string]int64 {
 	baseQuery := h.buildProductionStatsBaseQuery(startDate, endDate, deviceId, deviceIDs)
+	patternNameExpr := "COALESCE(NULLIF(TRIM(pr.pattern_name), ''), NULLIF(TRIM(p.name), ''), '未命名花型')"
 
 	var rows []struct {
 		DeviceID        uint
 		PatternID       uint
+		PatternName     string
 		RecordDate      string
 		PatternSewCount int64
 	}
 	baseQuery.Session(&gorm.Session{}).
-		Select("pr.device_id, pr.pattern_id, DATE(pr.record_date) as record_date, COALESCE(SUM(pr.pieces), 0) as pattern_sew_count").
-		Group("pr.device_id, pr.pattern_id, DATE(pr.record_date)").
+		Select("pr.device_id, pr.pattern_id, " + patternNameExpr + " as pattern_name, DATE(pr.record_date) as record_date, COALESCE(SUM(pr.pieces), 0) as pattern_sew_count").
+		Joins("LEFT JOIN patterns p ON pr.pattern_id = p.id").
+		Group("pr.device_id, pr.pattern_id, " + patternNameExpr + ", DATE(pr.record_date)").
 		Scan(&rows)
 
 	result := make(map[string]int64, len(rows))
 	for _, row := range rows {
-		result[makeDevicePatternDateKey(row.DeviceID, row.PatternID, row.RecordDate)] = row.PatternSewCount
+		result[makeDevicePatternDateKey(row.DeviceID, row.PatternID, row.PatternName, row.RecordDate)] = row.PatternSewCount
 	}
 	return result
 }
@@ -2104,4 +2319,21 @@ func formatAlarmStatus(status string) string {
 		return "已处理"
 	}
 	return "处理中"
+}
+
+func formatStatsDurationHours(hours float64) string {
+	totalSeconds := int(math.Round(hours * 3600))
+	if totalSeconds < 0 {
+		totalSeconds = 0
+	}
+	h := totalSeconds / 3600
+	m := (totalSeconds % 3600) / 60
+	s := totalSeconds % 60
+	if h > 0 {
+		return fmt.Sprintf("%d小时%d分%d秒", h, m, s)
+	}
+	if m > 0 {
+		return fmt.Sprintf("%d分%d秒", m, s)
+	}
+	return fmt.Sprintf("%d秒", s)
 }

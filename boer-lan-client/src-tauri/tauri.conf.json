@@ -5,7 +5,7 @@
   "identifier": "com.boer.lan-client",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:3000",
+    "devUrl": "http://localhost:43117",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },

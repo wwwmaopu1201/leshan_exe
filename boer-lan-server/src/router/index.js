@@ -19,6 +19,8 @@ const routes = [
       { path: 'home', name: 'Home', component: () => import('@/views/Home.vue') },
       { path: 'tools', name: 'Tools', component: () => import('@/views/Tools.vue') },
       { path: 'database', name: 'Database', component: () => import('@/views/Database.vue') },
+      { path: 'patterns', name: 'Patterns', component: () => import('@/views/Patterns.vue') },
+      { path: 'pattern-stats', name: 'PatternStats', component: () => import('@/views/PatternStats.vue') },
       { path: 'groups', redirect: '/users' },
       { path: 'roles', name: 'Roles', component: () => import('@/views/Roles.vue') },
       { path: 'users', name: 'Users', component: () => import('@/views/Users.vue') },

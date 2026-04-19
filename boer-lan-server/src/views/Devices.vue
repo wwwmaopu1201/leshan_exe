@@ -125,6 +125,15 @@
               <el-button icon="el-icon-share" :disabled="selectedDeviceIds.length === 0" @click="openMoveDialog">
                 批量移动分组
               </el-button>
+              <el-button
+                type="danger"
+                plain
+                icon="el-icon-delete"
+                :disabled="selectedDeviceIds.length === 0"
+                @click="confirmBatchDeleteDevices"
+              >
+                批量删除设备
+              </el-button>
               <el-button icon="el-icon-refresh" @click="loadDevices">刷新</el-button>
             </div>
           </div>
@@ -144,7 +153,11 @@
                 {{ (page - 1) * pageSize + $index + 1 }}
               </template>
             </el-table-column>
-            <el-table-column prop="name" label="设备名称" min-width="130" />
+            <el-table-column label="设备名称" min-width="130">
+              <template slot-scope="{ row }">
+                {{ formatDeviceName(row) }}
+              </template>
+            </el-table-column>
             <el-table-column prop="initialName" label="初始名称" min-width="130" />
             <el-table-column prop="employeeCode" label="员工工号" width="110" />
             <el-table-column prop="employeeName" label="员工姓名" width="110" />
@@ -187,10 +200,11 @@
             </el-table-column>
             <el-table-column prop="createTime" label="添加时间" width="170" />
             <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip />
-            <el-table-column label="操作" width="180" fixed="right" align="center">
+            <el-table-column label="操作" width="240" fixed="right" align="center">
               <template slot-scope="{ row }">
                 <el-button size="small" @click="openEditDialog(row)">编辑</el-button>
                 <el-button size="small" @click="pingDevice(row.ip)">Ping</el-button>
+                <el-button size="small" type="danger" @click="confirmDeleteDevice(row)">删除</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -723,6 +737,13 @@ export default {
       }
       return map[value] || '-'
     },
+    formatDeviceName(row) {
+      const displayName = String(row?.displayName || '').trim()
+      const initialName = String(row?.initialName || '').trim()
+      const code = String(row?.code || '').trim()
+      const name = String(row?.name || '').trim()
+      return displayName || initialName || code || name || '-'
+    },
     getStatusLabel(status) {
       const map = {
         online: '在线',
@@ -746,6 +767,53 @@ export default {
         }
       } catch (error) {
         console.error('Ping失败', error)
+      }
+    },
+    async confirmDeleteDevice(row) {
+      const deviceId = row?.id || row?.ID
+      if (!deviceId) {
+        this.$message.warning('设备ID无效')
+        return
+      }
+      try {
+        await this.$confirm(
+          `确定要删除设备“${row.name || row.code || deviceId}”吗？删除后将从设备列表中移除。`,
+          '警告',
+          { type: 'warning' }
+        )
+        const res = await this.$axios.delete(`/device/${deviceId}/hard`)
+        if (res.code === 0) {
+          this.$message.success(res.message || '设备已删除')
+          await Promise.all([this.loadDevices(), this.loadGroupTree()])
+        }
+      } catch (error) {
+        if (error !== 'cancel') {
+          console.error('删除设备失败', error)
+        }
+      }
+    },
+    async confirmBatchDeleteDevices() {
+      if (!this.selectedDeviceIds.length) {
+        this.$message.warning('请先选择设备')
+        return
+      }
+      try {
+        await this.$confirm(
+          `确定要删除选中的 ${this.selectedDeviceIds.length} 台设备吗？删除后将从设备列表中移除。`,
+          '警告',
+          { type: 'warning' }
+        )
+        const res = await this.$axios.delete('/device/batch/hard', {
+          data: { ids: this.selectedDeviceIds }
+        })
+        if (res.code === 0) {
+          this.$message.success(res.message || '设备已批量删除')
+          await Promise.all([this.loadDevices(), this.loadGroupTree()])
+        }
+      } catch (error) {
+        if (error !== 'cancel') {
+          console.error('批量删除设备失败', error)
+        }
       }
     },
     createGroup(parentId) {

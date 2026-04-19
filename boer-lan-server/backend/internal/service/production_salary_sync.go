@@ -386,7 +386,20 @@ func resolveExistingProductionPattern(tx *gorm.DB, device model.Device, record *
 }
 
 func resolvePatternSnapshot(tx *gorm.DB, deviceID, patternNo uint, rawPatternName string) (uint, string, float64, string, error) {
+	rawPatternName = strings.TrimSpace(rawPatternName)
 	candidates := buildPatternLookupCandidates(rawPatternName)
+
+	if rawPatternName != "" {
+		if exactPattern, exactFound, err := findPatternByExactName(tx, rawPatternName); err != nil {
+			return 0, "", 0, "", err
+		} else if exactFound {
+			name := normalizePatternDisplayName(exactPattern.Name, exactPattern.FileName)
+			if name == "" {
+				name = rawPatternName
+			}
+			return exactPattern.ID, name, exactPattern.UnitPrice, strings.TrimSpace(exactPattern.OrderNo), nil
+		}
+	}
 
 	pattern, found, err := findPatternByCandidates(tx, candidates)
 	if err != nil {
@@ -395,7 +408,7 @@ func resolvePatternSnapshot(tx *gorm.DB, deviceID, patternNo uint, rawPatternNam
 	if found {
 		name := normalizePatternDisplayName(pattern.Name, pattern.FileName)
 		if name == "" {
-			name = firstNonEmpty(strings.TrimSpace(rawPatternName), fmt.Sprintf("花型#%d", patternNo))
+			name = firstNonEmpty(rawPatternName, fmt.Sprintf("花型#%d", patternNo))
 		}
 		return pattern.ID, name, pattern.UnitPrice, strings.TrimSpace(pattern.OrderNo), nil
 	}
@@ -407,7 +420,11 @@ func resolvePatternSnapshot(tx *gorm.DB, deviceID, patternNo uint, rawPatternNam
 	if fileFound {
 		devicePatternName := normalizePatternDisplayName("", deviceFile.FileName)
 		if devicePatternName == "" {
-			devicePatternName = firstNonEmpty(strings.TrimSpace(rawPatternName), fmt.Sprintf("花型#%d", patternNo))
+			devicePatternName = firstNonEmpty(rawPatternName, fmt.Sprintf("花型#%d", patternNo))
+		}
+
+		if rawPatternName != "" {
+			return 0, rawPatternName, deviceFile.UnitPrice, strings.TrimSpace(deviceFile.OrderNo), nil
 		}
 
 		if followPattern, followFound, err := findPatternByCandidates(tx, buildPatternLookupCandidates(deviceFile.FileName)); err != nil {
@@ -431,11 +448,32 @@ func resolvePatternSnapshot(tx *gorm.DB, deviceID, patternNo uint, rawPatternNam
 		return 0, devicePatternName, deviceFile.UnitPrice, strings.TrimSpace(deviceFile.OrderNo), nil
 	}
 
-	fallbackName := strings.TrimSpace(rawPatternName)
+	fallbackName := rawPatternName
 	if fallbackName == "" && patternNo > 0 {
 		fallbackName = fmt.Sprintf("花型#%d", patternNo)
 	}
 	return 0, fallbackName, 0, "", nil
+}
+
+func findPatternByExactName(tx *gorm.DB, rawName string) (model.Pattern, bool, error) {
+	rawName = strings.TrimSpace(rawName)
+	if rawName == "" {
+		return model.Pattern{}, false, nil
+	}
+
+	var pattern model.Pattern
+	err := tx.
+		Where("LOWER(name) = ?", strings.ToLower(rawName)).
+		Order("id DESC").
+		First(&pattern).Error
+	switch {
+	case err == nil:
+		return pattern, true, nil
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return model.Pattern{}, false, nil
+	default:
+		return model.Pattern{}, false, err
+	}
 }
 
 func findPatternByCandidates(tx *gorm.DB, candidates []string) (model.Pattern, bool, error) {
@@ -573,7 +611,6 @@ func computeProductionSourceKey(deviceID uint, snapshot productionSnapshot) stri
 		fmt.Sprintf("%d", deviceID),
 		fmt.Sprintf("%d", snapshot.PatternNo),
 		strings.TrimSpace(snapshot.PatternName),
-		strings.TrimSpace(snapshot.ProtocolUserID),
 		fmt.Sprintf("%d", snapshot.StartNeedle),
 		fmt.Sprintf("%d", snapshot.EndNeedle),
 		fmt.Sprintf("%d", snapshot.StopReason),

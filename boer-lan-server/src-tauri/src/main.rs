@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
+use std::env;
 use std::fs;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -47,6 +48,7 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 const TRIAL_DURATION_SECONDS: u64 = 4 * 24 * 60 * 60;
 const ROLLBACK_LEEWAY_SECONDS: u64 = 10 * 60;
 const TRIAL_POLICY_VERSION: u32 = 4;
+const APP_IDENTIFIER: &str = "com.boer.lan-server";
 
 fn normalize_version(raw: &str) -> String {
     raw.trim()
@@ -207,10 +209,69 @@ fn format_remaining_seconds(remaining_seconds: u64) -> String {
 }
 
 fn trial_state_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    app.path()
-        .app_data_dir()
-        .map(|dir| dir.join("server-trial-state.json"))
-        .map_err(|err| format!("failed to resolve server trial path: {err}"))
+    resolve_shared_data_dir(app).map(|dir| dir.join("server-trial-state.json"))
+}
+
+fn resolve_home_dir() -> Result<PathBuf, String> {
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(value) = env::var_os("USERPROFILE") {
+            return Ok(PathBuf::from(value));
+        }
+        let drive = env::var_os("HOMEDRIVE");
+        let path = env::var_os("HOMEPATH");
+        if let (Some(drive), Some(path)) = (drive, path) {
+            let mut base = PathBuf::from(drive);
+            base.push(path);
+            return Ok(base);
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Some(value) = env::var_os("HOME") {
+            return Ok(PathBuf::from(value));
+        }
+    }
+
+    Err("failed to resolve home directory".to_string())
+}
+
+fn resolve_shared_data_dir(_app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    if let Some(value) = env::var_os("BOERLAN_DATA_DIR") {
+        let trimmed = PathBuf::from(value);
+        if !trimmed.as_os_str().is_empty() {
+            return Ok(trimmed);
+        }
+    }
+
+    let home_dir = resolve_home_dir()?;
+    #[cfg(target_os = "macos")]
+    {
+        return Ok(home_dir
+            .join("Library")
+            .join("Application Support")
+            .join(APP_IDENTIFIER));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(appdata) = env::var_os("APPDATA") {
+            return Ok(PathBuf::from(appdata).join(APP_IDENTIFIER));
+        }
+        return Ok(home_dir
+            .join("AppData")
+            .join("Roaming")
+            .join(APP_IDENTIFIER));
+    }
+
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    {
+        if let Some(xdg_data_home) = env::var_os("XDG_DATA_HOME") {
+            return Ok(PathBuf::from(xdg_data_home).join(APP_IDENTIFIER));
+        }
+        Ok(home_dir.join(".local").join("share").join(APP_IDENTIFIER))
+    }
 }
 
 fn write_trial_state(path: &PathBuf, state: &TrialState) -> Result<(), String> {
@@ -344,10 +405,8 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![get_backend_port, get_trial_status])
         .setup(|app| {
-            let data_dir = app
-                .path()
-                .app_data_dir()
-                .expect("failed to get app data dir");
+            let data_dir = resolve_shared_data_dir(&app.handle())
+                .expect("failed to get shared app data dir");
             let port_file = data_dir.join("backend-port.txt");
             let app_state = AppState {
                 backend_process: Mutex::new(None),

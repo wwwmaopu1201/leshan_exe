@@ -320,12 +320,20 @@ func (dc *DeviceConnection) handleDeviceInfo(pkt *Packet) {
 func (dc *DeviceConnection) handleMainboardSN(pkt *Packet) {
 	dc.markRegistered("device-flag")
 	sn := normalizeProtocolText(pkt.Data)
+	if sn == "" {
+		return
+	}
 	dc.deviceFlag = sn
 	if dc.deviceID == 0 {
-		dc.ensurePlaceholderDevice("device-flag")
-		emitTCPLog(dc.db, "info", true, "[TCP] Device flag cached before device registration: flag=%s remote=%s",
-			sn, dc.conn.RemoteAddr())
-		return
+		if err := dc.upsertDeviceRecord(sn, "", "", "", "device-flag"); err != nil {
+			emitTCPLog(dc.db, "error", true, "[TCP] Failed to bind device by mainboard flag=%s err=%v", sn, err)
+			return
+		}
+	} else {
+		if err := dc.rebindDeviceByMainboardSN(sn); err != nil {
+			emitTCPLog(dc.db, "error", true, "[TCP] Failed to rebind device by mainboard flag=%s err=%v", sn, err)
+			return
+		}
 	}
 	if err := dc.db.Model(&model.Device{}).Where("id = ?", dc.deviceID).Updates(map[string]interface{}{
 		"mainboard_sn":     sn,
@@ -718,9 +726,11 @@ func (dc *DeviceConnection) handleProduction(pkt *Packet) {
 	})
 
 	if dc.deviceID == 0 {
-		emitTCPLog(dc.db, "warn", true, "[TCP] Production data received before device registration: payloadDeviceId=%d remote=%s",
-			production.DeviceCode, dc.conn.RemoteAddr())
-		return
+		if err := dc.ensureProductionDeviceBinding(uint(production.DeviceCode)); err != nil {
+			emitTCPLog(dc.db, "warn", true, "[TCP] Production data received before device registration and binding failed: payloadDeviceId=%d remote=%s err=%v",
+				production.DeviceCode, dc.conn.RemoteAddr(), err)
+			return
+		}
 	}
 
 	record, created, err := dc.syncProductionSnapshot(productionSnapshot{
@@ -785,9 +795,11 @@ func (dc *DeviceConnection) handleProductionOld(pkt *Packet) {
 	})
 
 	if dc.deviceID == 0 {
-		emitTCPLog(dc.db, "warn", true, "[TCP] Production old data received before device registration: payloadDeviceId=%d remote=%s",
-			production.DeviceCode, dc.conn.RemoteAddr())
-		return
+		if err := dc.ensureProductionDeviceBinding(uint(production.DeviceCode)); err != nil {
+			emitTCPLog(dc.db, "warn", true, "[TCP] Production old data received before device registration and binding failed: payloadDeviceId=%d remote=%s err=%v",
+				production.DeviceCode, dc.conn.RemoteAddr(), err)
+			return
+		}
 	}
 
 	record, created, err := dc.syncProductionSnapshot(productionSnapshot{
@@ -838,11 +850,30 @@ func (dc *DeviceConnection) cleanup() {
 		if dc.connMgr != nil && !dc.connMgr.Unregister(dc.deviceCode, dc) {
 			return
 		}
-		// 标记设备离线
-		dc.db.Model(&model.Device{}).Where("id = ? AND status != ?", dc.deviceID, "offline").
-			Update("status", "offline")
-		emitTCPLog(dc.db, "info", true, "[TCP] Device disconnected: %s", dc.deviceCode)
+		dc.scheduleOfflineTransition()
 	}
+}
+
+func (dc *DeviceConnection) scheduleOfflineTransition() {
+	deviceCode := strings.TrimSpace(dc.deviceCode)
+	deviceFlag := strings.TrimSpace(dc.deviceFlag)
+	deviceID := dc.deviceID
+	if deviceCode == "" && deviceFlag == "" && deviceID == 0 {
+		return
+	}
+
+	time.AfterFunc(ReconnectGracePeriod, func() {
+		if dc.connMgr != nil && dc.connMgr.HasBoundDevice(deviceID, deviceCode, deviceFlag, dc) {
+			emitTCPLog(dc.db, "info", false, "[TCP] Device reconnect handoff detected, skip offline transition: device=%s flag=%s id=%d", deviceCode, deviceFlag, deviceID)
+			return
+		}
+
+		if deviceID > 0 {
+			dc.db.Model(&model.Device{}).Where("id = ? AND status != ?", deviceID, "offline").
+				Update("status", "offline")
+		}
+		emitTCPLog(dc.db, "info", true, "[TCP] Device disconnected: %s", deviceCode)
+	})
 }
 
 // 辅助函数
@@ -883,10 +914,39 @@ func normalizeProtocolText(data []byte) string {
 		return ""
 	}
 
+	raw = bytes.TrimRight(raw, "\x00")
+	if len(raw) == 0 {
+		return ""
+	}
+
+	if utf8.Valid(raw) {
+		text := strings.TrimSpace(string(raw))
+		if looksReasonableProtocolText(text) {
+			return text
+		}
+	}
+
 	if isLikelyUTF16LEText(raw) {
 		if decoded := decodeUTF16LECString(raw); decoded != "" {
 			return decoded
 		}
+	}
+
+	if decoded := decodeGB18030Text(raw); decoded != "" {
+		return decoded
+	}
+
+	fallback := strings.TrimSpace(trimNullBytes(raw))
+	if looksReasonableProtocolText(fallback) {
+		return fallback
+	}
+	return ""
+}
+
+func normalizeCompatibleProtocolText(data []byte) string {
+	raw := bytes.TrimSpace(data)
+	if len(raw) == 0 {
+		return ""
 	}
 
 	raw = bytes.TrimRight(raw, "\x00")
@@ -1056,7 +1116,8 @@ func parseProtocolBCDDateTime(data []byte) (time.Time, error) {
 	if day < 1 || day > 31 {
 		return time.Time{}, fmt.Errorf("invalid day %d", day)
 	}
-	if week < 1 || week > 7 {
+	// 部分下位机这里会填 0，业务上并不依赖星期字段，放宽校验避免整条生产数据丢弃。
+	if week > 7 {
 		return time.Time{}, fmt.Errorf("invalid weekday %d", week)
 	}
 	if hour > 23 || minute > 59 || second > 59 {

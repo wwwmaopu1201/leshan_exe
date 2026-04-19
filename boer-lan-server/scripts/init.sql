@@ -225,29 +225,3 @@ CREATE TABLE IF NOT EXISTS login_logs (
 INSERT INTO users (username, password, nickname, role) VALUES
 ('admin', '$2a$10$.DrZeVbIDBVkY2jV3Hi8x.c2TdzX1B7wPkRMpGNVIGbRXTFr2hluK', '管理员', 'admin')
 ON DUPLICATE KEY UPDATE nickname = '管理员';
-
--- 插入默认设备分组
-INSERT INTO device_groups (name, parent_id) VALUES
-('全部设备', NULL),
-('A车间', 1),
-('B车间', 1),
-('C车间', 1)
-ON DUPLICATE KEY UPDATE name = name;
-
--- 插入示例设备
-INSERT INTO devices (code, name, type, model, ip, status, group_id) VALUES
-('A-001', '缝纫机A-001', '缝纫机', 'BM-2000', '192.168.1.101', 'online', 2),
-('A-002', '缝纫机A-002', '缝纫机', 'BM-2000', '192.168.1.102', 'working', 2),
-('A-003', '缝纫机A-003', '缝纫机', 'BM-3000', '192.168.1.103', 'offline', 2),
-('B-001', '缝纫机B-001', '缝纫机', 'BM-3000', '192.168.1.104', 'working', 3),
-('B-002', '缝纫机B-002', '缝纫机', 'BM-2000', '192.168.1.105', 'alarm', 3)
-ON DUPLICATE KEY UPDATE name = name;
-
--- 插入示例员工
-INSERT INTO employees (code, name, department, position, phone) VALUES
-('E001', '张三', '生产部', '操作员', '13800138001'),
-('E002', '李四', '生产部', '操作员', '13800138002'),
-('E003', '王五', '生产部', '组长', '13800138003'),
-('E004', '赵六', '质检部', '质检员', '13800138004'),
-('E005', '钱七', '技术部', '工程师', '13800138005')
-ON DUPLICATE KEY UPDATE name = name;

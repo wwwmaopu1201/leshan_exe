@@ -131,7 +131,7 @@
         v-model="importText"
         type="textarea"
         :rows="10"
-        placeholder="例如：\noperator01,123456,张三,2\noperator02,123456,李四"
+        placeholder="格式：\n账号,密码,操作员姓名,分组ID(可选)"
       />
       <span slot="footer" class="dialog-footer">
         <el-button @click="importDialogVisible = false">取消</el-button>

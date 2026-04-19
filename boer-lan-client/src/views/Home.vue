@@ -71,15 +71,20 @@
               <span class="pattern-list__head-value">次数</span>
             </div>
 
-            <div
-              v-for="(item, index) in patternRows"
-              :key="`${item.name}-${index}`"
-              class="pattern-row"
-              :class="{ 'is-highlight': index === 0 }"
-            >
-              <span class="pattern-row__rank">{{ index + 1 }}</span>
-              <span class="pattern-row__name">{{ item.name }}</span>
-              <span class="pattern-row__value">{{ item.value }}</span>
+            <template v-if="patternRows.length">
+              <div
+                v-for="(item, index) in patternRows"
+                :key="`${item.name}-${index}`"
+                class="pattern-row"
+                :class="{ 'is-highlight': index === 0 }"
+              >
+                <span class="pattern-row__rank">{{ index + 1 }}</span>
+                <span class="pattern-row__name">{{ item.name }}</span>
+                <span class="pattern-row__value">{{ item.value }}</span>
+              </div>
+            </template>
+            <div v-else class="pattern-empty">
+              暂无实时花型数据
             </div>
           </div>
         </el-card>
@@ -301,16 +306,9 @@ export default {
       ]
     },
     patternRows() {
-      const rows = (this.homeStats.patternUsage || []).slice(0, 10)
-      if (rows.length > 0) {
-        return rows.map(item => ({
-          name: item.name || '未命名花型',
-          value: this.toNumber(item.value)
-        }))
-      }
-      return Array.from({ length: 10 }, (_, index) => ({
-        name: `暂无花型数据 ${index + 1}`,
-        value: 0
+      return (this.homeStats.patternUsage || []).slice(0, 10).map(item => ({
+        name: item.name || '未命名花型',
+        value: this.toNumber(item.value)
       }))
     },
     deviceUsageRows() {
@@ -932,6 +930,15 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.pattern-empty {
+  min-height: 340px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #8a95a6;
+  font-size: 13px;
 }
 
 .ranking-grid {

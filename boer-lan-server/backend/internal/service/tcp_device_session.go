@@ -91,7 +91,7 @@ func (dc *DeviceConnection) sendRegisterProbe(trigger string) {
 
 func (dc *DeviceConnection) ensurePlaceholderDevice(reason string) {
 	code, name, deviceType, modelName := dc.provisionalIdentity()
-	if code == "" {
+	if code == "" || strings.HasPrefix(code, pendingDevicePrefix) {
 		return
 	}
 	if err := dc.upsertDeviceRecord(code, name, deviceType, modelName, reason); err != nil {
@@ -179,9 +179,12 @@ func (dc *DeviceConnection) upsertDeviceRecord(code, name, deviceType, modelName
 			"identified_by": dc.resolveIdentifiedBy(code, mainboardSN),
 		}
 		if strings.TrimSpace(name) != "" {
-			updates["name"] = strings.TrimSpace(name)
-			if strings.TrimSpace(device.InitialName) == "" {
-				updates["initial_name"] = strings.TrimSpace(name)
+			normalizedName := strings.TrimSpace(name)
+			if shouldRefreshProtocolDeviceName(device, normalizedName) {
+				updates["name"] = normalizedName
+			}
+			if shouldRefreshProtocolInitialName(device, normalizedName) {
+				updates["initial_name"] = normalizedName
 			}
 		}
 		if strings.TrimSpace(deviceType) != "" {
@@ -212,6 +215,12 @@ func (dc *DeviceConnection) upsertDeviceRecord(code, name, deviceType, modelName
 }
 
 func (dc *DeviceConnection) resolveExistingDevice(device *model.Device, code, mainboardSN, ip string) error {
+	if mainboardSN != "" {
+		if err := dc.db.Where("mainboard_sn = ?", mainboardSN).First(device).Error; err == nil {
+			return nil
+		}
+	}
+
 	if dc.deviceID > 0 {
 		if err := dc.db.First(device, dc.deviceID).Error; err == nil {
 			return nil
@@ -220,12 +229,6 @@ func (dc *DeviceConnection) resolveExistingDevice(device *model.Device, code, ma
 
 	if code != "" {
 		if err := dc.db.Where("code = ?", code).First(device).Error; err == nil {
-			return nil
-		}
-	}
-
-	if mainboardSN != "" {
-		if err := dc.db.Where("mainboard_sn = ?", mainboardSN).First(device).Error; err == nil {
 			return nil
 		}
 	}
@@ -257,11 +260,221 @@ func (dc *DeviceConnection) bindDeviceRecord(device model.Device, reason string)
 	emitTCPLog(dc.db, "info", true, "[TCP] Device session bound: code=%s id=%d reason=%s", dc.deviceCode, dc.deviceID, reason)
 }
 
+func (dc *DeviceConnection) rebindDeviceByMainboardSN(mainboardSN string) error {
+	mainboardSN = strings.TrimSpace(mainboardSN)
+	if mainboardSN == "" {
+		return nil
+	}
+
+	var current model.Device
+	if dc.deviceID > 0 {
+		if err := dc.db.First(&current, dc.deviceID).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+	}
+
+	var existing model.Device
+	err := dc.db.Where("mainboard_sn = ?", mainboardSN).Order("updated_at DESC, id DESC").First(&existing).Error
+	switch {
+	case err == nil && existing.ID > 0:
+		if current.ID == 0 || existing.ID == current.ID {
+			dc.bindDeviceRecord(existing, "device-flag")
+			return nil
+		}
+		return dc.mergeDeviceRecord(current, existing, "device-flag")
+	case err != nil && !errors.Is(err, gorm.ErrRecordNotFound):
+		return err
+	case current.ID > 0:
+		return nil
+	default:
+		return gorm.ErrRecordNotFound
+	}
+}
+
+func (dc *DeviceConnection) mergeDeviceRecord(source, target model.Device, reason string) error {
+	if source.ID == 0 || target.ID == 0 || source.ID == target.ID {
+		dc.bindDeviceRecord(target, reason)
+		return nil
+	}
+
+	return dc.db.Transaction(func(tx *gorm.DB) error {
+		updates := make(map[string]interface{})
+		if shouldReplaceDeviceCode(target, source) {
+			updates["code"] = strings.TrimSpace(source.Code)
+		}
+		if shouldRefreshProtocolDeviceName(target, source.Name) {
+			updates["name"] = strings.TrimSpace(source.Name)
+		}
+		if shouldRefreshProtocolInitialName(target, source.InitialName) {
+			updates["initial_name"] = strings.TrimSpace(source.InitialName)
+		}
+		if strings.TrimSpace(target.Type) == "" || target.Type == "模板机" {
+			if strings.TrimSpace(source.Type) != "" && source.Type != "模板机" {
+				updates["type"] = strings.TrimSpace(source.Type)
+			}
+		}
+		if strings.TrimSpace(target.ModelName) == "" || target.ModelName == "待识别" || target.ModelName == "未知型号" {
+			if strings.TrimSpace(source.ModelName) != "" && source.ModelName != "待识别" && source.ModelName != "未知型号" {
+				updates["model_name"] = strings.TrimSpace(source.ModelName)
+			}
+		}
+		if strings.TrimSpace(target.MainboardSN) == "" && strings.TrimSpace(source.MainboardSN) != "" {
+			updates["mainboard_sn"] = strings.TrimSpace(source.MainboardSN)
+		}
+		if strings.TrimSpace(target.IP) == "" && strings.TrimSpace(source.IP) != "" {
+			updates["ip"] = strings.TrimSpace(source.IP)
+		}
+		if target.GroupID == nil && source.GroupID != nil {
+			updates["group_id"] = *source.GroupID
+		}
+		if strings.TrimSpace(target.IdentifiedBy) != "mainboard" {
+			updates["identified_by"] = "mainboard"
+		}
+		if len(updates) > 0 {
+			if err := tx.Model(&model.Device{}).Where("id = ?", target.ID).Updates(updates).Error; err != nil {
+				return err
+			}
+		}
+		if err := reassignDeviceReferences(tx, source.ID, target.ID); err != nil {
+			return err
+		}
+		if err := tx.Delete(&model.Device{}, source.ID).Error; err != nil {
+			return err
+		}
+		if err := tx.First(&target, target.ID).Error; err != nil {
+			return err
+		}
+		dc.bindDeviceRecord(target, reason)
+		return nil
+	})
+}
+
+func reassignDeviceReferences(tx *gorm.DB, sourceID, targetID uint) error {
+	if sourceID == 0 || targetID == 0 || sourceID == targetID {
+		return nil
+	}
+
+	modelUpdates := []struct {
+		model interface{}
+		field string
+	}{
+		{&model.EmployeeDevice{}, "device_id"},
+		{&model.DevicePatternFile{}, "device_id"},
+		{&model.UploadTask{}, "device_id"},
+		{&model.DownloadTask{}, "device_id"},
+		{&model.ProductionRecord{}, "device_id"},
+		{&model.AlarmRecord{}, "device_id"},
+		{&model.SalaryRecord{}, "device_id"},
+	}
+	for _, item := range modelUpdates {
+		if err := tx.Model(item.model).Where(item.field+" = ?", sourceID).Update(item.field, targetID).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (dc *DeviceConnection) ensureProductionDeviceBinding(payloadDeviceCode uint) error {
+	if dc.deviceID > 0 {
+		return nil
+	}
+
+	code := strings.TrimSpace(dc.deviceCode)
+	if code == "" || strings.HasPrefix(code, pendingDevicePrefix) {
+		if payloadDeviceCode > 0 {
+			code = fmt.Sprintf("%d", payloadDeviceCode)
+		}
+	}
+	if code == "" {
+		return fmt.Errorf("production payload has no usable device code")
+	}
+
+	name := strings.TrimSpace(dc.deviceName)
+	if name == "" || isPlaceholderDeviceName(name, code, dc.deviceFlag) {
+		name = "设备" + code
+	}
+
+	deviceType := "模板机"
+	modelName := "待识别"
+	if dc.deviceModel > 0 {
+		deviceType, modelName = mapDeviceModel(dc.deviceModel)
+	}
+
+	return dc.upsertDeviceRecord(code, name, deviceType, modelName, "production-bind")
+}
+
+func shouldReplaceDeviceCode(target, source model.Device) bool {
+	sourceCode := strings.TrimSpace(source.Code)
+	targetCode := strings.TrimSpace(target.Code)
+	targetMainboard := strings.TrimSpace(target.MainboardSN)
+	if sourceCode == "" || sourceCode == targetCode {
+		return false
+	}
+	if strings.HasPrefix(sourceCode, pendingDevicePrefix) {
+		return false
+	}
+	if targetCode == "" || strings.HasPrefix(targetCode, pendingDevicePrefix) {
+		return true
+	}
+	if targetMainboard != "" && targetCode == targetMainboard {
+		return true
+	}
+	return false
+}
+
 func fallbackString(value, fallback string) string {
 	if strings.TrimSpace(value) == "" {
 		return fallback
 	}
 	return strings.TrimSpace(value)
+}
+
+func shouldRefreshProtocolDeviceName(device model.Device, protocolName string) bool {
+	protocolName = strings.TrimSpace(protocolName)
+	if protocolName == "" {
+		return false
+	}
+
+	currentName := strings.TrimSpace(device.Name)
+	if currentName == "" {
+		return true
+	}
+	if currentName == protocolName {
+		return false
+	}
+	if currentName == strings.TrimSpace(device.InitialName) {
+		return true
+	}
+	return isPlaceholderDeviceName(currentName, device.Code, device.MainboardSN)
+}
+
+func shouldRefreshProtocolInitialName(device model.Device, protocolName string) bool {
+	protocolName = strings.TrimSpace(protocolName)
+	if protocolName == "" {
+		return false
+	}
+
+	currentInitialName := strings.TrimSpace(device.InitialName)
+	return currentInitialName != protocolName
+}
+
+func isPlaceholderDeviceName(value, code, mainboardSN string) bool {
+	value = strings.TrimSpace(value)
+	code = strings.TrimSpace(code)
+	mainboardSN = strings.TrimSpace(mainboardSN)
+	if value == "" {
+		return true
+	}
+	if strings.HasPrefix(value, "待识别设备") {
+		return true
+	}
+	if code != "" && value == "设备 "+code {
+		return true
+	}
+	if mainboardSN != "" && value == "设备 "+mainboardSN {
+		return true
+	}
+	return false
 }
 
 func (dc *DeviceConnection) resolveIdentifiedBy(code, mainboardSN string) string {

@@ -234,7 +234,7 @@
         v-model="importText"
         type="textarea"
         :rows="12"
-        placeholder="可直接粘贴CSV内容，或点击上方“选择CSV文件”自动填充&#10;例如：&#10;E10001,张三,13800138000,一组员工&#10;E10002,李四,13900139000,二组员工"
+        placeholder="可直接粘贴CSV内容，或点击上方“选择CSV文件”自动填充&#10;格式：&#10;员工工号,员工姓名,手机号,备注"
       />
       <span slot="footer" class="dialog-footer">
         <el-button @click="showImportDialog = false">{{ $t('common.cancel') }}</el-button>
@@ -592,11 +592,7 @@ export default {
     },
     async downloadImportTemplate() {
       const headers = ['员工工号', '员工姓名', '手机号', '备注']
-      const examples = [
-        ['E10001', '张三', '13800138000', '一组员工'],
-        ['E10002', '李四', '13900139000', '二组员工']
-      ]
-      const csv = [headers, ...examples]
+      const csv = [headers]
         .map(row => row.map(col => `"${String(col).replace(/"/g, '""')}"`).join(','))
         .join('\n')
       const content = '\uFEFF' + csv

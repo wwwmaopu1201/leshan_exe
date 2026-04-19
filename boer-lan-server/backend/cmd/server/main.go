@@ -6,9 +6,12 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf16"
 
 	"boer-lan-server/internal/api"
 	"boer-lan-server/internal/model"
@@ -45,6 +48,8 @@ type Config struct {
 		Expire int    `yaml:"expire"`
 	} `yaml:"jwt"`
 }
+
+const appIdentifier = "com.boer.lan-server"
 
 var (
 	config             Config
@@ -211,6 +216,10 @@ func main() {
 	downloadWorker.Start()
 	defer downloadWorker.Stop()
 
+	devicePatternSyncWorker := service.NewDevicePatternSyncWorker(db, patternTransfer)
+	devicePatternSyncWorker.Start()
+	defer devicePatternSyncWorker.Stop()
+
 	externalDBSyncWorker := service.NewExternalDBSyncService(db)
 	externalDBSyncWorker.Start()
 	defer externalDBSyncWorker.Stop()
@@ -250,7 +259,11 @@ func persistRuntimePort() {
 	if portFile == "" {
 		dataDir := strings.TrimSpace(os.Getenv("DATA_DIR"))
 		if dataDir == "" {
-			return
+			sharedDataDir, err := resolveSharedDataDir()
+			if err != nil {
+				return
+			}
+			dataDir = sharedDataDir
 		}
 		portFile = filepath.Join(dataDir, "backend-port.txt")
 	}
@@ -304,6 +317,32 @@ func loadConfig() {
 	utils.JWTExpire = config.JWT.Expire
 }
 
+func resolveSharedDataDir() (string, error) {
+	if raw := strings.TrimSpace(os.Getenv("BOERLAN_DATA_DIR")); raw != "" {
+		return raw, nil
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+
+	switch runtime.GOOS {
+	case "darwin":
+		return filepath.Join(homeDir, "Library", "Application Support", appIdentifier), nil
+	case "windows":
+		if appData := strings.TrimSpace(os.Getenv("APPDATA")); appData != "" {
+			return filepath.Join(appData, appIdentifier), nil
+		}
+		return filepath.Join(homeDir, "AppData", "Roaming", appIdentifier), nil
+	default:
+		if xdgDataHome := strings.TrimSpace(os.Getenv("XDG_DATA_HOME")); xdgDataHome != "" {
+			return filepath.Join(xdgDataHome, appIdentifier), nil
+		}
+		return filepath.Join(homeDir, ".local", "share", appIdentifier), nil
+	}
+}
+
 func initDB() {
 	var err error
 
@@ -318,7 +357,11 @@ func initDB() {
 	} else if dataDir := strings.TrimSpace(os.Getenv("DATA_DIR")); dataDir != "" {
 		config.Database.Path = filepath.Join(dataDir, "boer-lan.db")
 	} else if config.Database.Path == "" {
-		config.Database.Path = "./data/boer-lan.db"
+		sharedDataDir, err := resolveSharedDataDir()
+		if err != nil {
+			log.Fatalf("Failed to resolve shared data dir: %v", err)
+		}
+		config.Database.Path = filepath.Join(sharedDataDir, "boer-lan.db")
 	}
 
 	switch config.Database.Type {
@@ -382,9 +425,11 @@ func initDB() {
 	); err != nil {
 		log.Fatalf("Failed to auto migrate: %v", err)
 	}
+	ensureDeviceIdentityIndexes(db)
 
 	// Create default data if not exists
 	initDefaultData(db)
+	repairLegacyDeviceData(db)
 	backfillEmployeeGroupIDs(db)
 	service.BackfillProductionDerivedData(db)
 
@@ -486,32 +531,48 @@ func initDefaultData(db *gorm.DB) {
 	}
 	ensureDefaultRole("admin", "系统默认管理员角色")
 	ensureDefaultRole("user", "系统默认普通角色")
+	ensureDefaultRootGroup(db)
+	normalizeTopLevelGroupsUnderRoot(db)
 
-	// 创建默认分组
-	var groupCount int64
-	db.Model(&model.Group{}).Count(&groupCount)
-	if groupCount == 0 {
-		// 创建一级分组
-		group1 := model.Group{Name: "工厂一"}
-		db.Create(&group1)
-
-		// 创建二级分组
-		db.Create(&model.Group{Name: "车间一", ParentID: &group1.ID})
-		db.Create(&model.Group{Name: "车间二", ParentID: &group1.ID})
-
-		log.Println("Default groups created")
-	}
-
-	var firstGroup model.Group
-	if err := db.Order("id ASC").First(&firstGroup).Error; err != nil {
-		firstGroup = model.Group{}
-	}
-
-	ensureDefaultAdminUser(db, &firstGroup)
-	ensureDefaultOperatorUser(db, &firstGroup)
+	ensureDefaultAdminUser(db)
 }
 
-func ensureDefaultAdminUser(db *gorm.DB, firstGroup *model.Group) {
+func ensureDefaultRootGroup(db *gorm.DB) {
+	var groupCount int64
+	if err := db.Model(&model.Group{}).Count(&groupCount).Error; err != nil {
+		log.Printf("Skip default root group ensure: %v", err)
+		return
+	}
+	if groupCount > 0 {
+		return
+	}
+
+	group := model.Group{
+		Name:      "总分组",
+		SortOrder: 1,
+	}
+	if err := db.Create(&group).Error; err != nil {
+		log.Printf("Failed to create default root group: %v", err)
+		return
+	}
+	log.Println("Default root group created (总分组)")
+}
+
+func normalizeTopLevelGroupsUnderRoot(db *gorm.DB) {
+	var rootGroup model.Group
+	if err := db.Where("name = ?", "总分组").Order("id ASC").First(&rootGroup).Error; err != nil {
+		return
+	}
+
+	if err := db.Model(&model.Group{}).
+		Where("parent_id IS NULL").
+		Where("id <> ?", rootGroup.ID).
+		Update("parent_id", rootGroup.ID).Error; err != nil {
+		log.Printf("Skip top-level group normalization: %v", err)
+	}
+}
+
+func ensureDefaultAdminUser(db *gorm.DB) {
 	var count int64
 	db.Model(&model.User{}).Where("username = ?", "admin").Count(&count)
 	if count > 0 {
@@ -533,34 +594,287 @@ func ensureDefaultAdminUser(db *gorm.DB, firstGroup *model.Group) {
 		Role:        "admin",
 		Permissions: adminPermissions,
 	}
-	if firstGroup != nil && firstGroup.ID > 0 {
-		adminUser.GroupID = &firstGroup.ID
+	var rootGroup model.Group
+	if err := db.Where("name = ?", "总分组").Order("id ASC").First(&rootGroup).Error; err == nil {
+		adminUser.GroupID = &rootGroup.ID
 	}
 
 	db.Create(&adminUser)
 	log.Println("Default admin user created (admin/admin123)")
 }
 
-func ensureDefaultOperatorUser(db *gorm.DB, firstGroup *model.Group) {
-	var count int64
-	db.Model(&model.Operator{}).Where("username = ?", "operator").Count(&count)
-	if count > 0 {
+func repairLegacyDeviceData(db *gorm.DB) {
+	repairMisdecodedDeviceTextFields(db)
+	archiveDuplicateDevicesByMainboard(db)
+	archivePlaceholderMainboardDevices(db)
+	archiveDuplicatePendingDevices(db)
+}
+
+func ensureDeviceIdentityIndexes(db *gorm.DB) {
+	migrator := db.Migrator()
+	if migrator == nil {
 		return
 	}
 
-	hashedPassword, _ := utils.HashPassword("123")
-
-	operator := model.Operator{
-		Username: "operator",
-		Password: hashedPassword,
-		Nickname: "操作员",
+	if migrator.HasIndex(&model.Device{}, "idx_devices_code") {
+		_ = migrator.DropIndex(&model.Device{}, "idx_devices_code")
 	}
-	if firstGroup != nil && firstGroup.ID > 0 {
-		operator.GroupID = &firstGroup.ID
+	_ = migrator.CreateIndex(&model.Device{}, "Code")
+	_ = migrator.CreateIndex(&model.Device{}, "MainboardSN")
+}
+
+func repairMisdecodedDeviceTextFields(db *gorm.DB) {
+	var devices []model.Device
+	if err := db.Find(&devices).Error; err != nil {
+		log.Printf("Skip device text repair: %v", err)
+		return
 	}
 
-	db.Create(&operator)
-	log.Println("Default operator created (operator/123)")
+	repairedCount := 0
+	for _, device := range devices {
+		updates := map[string]interface{}{}
+
+		if repaired := recoverMisdecodedASCIIText(device.Code); repaired != "" && repaired != device.Code {
+			updates["code"] = repaired
+		}
+		if repaired := recoverMisdecodedASCIIText(device.Name); repaired != "" && repaired != device.Name {
+			updates["name"] = repaired
+		}
+		if repaired := recoverMisdecodedASCIIText(device.InitialName); repaired != "" && repaired != device.InitialName {
+			updates["initial_name"] = repaired
+		}
+		if repaired := recoverMisdecodedASCIIText(device.MainboardSN); repaired != "" && repaired != device.MainboardSN {
+			updates["mainboard_sn"] = repaired
+		}
+
+		if len(updates) == 0 {
+			continue
+		}
+		if err := db.Model(&model.Device{}).Where("id = ?", device.ID).Updates(updates).Error; err != nil {
+			log.Printf("Skip device text repair id=%d: %v", device.ID, err)
+			continue
+		}
+		repairedCount++
+	}
+
+	if repairedCount > 0 {
+		log.Printf("Legacy device text repaired: %d", repairedCount)
+	}
+}
+
+func archiveDuplicatePendingDevices(db *gorm.DB) {
+	var devices []model.Device
+	if err := db.Select("id", "code", "ip").Find(&devices).Error; err != nil {
+		log.Printf("Skip pending device cleanup: %v", err)
+		return
+	}
+
+	archivedCount := 0
+	for _, device := range devices {
+		code := strings.TrimSpace(device.Code)
+		ip := strings.TrimSpace(device.IP)
+		if !strings.HasPrefix(code, "PENDING-") || ip == "" {
+			continue
+		}
+
+		var duplicateCount int64
+		if err := db.Model(&model.Device{}).
+			Where("id <> ?", device.ID).
+			Where("ip = ?", ip).
+			Where("code NOT LIKE ?", "PENDING-%").
+			Count(&duplicateCount).Error; err != nil {
+			continue
+		}
+		if duplicateCount == 0 {
+			continue
+		}
+
+		if err := db.Delete(&model.Device{}, device.ID).Error; err != nil {
+			log.Printf("Skip archiving duplicate pending device id=%d: %v", device.ID, err)
+			continue
+		}
+		archivedCount++
+	}
+
+	if archivedCount > 0 {
+		log.Printf("Duplicate pending devices archived: %d", archivedCount)
+	}
+}
+
+func archiveDuplicateDevicesByMainboard(db *gorm.DB) {
+	var devices []model.Device
+	if err := db.Where("deleted_at IS NULL").Find(&devices).Error; err != nil {
+		log.Printf("Skip mainboard device dedupe: %v", err)
+		return
+	}
+
+	groups := make(map[string][]model.Device)
+	for _, device := range devices {
+		mainboardSN := strings.TrimSpace(device.MainboardSN)
+		if mainboardSN == "" {
+			continue
+		}
+		groups[mainboardSN] = append(groups[mainboardSN], device)
+	}
+
+	archivedCount := 0
+	for _, duplicated := range groups {
+		if len(duplicated) <= 1 {
+			continue
+		}
+
+		keep := duplicated[0]
+		for _, candidate := range duplicated[1:] {
+			if scoreDeviceIdentity(candidate) > scoreDeviceIdentity(keep) {
+				keep = candidate
+			}
+		}
+
+		for _, candidate := range duplicated {
+			if candidate.ID == keep.ID {
+				continue
+			}
+			if err := db.Delete(&model.Device{}, candidate.ID).Error; err != nil {
+				log.Printf("Skip duplicate mainboard device archive id=%d: %v", candidate.ID, err)
+				continue
+			}
+			archivedCount++
+		}
+	}
+
+	if archivedCount > 0 {
+		log.Printf("Duplicate mainboard devices archived: %d", archivedCount)
+	}
+}
+
+func archivePlaceholderMainboardDevices(db *gorm.DB) {
+	var devices []model.Device
+	if err := db.Where("deleted_at IS NULL").Find(&devices).Error; err != nil {
+		log.Printf("Skip placeholder mainboard device cleanup: %v", err)
+		return
+	}
+
+	archivedCount := 0
+	for _, device := range devices {
+		code := strings.TrimSpace(device.Code)
+		mainboardSN := strings.TrimSpace(device.MainboardSN)
+		name := strings.TrimSpace(device.Name)
+		ip := strings.TrimSpace(device.IP)
+		if code == "" || mainboardSN == "" || ip == "" {
+			continue
+		}
+		if code != mainboardSN {
+			continue
+		}
+		if name != "设备 "+code {
+			continue
+		}
+
+		var richerCount int64
+		if err := db.Model(&model.Device{}).
+			Where("id <> ?", device.ID).
+			Where("deleted_at IS NULL").
+			Where("ip = ?", ip).
+			Where("code <> ?", code).
+			Where("name NOT LIKE ?", "设备 %").
+			Count(&richerCount).Error; err != nil {
+			continue
+		}
+		if richerCount == 0 {
+			continue
+		}
+
+		if err := db.Delete(&model.Device{}, device.ID).Error; err != nil {
+			log.Printf("Skip placeholder mainboard device archive id=%d: %v", device.ID, err)
+			continue
+		}
+		archivedCount++
+	}
+
+	if archivedCount > 0 {
+		log.Printf("Placeholder mainboard devices archived: %d", archivedCount)
+	}
+}
+
+func scoreDeviceIdentity(device model.Device) int {
+	score := 0
+	code := strings.TrimSpace(device.Code)
+	mainboardSN := strings.TrimSpace(device.MainboardSN)
+	name := strings.TrimSpace(device.Name)
+
+	if code != "" && !strings.HasPrefix(code, "PENDING-") && code != mainboardSN {
+		score += 100
+	}
+	if strings.TrimSpace(device.IdentifiedBy) == "mainboard" {
+		score += 20
+	}
+	if name != "" && !strings.HasPrefix(name, "待识别设备") && !strings.HasPrefix(name, "设备 ") {
+		score += 10
+	}
+	if !device.LastOnline.IsZero() {
+		score += 5
+	}
+	return score
+}
+
+func recoverMisdecodedASCIIText(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || isMostlyASCIIText(trimmed) {
+		return ""
+	}
+
+	raw := encodeUTF16LEString(trimmed)
+	candidates := []string{
+		strings.TrimSpace(string(raw)),
+	}
+
+	for _, candidate := range candidates {
+		if candidate == "" || candidate == trimmed {
+			continue
+		}
+		if isMostlyASCIIText(candidate) && isReasonableStorageText(candidate) {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func encodeUTF16LEString(value string) []byte {
+	encoded := utf16.Encode([]rune(value))
+	buf := make([]byte, len(encoded)*2)
+	for i, code := range encoded {
+		buf[i*2] = byte(code)
+		buf[i*2+1] = byte(code >> 8)
+	}
+	return buf
+}
+
+func isMostlyASCIIText(value string) bool {
+	runes := []rune(strings.TrimSpace(value))
+	if len(runes) == 0 {
+		return false
+	}
+
+	asciiCount := 0
+	for _, r := range runes {
+		if r <= unicode.MaxASCII && !unicode.IsControl(r) {
+			asciiCount++
+		}
+	}
+	return asciiCount*100/len(runes) >= 80
+}
+
+func isReasonableStorageText(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if unicode.IsControl(r) && !unicode.IsSpace(r) {
+			return false
+		}
+	}
+	return true
 }
 
 func corsMiddleware() gin.HandlerFunc {

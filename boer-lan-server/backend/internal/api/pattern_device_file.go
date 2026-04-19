@@ -16,14 +16,14 @@ type UploadDeviceFilesRequest struct {
 	FileIDs  []uint `json:"fileIds" binding:"required"`
 }
 
-func (h *PatternHandler) GetDevicePatternFiles(c *gin.Context) {
-	deviceIDStr := strings.TrimSpace(c.Query("deviceId"))
+func (h *PatternHandler) loadAccessibleDeviceForPatternFiles(c *gin.Context, rawDeviceID string) (*model.Device, bool) {
+	deviceIDStr := strings.TrimSpace(rawDeviceID)
 	if deviceIDStr == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": "deviceId 不能为空",
 		})
-		return
+		return nil, false
 	}
 
 	deviceID, err := strconv.ParseUint(deviceIDStr, 10, 64)
@@ -32,7 +32,7 @@ func (h *PatternHandler) GetDevicePatternFiles(c *gin.Context) {
 			"code":    400,
 			"message": "deviceId 不合法",
 		})
-		return
+		return nil, false
 	}
 
 	var device model.Device
@@ -41,7 +41,7 @@ func (h *PatternHandler) GetDevicePatternFiles(c *gin.Context) {
 			"code":    404,
 			"message": "设备不存在",
 		})
-		return
+		return nil, false
 	}
 	scope := h.getCurrentUserScope(c)
 	allowed, err := h.canAccessDeviceID(scope, device.ID)
@@ -50,24 +50,23 @@ func (h *PatternHandler) GetDevicePatternFiles(c *gin.Context) {
 			"code":    500,
 			"message": "校验设备权限失败",
 		})
-		return
+		return nil, false
 	}
 	if !allowed {
 		c.JSON(http.StatusForbidden, gin.H{
 			"code":    403,
 			"message": "无权访问该设备文件",
 		})
-		return
+		return nil, false
 	}
 
-	if h.transfer != nil && h.transfer.IsDeviceConnected(device) {
-		if _, err := h.transfer.RefreshDevicePatternFiles(device); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"code":    500,
-				"message": "读取设备文件列表失败: " + err.Error(),
-			})
-			return
-		}
+	return &device, true
+}
+
+func (h *PatternHandler) GetDevicePatternFiles(c *gin.Context) {
+	device, ok := h.loadAccessibleDeviceForPatternFiles(c, c.Query("deviceId"))
+	if !ok {
+		return
 	}
 
 	query := h.db.Model(&model.DevicePatternFile{}).Where("device_id = ?", device.ID)
@@ -125,6 +124,47 @@ func (h *PatternHandler) GetDevicePatternFiles(c *gin.Context) {
 			"total": total,
 		},
 		"message": "success",
+	})
+}
+
+func (h *PatternHandler) RefreshDevicePatternFiles(c *gin.Context) {
+	device, ok := h.loadAccessibleDeviceForPatternFiles(c, c.Query("deviceId"))
+	if !ok {
+		return
+	}
+
+	if h.transfer == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"code":    503,
+			"message": "设备传输服务未初始化",
+		})
+		return
+	}
+	if !h.transfer.IsDeviceConnected(*device) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "设备未在线连接，无法实时读取",
+		})
+		return
+	}
+
+	if _, err := h.transfer.RefreshDevicePatternFiles(*device); err != nil {
+		statusCode := http.StatusInternalServerError
+		message := "实时读取设备文件失败: " + err.Error()
+		if strings.Contains(strings.ToLower(err.Error()), "busy") {
+			statusCode = http.StatusConflict
+			message = "设备当前忙碌，请稍后再试"
+		}
+		c.JSON(statusCode, gin.H{
+			"code":    statusCode,
+			"message": message,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "设备花型列表已刷新",
 	})
 }
 

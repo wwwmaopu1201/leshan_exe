@@ -1019,7 +1019,6 @@ export default {
           const preferredId = this.resolvePreferredDeviceOptionId(normalizedDevices)
           if (preferredId) {
             this.deviceFileQuery.deviceId = preferredId
-            this.fetchDeviceFileList()
           }
         }
       } catch (error) {

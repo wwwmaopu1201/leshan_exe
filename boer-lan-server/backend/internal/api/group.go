@@ -33,6 +33,14 @@ func applyParentScope(query *gorm.DB, parentID *uint) *gorm.DB {
 	return query.Where("parent_id = ?", *parentID)
 }
 
+func (h *GroupHandler) getRootGroup() (*model.Group, error) {
+	var group model.Group
+	if err := h.db.Where("name = ?", "总分组").Order("id ASC").First(&group).Error; err != nil {
+		return nil, err
+	}
+	return &group, nil
+}
+
 // GetGroupTree 获取分组树
 func (h *GroupHandler) GetGroupTree(c *gin.Context) {
 	var groups []model.Group
@@ -128,6 +136,15 @@ func (h *GroupHandler) CreateGroup(c *gin.Context) {
 	if len([]rune(name)) > 50 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "分组名称不能超过50个字符"})
 		return
+	}
+
+	if req.ParentID == nil {
+		rootGroup, err := h.getRootGroup()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "总分组不存在"})
+			return
+		}
+		req.ParentID = &rootGroup.ID
 	}
 
 	if req.ParentID != nil {

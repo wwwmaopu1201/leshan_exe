@@ -543,7 +543,7 @@ func (h *PatternHandler) getPatternFieldSummary(c *gin.Context, fieldName, field
 	var rows []struct {
 		Value        string
 		PatternCount int64
-		UpdateTime   time.Time
+		UpdateTime   string
 	}
 
 	if err := query.
@@ -560,20 +560,21 @@ func (h *PatternHandler) getPatternFieldSummary(c *gin.Context, fieldName, field
 
 	summaryMap := make(map[string]gin.H, len(rows))
 	for _, row := range rows {
+		updateTime := strings.TrimSpace(row.UpdateTime)
+		if updateTime == "" {
+			updateTime = "-"
+		}
 		summaryMap[row.Value] = gin.H{
 			"value":        row.Value,
 			"patternCount": row.PatternCount,
-			"updateTime":   row.UpdateTime.Format("2006-01-02 15:04:05"),
+			"updateTime":   updateTime,
 		}
 	}
 
 	catalogValues, err := h.loadCatalogValues(fieldName)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "查询" + fieldLabel + "汇总失败",
-		})
-		return
+		// 目录表异常时，至少返回 patterns 表里真实存在的汇总，避免前端整体不可用。
+		catalogValues = nil
 	}
 
 	for _, value := range catalogValues {
