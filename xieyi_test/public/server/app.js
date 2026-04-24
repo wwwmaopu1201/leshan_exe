@@ -208,6 +208,35 @@ function formatProductionData(data) {
   return `${data.patternId} / ${data.patternName || "-"}<br />${data.startTime} -> ${data.endTime}<br />针数 ${data.startNeedle} -> ${data.endNeedle}<br />停止原因 ${data.stopReason}${userText}`;
 }
 
+function formatDurationMs(durationMs) {
+  const value = Number(durationMs);
+  if (!Number.isFinite(value) || value < 0) {
+    return "-";
+  }
+
+  const totalSeconds = Math.floor(value / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}小时${minutes}分${seconds}秒`;
+  }
+  if (minutes > 0) {
+    return `${minutes}分${seconds}秒`;
+  }
+  return `${seconds}秒`;
+}
+
+function formatProductionStatTail(pattern) {
+  if (pattern.detailText) {
+    return pattern.detailText;
+  }
+
+  const userText = pattern.lastUserId ? `用户 ${pattern.lastUserId}` : "用户 -";
+  return `${userText}<br />停止原因 ${pattern.lastStopReason ?? "-"} / ${pattern.lastSourceCommand || "-"}`;
+}
+
 function renderStatus(state) {
   const logLevel = state.verboseProtocolLogs ? "详细" : "摘要";
   document.querySelector("#status").textContent =
@@ -327,6 +356,116 @@ function renderDeviceInfo(session) {
           <strong>${label}</strong>
           <div>${value}</div>
         </div>
+      `
+    )
+    .join("");
+}
+
+function renderProductionStats(session) {
+  const summaryContainer = document.querySelector("#productionStatsSummary");
+  const statsTbody = document.querySelector("#productionStatsTable");
+  const detailsTbody = document.querySelector("#productionDurationsTable");
+
+  if (!session) {
+    summaryContainer.innerHTML = `<div class="muted">暂无选中会话</div>`;
+    statsTbody.innerHTML = `<tr><td colspan="6" class="muted">暂无统计</td></tr>`;
+    detailsTbody.innerHTML = `<tr><td colspan="6" class="muted">暂无明细</td></tr>`;
+    return;
+  }
+
+  const stats = session.productionStats || {
+    deviceId: null,
+    totalFrames: 0,
+    uniqueCompletions: 0,
+    duplicateFrames: 0,
+    totalDurationMs: 0,
+    lastAcceptedAt: null,
+    lastDuplicateAt: null,
+    patterns: [],
+    completions: [],
+  };
+  const reportedTotalCount = Math.max(0, Number(session.deviceInfo.productionCount?.totalCount) || 0);
+  const knownCompletedCount = (stats.patterns || []).reduce(
+    (sum, pattern) => sum + (Number(pattern.completedCount) || 0),
+    0
+  );
+  const totalDurationMs = Math.max(0, Number(stats.totalDurationMs) || 0);
+  const abnormalCount = Math.max(0, reportedTotalCount - knownCompletedCount);
+  const displayPatterns =
+    abnormalCount > 0
+      ? [
+          ...stats.patterns,
+          {
+            patternId: 0,
+            patternName: "异常数据",
+            completedCount: abnormalCount,
+            totalDurationMs: null,
+            lastCompletedAt: "-",
+            detailText: "总生产量减去已知花型累计后的余量",
+          },
+        ]
+      : stats.patterns;
+
+  const items = [
+    ["设备编号", stats.deviceId || session.deviceInfo.model?.deviceId || "-"],
+    ["总生产量", reportedTotalCount],
+    ["已知花型累计", knownCompletedCount],
+    ["异常数据", abnormalCount],
+    ["总时长", formatDurationMs(totalDurationMs)],
+    ["已收生产报文", stats.totalFrames ?? 0],
+    ["唯一完工", stats.uniqueCompletions ?? 0],
+    ["重复忽略", stats.duplicateFrames ?? 0],
+    ["统计花型", displayPatterns?.length ?? 0],
+    ["最后计入", stats.lastAcceptedAt || "-"],
+    ["最后重复", stats.lastDuplicateAt || "-"],
+  ];
+
+  summaryContainer.innerHTML = items
+    .map(
+      ([label, value]) => `
+        <div class="summary-item">
+          <strong>${label}</strong>
+          <div>${value}</div>
+        </div>
+      `
+    )
+    .join("");
+
+  if (!displayPatterns?.length) {
+    statsTbody.innerHTML = `<tr><td colspan="6" class="muted">暂无按花型统计，等待生产数据(0x000B/0x000C)</td></tr>`;
+  } else {
+    statsTbody.innerHTML = displayPatterns
+      .map(
+        (pattern) => `
+          <tr>
+            <td>${pattern.patternId || "-"}</td>
+            <td>${pattern.patternName || "-"}</td>
+            <td>${pattern.completedCount}</td>
+            <td>${formatDurationMs(pattern.totalDurationMs)}</td>
+            <td>${pattern.lastCompletedAt || "-"}</td>
+            <td>${formatProductionStatTail(pattern)}</td>
+          </tr>
+        `
+      )
+      .join("");
+  }
+
+  if (!stats.completions?.length) {
+    detailsTbody.innerHTML = `<tr><td colspan="6" class="muted">暂无每件时长明细，等待已完成生产数据</td></tr>`;
+    return;
+  }
+
+  detailsTbody.innerHTML = stats.completions
+    .map(
+      (completion) => `
+        <tr>
+          <td>${completion.patternId || "-"}</td>
+          <td>${completion.patternName || "-"}</td>
+          <td>第 ${completion.pieceNo || "-"} 件</td>
+          <td>${completion.startTime || "-"}</td>
+          <td>${completion.endTime || "-"}</td>
+          <td>${formatDurationMs(completion.durationMs)}</td>
+        </tr>
       `
     )
     .join("");
@@ -567,6 +706,7 @@ function renderState(state) {
   renderSessionTable(state, selectedSession);
   renderSessionSummary(selectedSession);
   renderDeviceInfo(selectedSession);
+  renderProductionStats(selectedSession);
   renderTransferSummary(selectedSession);
   renderClientPatterns(state, selectedSession);
   renderServerPatterns(state);
@@ -741,6 +881,9 @@ document.querySelector("#saveServerPatternBtn").addEventListener("click", () =>
 );
 document.querySelector("#deleteServerPatternBtn").addEventListener("click", () =>
   runTask(deleteServerPattern)
+);
+document.querySelector("#clearProductionStatsBtn").addEventListener("click", () =>
+  runTask(() => submitAction("clearProductionStats"))
 );
 document.querySelector("#clearLogsBtn").addEventListener("click", () =>
   runTask(clearLogs)

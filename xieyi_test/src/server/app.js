@@ -95,6 +95,7 @@ const SEWING_EVENT_STATUS = {
   start: 1,
   running: 2,
 };
+const MAX_TRACKED_PRODUCTION_EVENTS = 20000;
 
 const bindHost = process.env.BIND_HOST || "0.0.0.0";
 const tcpPort = Number(process.env.TCP_PORT || 38400);
@@ -139,6 +140,7 @@ const state = {
   verboseProtocolLogs: process.env.VERBOSE_PROTOCOL_LOGS === "1",
   activeDeviceMode: process.env.ACTIVE_DEVICE_MODE !== "0",
   sessions: new Map(),
+  productionStatsByDevice: new Map(),
   logs: [],
   protocolLogs: [],
   startedAt: nowLocal(),
@@ -252,6 +254,10 @@ function normalizeNumber(value, fallback = 0) {
   return Number.isFinite(next) ? next : fallback;
 }
 
+function normalizeText(value) {
+  return String(value ?? "").replace(/\0+$/g, "").trim();
+}
+
 function getNextPatternId(patterns) {
   return patterns.reduce((max, item) => Math.max(max, Number(item.patternId) || 0), 0) + 1;
 }
@@ -290,6 +296,22 @@ function createSessionDeviceInfo() {
     lastThreadTrimAt: null,
     lastProductionDataOld: null,
     lastProductionDataNew: null,
+  };
+}
+
+function createProductionStatsTracker(deviceId) {
+  return {
+    deviceId,
+    totalFrames: 0,
+    uniqueCompletions: 0,
+    duplicateFrames: 0,
+    totalDurationMs: 0,
+    lastAcceptedAt: null,
+    lastDuplicateAt: null,
+    patterns: new Map(),
+    completions: [],
+    seenFingerprints: new Set(),
+    fingerprintOrder: [],
   };
 }
 
@@ -366,6 +388,265 @@ function createActiveDevicePatterns() {
   ];
 }
 
+function getTrackedDeviceIdFromSession(session) {
+  return normalizeNumber(
+    session.deviceInfo.model?.deviceId,
+    normalizeNumber(
+      session.deviceInfo.lastProductionDataNew?.deviceId,
+      normalizeNumber(session.deviceInfo.lastProductionDataOld?.deviceId, 0)
+    )
+  );
+}
+
+function getOrCreateProductionStatsTracker(deviceId) {
+  let tracker = state.productionStatsByDevice.get(deviceId);
+  if (!tracker) {
+    tracker = createProductionStatsTracker(deviceId);
+    state.productionStatsByDevice.set(deviceId, tracker);
+  }
+
+  return tracker;
+}
+
+function buildProductionEventRecord(session, data, command) {
+  if (!data) {
+    return null;
+  }
+
+  const deviceId = normalizeNumber(data.deviceId, getTrackedDeviceIdFromSession(session));
+  if (!deviceId) {
+    return null;
+  }
+
+  return {
+    deviceId,
+    patternId: normalizeNumber(data.patternId, 0),
+    patternName: normalizeText(data.patternName),
+    startTime: String(data.startTime || ""),
+    startNeedle: normalizeNumber(data.startNeedle, 0),
+    endTime: String(data.endTime || ""),
+    endNeedle: normalizeNumber(data.endNeedle, 0),
+    stopReason: normalizeNumber(data.stopReason, 0),
+    userId: normalizeText(data.userId),
+    sourceCommand: command.name,
+    sessionId: session.id,
+  };
+}
+
+function parseRecordedTimeToMs(value) {
+  const normalized = normalizeText(value);
+  if (!normalized) {
+    return null;
+  }
+
+  const isoText = normalized.replace(" ", "T");
+  const parsedMs = Date.parse(isoText);
+  return Number.isFinite(parsedMs) ? parsedMs : null;
+}
+
+function getProductionDurationMs(record) {
+  const startMs = parseRecordedTimeToMs(record.startTime);
+  const endMs = parseRecordedTimeToMs(record.endTime);
+  if (startMs === null || endMs === null || endMs < startMs) {
+    return null;
+  }
+
+  return endMs - startMs;
+}
+
+// Use the stable completion payload so old/new production-data retries count only once.
+function buildProductionFingerprint(record) {
+  return [
+    record.deviceId,
+    record.patternId,
+    record.patternName,
+    record.startTime,
+    record.startNeedle,
+    record.endTime,
+    record.endNeedle,
+    record.stopReason,
+  ].join("|");
+}
+
+function rememberProductionFingerprint(tracker, fingerprint) {
+  if (tracker.seenFingerprints.has(fingerprint)) {
+    return false;
+  }
+
+  tracker.seenFingerprints.add(fingerprint);
+  tracker.fingerprintOrder.push(fingerprint);
+
+  if (tracker.fingerprintOrder.length > MAX_TRACKED_PRODUCTION_EVENTS) {
+    const expired = tracker.fingerprintOrder.shift();
+    if (expired) {
+      tracker.seenFingerprints.delete(expired);
+    }
+  }
+
+  return true;
+}
+
+function getProductionPatternKey(record) {
+  if (record.patternId > 0) {
+    return `id:${record.patternId}`;
+  }
+
+  return `name:${record.patternName || "-"}`;
+}
+
+function recordProductionStatistics(session, data, command) {
+  const record = buildProductionEventRecord(session, data, command);
+  if (!record) {
+    return {
+      accepted: false,
+      record: null,
+      pattern: null,
+    };
+  }
+
+  const tracker = getOrCreateProductionStatsTracker(record.deviceId);
+  tracker.totalFrames += 1;
+
+  const fingerprint = buildProductionFingerprint(record);
+  if (!rememberProductionFingerprint(tracker, fingerprint)) {
+    tracker.duplicateFrames += 1;
+    tracker.lastDuplicateAt = nowLocal();
+    return {
+      accepted: false,
+      tracker,
+      record,
+      pattern: null,
+    };
+  }
+
+  tracker.uniqueCompletions += 1;
+  tracker.lastAcceptedAt = nowLocal();
+
+  const patternKey = getProductionPatternKey(record);
+  let patternStats = tracker.patterns.get(patternKey);
+  if (!patternStats) {
+    patternStats = {
+      patternId: record.patternId,
+      patternName: record.patternName || `花型${record.patternId || "未命名"}`,
+      completedCount: 0,
+      totalDurationMs: 0,
+      lastCompletedAt: null,
+      lastUserId: "",
+      lastStopReason: 0,
+      lastSessionId: null,
+      lastSourceCommand: null,
+    };
+    tracker.patterns.set(patternKey, patternStats);
+  }
+
+  if (record.patternId > 0) {
+    patternStats.patternId = record.patternId;
+  }
+  if (record.patternName) {
+    patternStats.patternName = record.patternName;
+  }
+
+  patternStats.completedCount += 1;
+  const durationMs = getProductionDurationMs(record);
+  patternStats.lastCompletedAt = record.endTime || record.startTime || nowLocal();
+  patternStats.lastUserId = record.userId || patternStats.lastUserId || "";
+  patternStats.lastStopReason = record.stopReason;
+  patternStats.lastSessionId = session.id;
+  patternStats.lastSourceCommand = command.name;
+  patternStats.totalDurationMs = (patternStats.totalDurationMs || 0) + Math.max(0, durationMs || 0);
+  tracker.totalDurationMs += Math.max(0, durationMs || 0);
+  tracker.completions.push({
+    fingerprint,
+    patternId: patternStats.patternId,
+    patternName: patternStats.patternName,
+    pieceNo: patternStats.completedCount,
+    startTime: record.startTime,
+    endTime: record.endTime,
+    durationMs,
+    startNeedle: record.startNeedle,
+    endNeedle: record.endNeedle,
+    stopReason: record.stopReason,
+    userId: record.userId,
+    sourceCommand: record.sourceCommand,
+    sessionId: record.sessionId,
+  });
+
+  return {
+    accepted: true,
+    tracker,
+    record,
+    pattern: patternStats,
+  };
+}
+
+function getProductionStatsSummaryByDeviceId(deviceId) {
+  const tracker = deviceId ? state.productionStatsByDevice.get(deviceId) : null;
+  if (!tracker) {
+    return {
+      deviceId: deviceId || null,
+      totalFrames: 0,
+      uniqueCompletions: 0,
+      duplicateFrames: 0,
+      totalDurationMs: 0,
+      lastAcceptedAt: null,
+      lastDuplicateAt: null,
+      patterns: [],
+      completions: [],
+    };
+  }
+
+  return {
+    deviceId: tracker.deviceId,
+    totalFrames: tracker.totalFrames,
+    uniqueCompletions: tracker.uniqueCompletions,
+    duplicateFrames: tracker.duplicateFrames,
+    totalDurationMs: tracker.totalDurationMs,
+    lastAcceptedAt: tracker.lastAcceptedAt,
+    lastDuplicateAt: tracker.lastDuplicateAt,
+    patterns: Array.from(tracker.patterns.values())
+      .map((pattern) => ({ ...pattern }))
+      .sort((left, right) => {
+        if (right.completedCount !== left.completedCount) {
+          return right.completedCount - left.completedCount;
+        }
+
+        return String(right.lastCompletedAt || "").localeCompare(String(left.lastCompletedAt || ""));
+      }),
+    completions: tracker.completions
+      .map((completion) => ({ ...completion }))
+      .sort((left, right) => {
+        const leftId = Number(left.patternId) || 0;
+        const rightId = Number(right.patternId) || 0;
+        if (leftId !== rightId) {
+          return leftId - rightId;
+        }
+
+        const nameOrder = String(left.patternName || "").localeCompare(String(right.patternName || ""));
+        if (nameOrder !== 0) {
+          return nameOrder;
+        }
+
+        return (Number(left.pieceNo) || 0) - (Number(right.pieceNo) || 0);
+      }),
+  };
+}
+
+function getSessionProductionStatsSummary(session) {
+  return getProductionStatsSummaryByDeviceId(getTrackedDeviceIdFromSession(session));
+}
+
+function clearProductionStatistics(session) {
+  const deviceId = getTrackedDeviceIdFromSession(session);
+  if (!deviceId) {
+    throw new Error("当前会话还没有可识别的设备编号");
+  }
+
+  state.productionStatsByDevice.delete(deviceId);
+  appendLog(`已清空设备 ${deviceId} 的花型生产统计`, {
+    sessionId: session.id,
+  });
+}
+
 function getTransferSummary(session) {
   return {
     downloadToClient: session.transfers.downloadToClient
@@ -420,6 +701,7 @@ function sessionSummary(session) {
     protocolPresetName: session.protocolPresetName,
     lastRecoveryMessage: session.lastRecoveryMessage,
     deviceInfo: session.deviceInfo,
+    productionStats: getSessionProductionStatsSummary(session),
     clientPatterns: session.clientPatterns,
     transferSummary: getTransferSummary(session),
   };
@@ -1407,10 +1689,31 @@ function handleResumeRequest(session, frame) {
 
 function handleProductionData(session, frame, command) {
   const protocolPreset = frame.protocol || getSessionProtocolPreset(session);
+  let parsed = null;
   if (isCommand(frame, COMMANDS.PRODUCTION_DATA_OLD)) {
-    session.deviceInfo.lastProductionDataOld = parseProductionDataOldPayload(frame.payload, protocolPreset);
+    parsed = parseProductionDataOldPayload(frame.payload, protocolPreset);
+    session.deviceInfo.lastProductionDataOld = parsed;
   } else {
-    session.deviceInfo.lastProductionDataNew = parseProductionDataNewPayload(frame.payload, protocolPreset);
+    parsed = parseProductionDataNewPayload(frame.payload, protocolPreset);
+    session.deviceInfo.lastProductionDataNew = parsed;
+  }
+
+  const trackingResult = recordProductionStatistics(session, parsed, command);
+  if (trackingResult.record) {
+    if (trackingResult.accepted) {
+      appendLog(
+        `会话 ${session.id} 已计入花型生产统计 ${trackingResult.record.patternId || "-"} / ${trackingResult.record.patternName || "-"}`,
+        {
+          sessionId: session.id,
+          detail: `设备 ${trackingResult.record.deviceId} 累计 ${trackingResult.pattern?.completedCount ?? 0} 件 / 完成于 ${trackingResult.record.endTime || "-"}`,
+        }
+      );
+    } else {
+      appendLog(`会话 ${session.id} 收到重复生产数据，已忽略统计`, {
+        sessionId: session.id,
+        detail: `设备 ${trackingResult.record.deviceId} / 花型 ${trackingResult.record.patternId || "-"} / ${trackingResult.record.patternName || "-"} / ${trackingResult.record.sourceCommand}`,
+      });
+    }
   }
 
   sendPacket(
@@ -1494,6 +1797,11 @@ function performAction(action, payload = {}) {
         COMMANDS.SET_DEVICE_FLAG.name,
         protocolPreset
       );
+      return;
+    }
+    case "clearProductionStats": {
+      const session = requireSession(payload);
+      clearProductionStatistics(session);
       return;
     }
     case "readClientPatternList": {

@@ -406,6 +406,47 @@
 
           <div class="card">
             <div class="section-head">
+              <h2>花型生产统计</h2>
+              <button id="clearProductionStatsBtn" type="button" class="ghost">重置统计</button>
+            </div>
+            <div id="productionStatsSummary" class="summary-grid"></div>
+            <div class="table-wrap" style="margin-top: 16px">
+              <table>
+                <thead>
+                  <tr>
+                    <th>花型编号</th>
+                    <th>花型名称</th>
+                    <th>累计件数</th>
+                    <th>累计时长</th>
+                    <th>最近完成</th>
+                    <th>最近信息</th>
+                  </tr>
+                </thead>
+                <tbody id="productionStatsTable"></tbody>
+              </table>
+            </div>
+            <div class="section-head" style="margin-top: 16px">
+              <h3>每件时长明细</h3>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>花型编号</th>
+                    <th>花型名称</th>
+                    <th>第几件</th>
+                    <th>开始时间</th>
+                    <th>结束时间</th>
+                    <th>单件时长</th>
+                  </tr>
+                </thead>
+                <tbody id="productionDurationsTable"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="section-head">
               <h2>传输状态</h2>
             </div>
             <div id="transferSummary" class="summary-grid"></div>
