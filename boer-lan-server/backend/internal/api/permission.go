@@ -59,11 +59,6 @@ func loadUserPermissionMap(db *gorm.DB, userID uint, roleName string) (map[strin
 		return nil, err
 	}
 
-	permissions := parsePermissionMap(user.Permissions)
-	if len(permissions) > 0 {
-		return permissions, nil
-	}
-
 	effectiveRoleName := strings.TrimSpace(roleName)
 	if effectiveRoleName == "" {
 		effectiveRoleName = strings.TrimSpace(user.Role)
@@ -71,11 +66,16 @@ func loadUserPermissionMap(db *gorm.DB, userID uint, roleName string) (map[strin
 	if effectiveRoleName != "" {
 		var role model.Role
 		if err := db.Select("permissions").Where("name = ?", effectiveRoleName).First(&role).Error; err == nil {
-			permissions = parsePermissionMap(role.Permissions)
+			permissions := parsePermissionMap(role.Permissions)
 			if len(permissions) > 0 {
 				return permissions, nil
 			}
 		}
+	}
+
+	permissions := parsePermissionMap(user.Permissions)
+	if len(permissions) > 0 {
+		return permissions, nil
 	}
 
 	// 兼容历史数据：权限字段为空时使用默认模块权限。

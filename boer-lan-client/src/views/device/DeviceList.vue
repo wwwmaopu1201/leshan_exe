@@ -112,7 +112,7 @@
             <el-table-column prop="ip" :label="$t('device.ipAddress')" width="140" />
             <el-table-column prop="group" :label="$t('device.group')" width="130">
               <template slot-scope="scope">
-                <span v-if="scope.row.group">{{ scope.row.group }}</span>
+                <span v-if="getDeviceGroupName(scope.row)">{{ getDeviceGroupName(scope.row) }}</span>
                 <span v-else class="ungrouped-text">未分组</span>
               </template>
             </el-table-column>
@@ -311,6 +311,9 @@ export default {
     }
   },
   computed: {
+    groupNameMap() {
+      return new Map((this.groupOptions || []).map(group => [Number(group.id), group.name]))
+    },
     currentScopeLabel() {
       return this.treeFilter.label || '全部设备'
     },
@@ -349,7 +352,7 @@ export default {
         const res = await getDeviceList({
           keyword: this.searchForm.keyword,
           status: this.searchForm.status,
-          groupId: this.treeFilter.nodeType === 'group' ? this.treeFilter.groupId : '',
+          groupId: this.getRequestGroupId(),
           startDate: this.searchForm.dateRange?.[0] || '',
           endDate: this.searchForm.dateRange?.[1] || '',
           page: 1,
@@ -374,11 +377,31 @@ export default {
       if (this.treeFilter.nodeType === 'device' && this.treeFilter.deviceId) {
         return list.filter(item => String(item.id) === String(this.treeFilter.deviceId))
       }
-      if (this.treeFilter.nodeType === 'group' && this.treeFilter.deviceIds.length) {
+      if (this.treeFilter.nodeType === 'group') {
+        if (this.isUngroupedTreeFilter()) {
+          return list.filter(item => !(item.groupId && Number(item.groupId) > 0))
+        }
+        if (!this.treeFilter.deviceIds.length) {
+          return []
+        }
         const allowedIds = new Set(this.treeFilter.deviceIds.map(id => String(id)))
         return list.filter(item => allowedIds.has(String(item.id)))
       }
       return list
+    },
+    getRequestGroupId() {
+      if (this.treeFilter.nodeType !== 'group') {
+        return ''
+      }
+      if (this.isUngroupedTreeFilter()) {
+        return ''
+      }
+      return this.treeFilter.groupId || ''
+    },
+    isUngroupedTreeFilter() {
+      const groupId = String(this.treeFilter.groupId || '')
+      const label = String(this.treeFilter.label || '')
+      return groupId === 'ungrouped' || label.includes('未分组')
     },
     handleSearch() {
       this.pagination.page = 1
@@ -453,6 +476,14 @@ export default {
         return 'row-ungrouped'
       }
       return ''
+    },
+    getDeviceGroupName(row) {
+      const directName = String(row?.group || row?.groupName || '').trim()
+      if (directName) {
+        return directName
+      }
+      const groupId = Number(row?.groupId || 0)
+      return groupId > 0 ? (this.groupNameMap.get(groupId) || '') : ''
     },
     formatDeviceName(row) {
       const displayName = String(row?.displayName || '').trim()

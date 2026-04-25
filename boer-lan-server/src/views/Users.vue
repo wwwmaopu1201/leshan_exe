@@ -118,7 +118,7 @@
             <el-table-column label="权限" min-width="260">
               <template slot-scope="{ row }">
                 <el-tag
-                  v-for="item in getPermissionTags(row.permissions)"
+                  v-for="item in getDisplayedPermissionTags(row)"
                   :key="`${row.id || row.ID}-${item.key}`"
                   size="mini"
                   effect="plain"
@@ -190,7 +190,7 @@
         </el-form-item>
 
         <el-form-item label="手机号" prop="phone">
-          <el-input v-model.trim="form.phone" placeholder="请输入手机号" />
+          <el-input v-model.trim="form.phone" placeholder="可选，填写时需为11位手机号" />
         </el-form-item>
 
         <el-form-item :label="isAdminRole(form.role) ? '可见分组' : '所属分组'">
@@ -348,7 +348,7 @@ export default {
         phone: [{
           validator: (rule, value, callback) => {
             const normalized = String(value || '').trim()
-            if (!normalized) return callback(new Error('请输入手机号'))
+            if (!normalized) return callback()
             if (!/^1[3-9]\d{9}$/.test(normalized)) return callback(new Error('手机号格式不正确'))
             return callback()
           },
@@ -594,6 +594,13 @@ export default {
       const role = this.getRoleByName(roleName)
       if (!role) return []
       return this.getPermissionTags(role.permissions)
+    },
+    getDisplayedPermissionTags(row) {
+      const roleTags = this.getRolePermissionTags(row?.role)
+      if (roleTags.length) {
+        return roleTags
+      }
+      return this.getPermissionTags(row?.permissions)
     },
     resolvePermissionsPayload() {
       const rolePermissions = this.getRoleByName(this.form.role)?.permissions

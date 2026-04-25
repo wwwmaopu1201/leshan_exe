@@ -235,6 +235,7 @@ func (h *DeviceHandler) buildDeviceNodes(devices []model.Device) []gin.H {
 			"status":       d.Status,
 			"model":        d.ModelName,
 			"ip":           d.IP,
+			"groupId":      d.GroupID,
 			"employeeCode": d.EmployeeCode,
 			"employeeName": d.EmployeeName,
 		})
@@ -387,6 +388,22 @@ func (h *DeviceHandler) GetDeviceList(c *gin.Context) {
 		Limit(pageSize).
 		Find(&devices)
 
+	groupNameByID := make(map[uint]string)
+	var groupIDs []uint
+	for _, device := range devices {
+		if device.GroupID != nil {
+			groupIDs = append(groupIDs, *device.GroupID)
+		}
+	}
+	if len(groupIDs) > 0 {
+		var groups []model.Group
+		if err := h.db.Select("id", "name").Where("id IN ?", normalizeGroupIDs(groupIDs)).Find(&groups).Error; err == nil {
+			for _, group := range groups {
+				groupNameByID[group.ID] = group.Name
+			}
+		}
+	}
+
 	list := make([]gin.H, 0)
 	for _, d := range devices {
 		displayName := resolveDeviceDisplayName(d.Name, d.InitialName, d.Code)
@@ -424,8 +441,15 @@ func (h *DeviceHandler) GetDeviceList(c *gin.Context) {
 			"sortOrder":          d.SortOrder,
 			"createTime":         d.CreatedAt.Format("2006-01-02 15:04:05"),
 		}
+		groupName := ""
 		if d.Group != nil {
-			item["group"] = d.Group.Name
+			groupName = d.Group.Name
+		} else if d.GroupID != nil {
+			groupName = groupNameByID[*d.GroupID]
+		}
+		if groupName != "" {
+			item["group"] = groupName
+			item["groupName"] = groupName
 		}
 		list = append(list, item)
 	}

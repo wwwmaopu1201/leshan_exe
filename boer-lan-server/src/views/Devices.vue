@@ -194,7 +194,7 @@
             <el-table-column label="分组" min-width="150">
               <template slot-scope="{ row }">
                 <span :class="row.groupId ? '' : 'danger-text'">
-                  {{ row.group || '未分组' }}
+                  {{ getDeviceGroupName(row) || '未分组' }}
                 </span>
               </template>
             </el-table-column>
@@ -350,6 +350,9 @@ export default {
     }
   },
   computed: {
+    groupNameMap() {
+      return new Map((this.groups || []).map(group => [Number(group.id), group.name]))
+    },
     treeScopeLabel() {
       if (this.treeSelection.mode === 'group') {
         return this.treeSelection.label || '指定分组'
@@ -630,6 +633,14 @@ export default {
     },
     rowClassName({ row }) {
       return row.groupId ? '' : 'row-ungrouped'
+    },
+    getDeviceGroupName(row) {
+      const directName = String(row?.group || row?.groupName || '').trim()
+      if (directName) {
+        return directName
+      }
+      const groupId = Number(row?.groupId || 0)
+      return groupId > 0 ? (this.groupNameMap.get(groupId) || '') : ''
     },
     handleSelectionChange(rows) {
       this.selectedDeviceIds = rows.map(item => item.id || item.ID).filter(Boolean)

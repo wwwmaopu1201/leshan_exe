@@ -337,6 +337,9 @@ export default {
     }
   },
   methods: {
+    canAccessPermission(permissionKey) {
+      return this.$store.getters.hasPermission(permissionKey)
+    },
     attachTreeNodeKeys(nodes) {
       return (nodes || []).map(node => {
         const nodeType = node.type === 'device' ? 'device' : 'group'
@@ -489,19 +492,49 @@ export default {
     async loadDeviceData() {
       if (!this.selectedDevice) return
 
+      this.realtimeData = {
+        spindleSpeed: Number(this.selectedDevice.currentSpeed || 0),
+        currentStitches: Number(this.selectedDevice.needleCountValue || 0),
+        currentPattern: this.selectedDevice.currentPatternName || '-'
+      }
+      this.alarms = this.selectedDevice.alarmCode
+        ? [{
+            id: `device-alarm-${this.selectedDevice.id}`,
+            message: this.selectedDevice.alarmCode,
+            time: this.selectedDevice.lastProtocolAt || '-'
+          }]
+        : []
+      this.$nextTick(() => {
+        this.initChart([])
+      })
+
+      const canLoadDashboardData = this.canAccessPermission('dashboard')
+      const canLoadAlarmStats = this.canAccessPermission('statistics')
+      if (!canLoadDashboardData && !canLoadAlarmStats) {
+        return
+      }
+
       const deviceId = this.selectedDevice.id
+      const requests = []
+      if (canLoadDashboardData) {
+        requests.push(getDashboardData(deviceId))
+      } else {
+        requests.push(Promise.resolve(null))
+      }
+      if (canLoadAlarmStats) {
+        requests.push(getAlarmStats({
+          deviceId,
+          page: 1,
+          pageSize: 5
+        }))
+      } else {
+        requests.push(Promise.resolve(null))
+      }
 
       try {
-        const [dashboardRes, alarmRes] = await Promise.all([
-          getDashboardData(deviceId),
-          getAlarmStats({
-            deviceId,
-            page: 1,
-            pageSize: 5
-          })
-        ])
+        const [dashboardRes, alarmRes] = await Promise.all(requests)
 
-        if (dashboardRes.code === 0) {
+        if (dashboardRes && dashboardRes.code === 0) {
           this.realtimeData = {
             spindleSpeed: Number(dashboardRes.data?.spindleSpeed || 0),
             currentStitches: Number(dashboardRes.data?.totalPieces || 0),
@@ -512,13 +545,13 @@ export default {
           })
         }
 
-        if (alarmRes.code === 0) {
+        if (alarmRes && alarmRes.code === 0) {
           this.alarms = (alarmRes.data?.list || []).map(item => ({
             id: item.id,
             message: item.alarmInfo || item.description || item.alarmType || '报警',
             time: item.alarmTime || item.startTime || '-'
           }))
-        } else {
+        } else if (canLoadAlarmStats) {
           this.alarms = []
         }
       } catch (error) {

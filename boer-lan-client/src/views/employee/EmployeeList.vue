@@ -26,6 +26,17 @@
             @keyup.enter.native="handleSearch"
           />
         </el-form-item>
+        <el-form-item label="创建时间">
+          <el-date-picker
+            v-model="searchForm.dateRange"
+            type="daterange"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            value-format="yyyy-MM-dd"
+            clearable
+          />
+        </el-form-item>
         <el-form-item :label="$t('device.group')">
           <el-select
             v-model="searchForm.groupId"
@@ -90,7 +101,7 @@
           <el-button icon="el-icon-download" @click="handleExport">
             {{ $t('common.export') }}
           </el-button>
-          <el-button icon="el-icon-refresh" circle @click="fetchData" />
+          <el-button class="refresh-circle-button" icon="el-icon-refresh" circle @click="fetchData" />
         </div>
       </div>
 
@@ -268,6 +279,7 @@ export default {
         keyword: '',
         code: '',
         phone: '',
+        dateRange: [],
         groupId: ''
       },
       pagination: {
@@ -372,11 +384,12 @@ export default {
     async fetchData() {
       this.loading = true
       try {
-        const queryKeyword = this.searchForm.keyword || this.searchForm.phone || ''
         const res = await getEmployeeList({
           keyword: this.searchForm.keyword,
           code: this.searchForm.code,
           phone: this.searchForm.phone,
+          startDate: this.searchForm.dateRange?.[0],
+          endDate: this.searchForm.dateRange?.[1],
           groupId: this.searchForm.groupId,
           page: 1,
           pageSize: 2000
@@ -400,6 +413,8 @@ export default {
       const keyword = String(this.searchForm.keyword || '').trim().toLowerCase()
       const code = String(this.searchForm.code || '').trim().toLowerCase()
       const phone = String(this.searchForm.phone || '').trim()
+      const startDate = this.searchForm.dateRange?.[0] || ''
+      const endDate = this.searchForm.dateRange?.[1] || ''
       const groupId = Number(this.searchForm.groupId || 0)
       return list.filter(item => {
         const matchedKeyword = !keyword || [
@@ -408,8 +423,10 @@ export default {
         ].some(value => String(value || '').toLowerCase().includes(keyword))
         const matchedCode = !code || String(item.code || '').toLowerCase().includes(code)
         const matchedPhone = !phone || String(item.phone || '').includes(phone)
+        const createDate = String(item.createTime || '').slice(0, 10)
+        const matchedDate = (!startDate || createDate >= startDate) && (!endDate || createDate <= endDate)
         const matchedGroup = !groupId || Number(item.groupId || 0) === groupId
-        return matchedKeyword && matchedCode && matchedPhone && matchedGroup
+        return matchedKeyword && matchedCode && matchedPhone && matchedDate && matchedGroup
       })
     },
     handleSearch() {
@@ -421,6 +438,7 @@ export default {
         keyword: '',
         code: '',
         phone: '',
+        dateRange: [],
         groupId: ''
       }
       this.handleSearch()
@@ -602,6 +620,9 @@ export default {
         description: 'CSV 文件',
         extensions: ['csv']
       })
+      if (saved === null) {
+        return
+      }
       this.$message.success(saved ? '模板已保存' : '模板下载成功')
     },
     async handleSave() {
@@ -724,6 +745,8 @@ export default {
           keyword: this.searchForm.keyword,
           code: this.searchForm.code,
           phone: this.searchForm.phone,
+          startDate: this.searchForm.dateRange?.[0],
+          endDate: this.searchForm.dateRange?.[1],
           groupId: this.searchForm.groupId
         })
         if (res.code !== 0) {
@@ -753,6 +776,9 @@ export default {
           description: 'CSV 文件',
           extensions: ['csv']
         })
+        if (saved === null) {
+          return
+        }
         this.$message.success(saved ? '导出文件已保存' : '导出成功')
       } catch (error) {
         console.error('Export employees failed:', error)
@@ -767,7 +793,19 @@ export default {
 .action-group {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 10px;
+}
+
+.refresh-circle-button {
+  width: 24px;
+  height: 24px;
+  padding: 0 !important;
+  border-radius: 50% !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 .import-tip {

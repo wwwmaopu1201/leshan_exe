@@ -2,7 +2,7 @@ import Vue from 'vue'
 import VueRouter from 'vue-router'
 import MainLayout from '@/layouts/MainLayout.vue'
 import store from '@/store'
-import { checkRoutePermission, PERMISSIONS } from '@/utils/permission'
+import { checkRoutePermission, getDefaultAccessiblePath, PERMISSIONS } from '@/utils/permission'
 import { Message } from 'element-ui'
 import { getUserInfo } from '@/api/auth'
 
@@ -55,7 +55,7 @@ const routes = [
       {
         path: 'device/group',
         name: 'DeviceGroup',
-        redirect: '/device/list',
+        component: () => import('@/views/device/DeviceGroup.vue'),
         meta: {
           title: 'menu.deviceGroup',
           parent: 'menu.device',
@@ -263,8 +263,10 @@ router.beforeEach((to, from, next) => {
 
       // 检查路由权限
       if (!checkRoutePermission(to)) {
-        Message.error('您没有权限访问该页面')
-        const fallbackPath = '/profile/info'
+        const fallbackPath = getDefaultAccessiblePath()
+        if (to.path !== '/home' && to.path !== '/' && !to.path.startsWith('/profile') && !to.path.startsWith('/support')) {
+          Message.error('您没有权限访问该页面')
+        }
         if (to.path !== fallbackPath) {
           next({ path: fallbackPath })
         } else {

@@ -317,7 +317,9 @@ export default {
         nodeType: data.type === 'device' ? 'device' : 'group',
         groupId: data.type === 'group' ? String(data.id) : String(data.groupId || data.parentId || ''),
         deviceId: data.type === 'device' ? String(data.id) : '',
-        deviceIds: this.collectDeviceIds(data)
+        deviceIds: this.collectDeviceIds(data),
+        employeeCode: data.type === 'device' ? String(data.employeeCode || '') : '',
+        employeeName: data.type === 'device' ? String(data.employeeName || '') : ''
       }
       this.$emit('input', payload)
       this.$emit('change', payload)

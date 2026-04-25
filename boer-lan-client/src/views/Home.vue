@@ -258,7 +258,7 @@ export default {
       return '设备名称'
     },
     groupMetaMap() {
-      return new Map((this.groupCatalog || []).map(item => [Number(item.id), item]))
+      return new Map(this.flattenGroups(this.groupCatalog).map(item => [Number(item.id), item]))
     },
     deviceMetaMap() {
       const byId = new Map()
@@ -317,14 +317,15 @@ export default {
           const meta = this.resolveDeviceMeta(item)
           return {
             name: item.name || meta.name || `设备${item.deviceId || ''}`,
+            groupId: this.toNumber(meta.groupId),
             group: meta.group || '未分组',
+            lineId: this.toNumber(meta.lineId),
             line: meta.line || '未分线',
             runningTime: this.toNumber(item.runningTime),
             idleTime: this.toNumber(item.idleTime),
             efficiency: this.toNumber(item.efficiency)
           }
         })
-        .filter(item => item.runningTime > 0 || item.idleTime > 0)
         .sort((a, b) => b.efficiency - a.efficiency)
 
       return this.decorateUsageRows(rows)
@@ -336,23 +337,30 @@ export default {
 
       const grouped = new Map()
       this.deviceUsageRows.forEach(item => {
-        const key = this.activeUsageTab === 'group' ? item.group : item.line
+        const isGroupMode = this.activeUsageTab === 'group'
+        const key = isGroupMode
+          ? `group:${item.groupId || item.group}`
+          : `line:${item.lineId || item.line}`
         if (!grouped.has(key)) {
           grouped.set(key, {
-            name: key,
+            name: isGroupMode ? item.group : item.line,
             runningTime: 0,
-            idleTime: 0
+            idleTime: 0,
+            efficiencySum: 0,
+            deviceCount: 0
           })
         }
         const target = grouped.get(key)
         target.runningTime += item.runningTime
         target.idleTime += item.idleTime
+        target.efficiencySum += item.efficiency
+        target.deviceCount += 1
       })
 
       return this.decorateUsageRows(
         Array.from(grouped.values()).map(item => ({
           ...item,
-          efficiency: this.safePercent(item.runningTime, item.runningTime + item.idleTime)
+          efficiency: item.deviceCount > 0 ? item.efficiencySum / item.deviceCount : 0
         }))
       )
     },
@@ -438,35 +446,84 @@ export default {
       date.setDate(date.getDate() + days)
       return this.formatDate(date)
     },
+    normalizeGroupParentId(item) {
+      return this.toNumber(item.parentId ?? item.parent_id ?? item.parentID)
+    },
+    flattenGroups(groups) {
+      const result = []
+      const walk = (items = [], parentId = 0) => {
+        items.forEach(item => {
+          if (!item) {
+            return
+          }
+          const normalized = {
+            ...item,
+            id: this.toNumber(item.id),
+            parentId: this.normalizeGroupParentId(item) || parentId
+          }
+          result.push(normalized)
+          if (Array.isArray(item.children) && item.children.length) {
+            walk(item.children, normalized.id)
+          }
+        })
+      }
+      walk(groups)
+      return result
+    },
     resolveDeviceMeta(item) {
       const idKey = String(item.deviceId || '')
       const nameKey = String(item.name || '').trim()
       const meta = this.deviceMetaMap.byId.get(idKey) || this.deviceMetaMap.byName.get(nameKey) || {}
+      const groupId = this.toNumber(item.groupId ?? meta.groupId)
+      const lineMeta = this.resolveLineMeta(groupId)
+      const itemLineId = this.toNumber(item.lineId)
+      const itemLineName = String(item.lineName || '').trim()
       return {
         ...meta,
-        line: this.resolveLineName(meta.groupId)
+        groupId,
+        group: this.resolveGroupLabel(groupId, item.groupName || meta.group),
+        line: itemLineName || lineMeta.name,
+        lineId: itemLineId || lineMeta.id
       }
     },
-    resolveLineName(groupId) {
-      let currentId = Number(groupId || 0)
-      if (!currentId) {
-        return '未分线'
-      }
-
-      let current = this.groupMetaMap.get(currentId)
-      if (!current) {
-        return '未分线'
-      }
-
-      while (current && current.parentId) {
-        const parent = this.groupMetaMap.get(Number(current.parentId))
-        if (!parent) {
+    getGroupChain(groupId) {
+      const chain = []
+      let currentId = this.toNumber(groupId)
+      const visited = new Set()
+      while (currentId > 0 && !visited.has(currentId)) {
+        const current = this.groupMetaMap.get(currentId)
+        if (!current) {
           break
         }
-        current = parent
+        chain.push(current)
+        visited.add(currentId)
+        currentId = this.normalizeGroupParentId(current)
       }
-
-      return current?.name || '未分线'
+      return chain.reverse()
+    },
+    getVisibleGroupChain(groupId) {
+      const chain = this.getGroupChain(groupId)
+      if (chain.length > 1 && !chain[0]?.parentId) {
+        return chain.slice(1)
+      }
+      return chain
+    },
+    resolveGroupLabel(groupId, fallbackName = '') {
+      const chain = this.getVisibleGroupChain(groupId)
+      if (!chain.length) {
+        return String(fallbackName || '').trim() || '未分组'
+      }
+      return chain.map(item => item.name).join(' / ')
+    },
+    resolveLineMeta(groupId) {
+      const chain = this.getVisibleGroupChain(groupId)
+      if (!chain.length) {
+        return { id: 0, name: '未分线' }
+      }
+      return {
+        id: this.toNumber(chain[0].id),
+        name: chain[0].name || '未分线'
+      }
     },
     decorateUsageRow(item, index) {
       const efficiency = this.toNumber(item.efficiency)
@@ -479,11 +536,11 @@ export default {
         efficiencyBarWidth: `${Math.max(6, Math.min(100, efficiency))}%`
       }
     },
-    decorateUsageRows(rows) {
-      return [...rows]
+    decorateUsageRows(rows, limit = 0) {
+      const sorted = [...rows]
         .sort((a, b) => b.efficiency - a.efficiency || b.runningTime - a.runningTime)
-        .slice(0, 10)
-        .map((item, index) => this.decorateUsageRow(item, index))
+      const source = limit > 0 ? sorted.slice(0, limit) : sorted
+      return source.map((item, index) => this.decorateUsageRow(item, index))
     },
     async fetchPageData() {
       try {
@@ -517,21 +574,29 @@ export default {
       }
     },
     async fetchDeviceCatalog() {
-      const res = await getDeviceList({
-        page: 1,
-        pageSize: 2000
-      })
-      if (res.code !== 0 || !res.data) {
-        return
+      try {
+        const res = await getDeviceList({
+          page: 1,
+          pageSize: 2000
+        })
+        if (res.code !== 0 || !res.data) {
+          return
+        }
+        this.deviceCatalog = res.data.list || []
+      } catch (error) {
+        this.deviceCatalog = []
       }
-      this.deviceCatalog = res.data.list || []
     },
     async fetchGroupCatalog() {
-      const res = await getDeviceGroups()
-      if (res.code !== 0 || !Array.isArray(res.data)) {
-        return
+      try {
+        const res = await getDeviceGroups()
+        if (res.code !== 0 || !Array.isArray(res.data)) {
+          return
+        }
+        this.groupCatalog = res.data || []
+      } catch (error) {
+        this.groupCatalog = []
       }
-      this.groupCatalog = res.data || []
     },
     async fetchProductionTrend() {
       if (!this.productionStartDate || !this.productionEndDate) {

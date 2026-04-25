@@ -170,6 +170,18 @@ func (h *EmployeeHandler) applyEmployeeFilters(query *gorm.DB, c *gin.Context) *
 		query = query.Where("phone LIKE ?", "%"+phone+"%")
 	}
 
+	if startDate := strings.TrimSpace(c.Query("startDate")); startDate != "" {
+		if startTime, err := parseDateFilter(startDate, false); err == nil && startTime != nil {
+			query = query.Where("created_at >= ?", *startTime)
+		}
+	}
+
+	if endDate := strings.TrimSpace(c.Query("endDate")); endDate != "" {
+		if endTime, err := parseDateFilter(endDate, true); err == nil && endTime != nil {
+			query = query.Where("created_at <= ?", *endTime)
+		}
+	}
+
 	if groupID := strings.TrimSpace(c.Query("groupId")); groupID != "" {
 		query = query.Where("group_id = ?", groupID)
 	}

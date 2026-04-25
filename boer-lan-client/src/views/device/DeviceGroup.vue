@@ -123,7 +123,7 @@
                 <el-table-column prop="mainboardSn" label="主板编号" width="140" />
                 <el-table-column prop="group" label="所属分组" width="120">
                   <template slot-scope="scope">
-                    <span v-if="scope.row.group">{{ scope.row.group }}</span>
+                    <span v-if="getDeviceGroupName(scope.row)">{{ getDeviceGroupName(scope.row) }}</span>
                     <el-tag v-else size="mini" type="danger">未分组</el-tag>
                   </template>
                 </el-table-column>
@@ -369,6 +369,9 @@ export default {
     }
   },
   computed: {
+    groupNameMap() {
+      return new Map((this.flatGroups || []).map(group => [Number(group.id), group.name]))
+    },
     groupDialogTitle() {
       const titleMap = {
         addRoot: '新增分组',
@@ -627,6 +630,14 @@ export default {
         return 'row-ungrouped'
       }
       return ''
+    },
+    getDeviceGroupName(row) {
+      const directName = String(row?.group || row?.groupName || '').trim()
+      if (directName) {
+        return directName
+      }
+      const groupId = Number(row?.groupId || 0)
+      return groupId > 0 ? (this.groupNameMap.get(groupId) || '') : ''
     },
     formatDeviceName(row) {
       const displayName = String(row?.displayName || '').trim()
@@ -1116,6 +1127,8 @@ export default {
     },
     handleNodeClick(data) {
       this.selectedGroup = data
+      this.checkedTreeNodes = []
+      this.$refs.groupTree?.setCheckedKeys([])
       this.syncGroupDevices()
       this.syncGroupDeviceTableHeight()
       this.hideContextMenu()

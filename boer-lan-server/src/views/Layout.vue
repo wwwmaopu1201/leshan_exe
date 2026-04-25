@@ -181,6 +181,10 @@ export default {
   color: #3388ff !important;
 }
 
+.sidebar-menu ::v-deep .el-submenu.is-opened > .el-submenu__title {
+  background: transparent !important;
+}
+
 .sidebar-menu ::v-deep .el-menu-item.is-active {
   background: #e8f2ff !important;
   color: #3388ff !important;

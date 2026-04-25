@@ -75,6 +75,9 @@
             <el-menu-item v-if="canAccess.deviceManagement" index="/device/list">
               {{ $t('menu.deviceList') }}
             </el-menu-item>
+            <el-menu-item v-if="canAccess.deviceManagement" index="/device/group">
+              {{ $t('menu.deviceGroup') }}
+            </el-menu-item>
             <el-menu-item v-if="canAccess.remoteMonitoring" index="/device/monitor">
               {{ $t('menu.remoteMonitor') }}
             </el-menu-item>
@@ -336,10 +339,13 @@ export default {
     color: #3388ff !important;
   }
 
-  ::v-deep .el-submenu.is-opened > .el-submenu__title,
   ::v-deep .el-menu-item.is-active {
     background: #e8f2ff !important;
     color: #3388ff !important;
+  }
+
+  ::v-deep .el-submenu.is-opened > .el-submenu__title {
+    background: transparent !important;
   }
 
   ::v-deep .el-menu--inline {

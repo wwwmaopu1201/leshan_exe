@@ -112,6 +112,16 @@ export function updatePattern(id, data) {
   })
 }
 
+// 下载花型文件到本地
+export function downloadPatternFile(id) {
+  return request({
+    url: `/pattern/${id}/file`,
+    method: 'get',
+    responseType: 'blob',
+    suppressErrorMessage: true
+  })
+}
+
 // 批量编辑花型信息
 export function batchUpdatePatterns(data) {
   return request({

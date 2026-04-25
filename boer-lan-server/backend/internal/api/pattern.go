@@ -972,6 +972,56 @@ func (h *PatternHandler) UploadPattern(c *gin.Context) {
 	})
 }
 
+func (h *PatternHandler) DownloadPatternFile(c *gin.Context) {
+	id := c.Param("id")
+
+	var pattern model.Pattern
+	if err := h.db.First(&pattern, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": "花型文件不存在",
+		})
+		return
+	}
+
+	filePath := strings.TrimSpace(pattern.FilePath)
+	if filePath == "" {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": "花型文件路径不存在",
+		})
+		return
+	}
+	if _, err := os.Stat(filePath); err != nil {
+		status := http.StatusInternalServerError
+		message := "读取花型文件失败"
+		if os.IsNotExist(err) {
+			status = http.StatusNotFound
+			message = "花型文件不存在"
+		}
+		c.JSON(status, gin.H{
+			"code":    status,
+			"message": message,
+		})
+		return
+	}
+
+	fileName := strings.TrimSpace(pattern.FileName)
+	if pattern.Name != "" {
+		fileExt := filepath.Ext(fileName)
+		fileName = strings.TrimSpace(pattern.Name)
+		if fileExt != "" && !strings.HasSuffix(strings.ToLower(fileName), strings.ToLower(fileExt)) {
+			fileName += fileExt
+		}
+	}
+	if fileName == "" {
+		fileName = filepath.Base(filePath)
+	}
+
+	c.Header("Access-Control-Expose-Headers", "Content-Disposition")
+	c.FileAttachment(filePath, fileName)
+}
+
 func (h *PatternHandler) UpdatePattern(c *gin.Context) {
 	id := c.Param("id")
 

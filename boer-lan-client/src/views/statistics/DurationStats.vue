@@ -48,8 +48,8 @@
               <div class="stat-card__body">
                 <div class="stat-icon"><i class="el-icon-time"></i></div>
                 <div class="stat-info stat-card__content">
-                <div class="stat-value">{{ summary.totalTime }}</div>
-                <div class="stat-label">总时长(h)</div>
+                  <div class="stat-value">{{ formatDurationFromHours(summary.totalTime) }}</div>
+                  <div class="stat-label">总时长</div>
                 </div>
               </div>
             </el-card>
@@ -59,8 +59,8 @@
               <div class="stat-card__body">
                 <div class="stat-icon"><i class="el-icon-video-play"></i></div>
                 <div class="stat-info stat-card__content">
-                <div class="stat-value">{{ summary.runningTime }}</div>
-                <div class="stat-label">{{ $t('statistics.processingTime') }}(h)</div>
+                  <div class="stat-value">{{ formatDurationFromHours(summary.runningTime) }}</div>
+                  <div class="stat-label">{{ $t('statistics.processingTime') }}</div>
                 </div>
               </div>
             </el-card>
@@ -70,8 +70,8 @@
               <div class="stat-card__body">
                 <div class="stat-icon"><i class="el-icon-video-pause"></i></div>
                 <div class="stat-info stat-card__content">
-                <div class="stat-value">{{ summary.idleTime }}</div>
-                <div class="stat-label">{{ $t('statistics.idleTime') }}(h)</div>
+                  <div class="stat-value">{{ formatDurationFromHours(summary.idleTime) }}</div>
+                  <div class="stat-label">{{ $t('statistics.idleTime') }}</div>
                 </div>
               </div>
             </el-card>
@@ -81,8 +81,8 @@
               <div class="stat-card__body">
                 <div class="stat-icon"><i class="el-icon-warning"></i></div>
                 <div class="stat-info stat-card__content">
-                <div class="stat-value">{{ summary.alarmTime }}</div>
-                <div class="stat-label">{{ $t('statistics.alarmTime') }}(h)</div>
+                  <div class="stat-value">{{ formatDurationFromHours(summary.alarmTime) }}</div>
+                  <div class="stat-label">{{ $t('statistics.alarmTime') }}</div>
                 </div>
               </div>
             </el-card>
@@ -132,14 +132,14 @@
             <el-table-column prop="patternName" label="花型名称" min-width="150" />
             <el-table-column prop="startTime" label="开始时间" width="160" />
             <el-table-column prop="endTime" label="结束时间" width="160" />
-            <el-table-column prop="sewDuration" label="缝纫时长(h)" width="110" align="right">
+            <el-table-column prop="sewDuration" label="缝纫时长" width="120" align="right">
               <template slot-scope="scope">
-                <span class="text-success">{{ scope.row.sewDuration }}</span>
+                <span class="text-success">{{ formatDurationFromHours(scope.row.sewDuration) }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="avgSewDuration" label="平均缝纫时长(min/次)" width="170" align="right">
+            <el-table-column prop="avgSewDuration" label="平均缝纫时长" width="170" align="right">
               <template slot-scope="scope">
-                <span class="text-warning">{{ scope.row.avgSewDuration }}</span>
+                <span class="text-warning">{{ formatDurationPerCountFromMinutes(scope.row.avgSewDuration) }}</span>
               </template>
             </el-table-column>
           </el-table>
@@ -301,6 +301,9 @@ export default {
           description: 'CSV 文件',
           extensions: ['csv']
         })
+        if (saved === null) {
+          return
+        }
         this.$message.success(saved ? '导出文件已保存' : '导出成功')
       } catch (error) {
         console.error('Failed to export duration stats:', error)
@@ -313,6 +316,27 @@ export default {
       const chart = echarts.init(ref)
       this.charts[key] = chart
       return chart
+    },
+    normalizeDurationValue(value, precision = 2) {
+      const number = Number(value)
+      if (!Number.isFinite(number)) return 0
+      return Number(number.toFixed(precision))
+    },
+    formatDurationFromHours(hours) {
+      const value = Number(hours)
+      if (!Number.isFinite(value)) return '0分钟'
+      if (Math.abs(value) < 1) {
+        return `${this.normalizeDurationValue(value * 60)}分钟`
+      }
+      return `${this.normalizeDurationValue(value)}小时`
+    },
+    formatDurationPerCountFromMinutes(minutes) {
+      const value = Number(minutes)
+      if (!Number.isFinite(value)) return '0分钟/次'
+      if (Math.abs(value) < 60) {
+        return `${this.normalizeDurationValue(value)}分钟/次`
+      }
+      return `${this.normalizeDurationValue(value / 60)}小时/次`
     },
     initCharts() {
       this.initDurationPieChart()
@@ -328,7 +352,10 @@ export default {
             { name: '报警时长', value: this.summary.alarmTime }
           ]
       chart.setOption({
-        tooltip: { trigger: 'item', formatter: '{b}: {c}h ({d}%)' },
+        tooltip: {
+          trigger: 'item',
+          formatter: (params) => `${params.name}: ${this.formatDurationFromHours(params.value)} (${params.percent}%)`
+        },
         legend: {
           orient: 'vertical',
           left: 0,
@@ -348,7 +375,16 @@ export default {
       const chart = this.getOrCreateChart('durationTrend', this.$refs.durationTrendChart)
       const trendData = this.chartData.durationTrend || []
       chart.setOption({
-        tooltip: { trigger: 'axis' },
+        tooltip: {
+          trigger: 'axis',
+          formatter: (params) => {
+            const title = params?.[0]?.axisValue || ''
+            const rows = (params || []).map(item => {
+              return `${item.marker}${item.seriesName}: ${this.formatDurationFromHours(item.value)}`
+            })
+            return [title, ...rows].join('<br/>')
+          }
+        },
         legend: {
           top: 0,
           data: ['运行', '空闲', '报警'],
@@ -363,8 +399,11 @@ export default {
         },
         yAxis: {
           type: 'value',
-          name: '时长(h)',
-          axisLabel: { color: '#6a7f9d' },
+          name: '时长',
+          axisLabel: {
+            color: '#6a7f9d',
+            formatter: value => this.formatDurationFromHours(value)
+          },
           splitLine: { lineStyle: { color: '#edf2f8' } }
         },
         series: [

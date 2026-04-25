@@ -171,6 +171,9 @@ export default {
           description: 'PDF 文件',
           extensions: ['pdf']
         })
+        if (saved === null) {
+          return
+        }
         this.$message.success(saved ? '操作说明已保存' : '操作说明已下载')
       } catch (error) {
         console.error('Download manual failed:', error)

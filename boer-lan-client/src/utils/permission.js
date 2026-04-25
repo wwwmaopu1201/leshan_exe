@@ -127,6 +127,11 @@ export function installPermissionDisableDirective(Vue) {
  * @returns {boolean} - 是否有权限访问
  */
 export function checkRoutePermission(route) {
+  const path = String(route?.path || '')
+  if (path.startsWith('/profile') || path.startsWith('/support')) {
+    return true
+  }
+
   // 如果路由没有定义权限要求，默认允许访问
   if (!route.meta || !route.meta.permission) {
     return true
@@ -143,6 +148,31 @@ export function checkRoutePermission(route) {
   return hasPermission(requiredPermission)
 }
 
+export function getDefaultAccessiblePath() {
+  if (hasPermission(PERMISSIONS.HOME)) {
+    return '/home'
+  }
+  if (hasPermission(PERMISSIONS.DASHBOARD)) {
+    return '/dashboard'
+  }
+  if (hasPermission(PERMISSIONS.DEVICE_MANAGEMENT)) {
+    return '/device/list'
+  }
+  if (hasPermission(PERMISSIONS.REMOTE_MONITORING)) {
+    return '/device/monitor'
+  }
+  if (hasPermission(PERMISSIONS.FILE_MANAGEMENT)) {
+    return '/file/pattern'
+  }
+  if (hasPermission(PERMISSIONS.STATISTICS)) {
+    return '/statistics/salary'
+  }
+  if (hasPermission(PERMISSIONS.EMPLOYEE_MANAGEMENT)) {
+    return '/employee/list'
+  }
+  return '/profile/info'
+}
+
 export default {
   hasPermission,
   hasAllPermissions,
@@ -151,5 +181,6 @@ export default {
   isUserDisabled,
   isAdmin,
   checkRoutePermission,
+  getDefaultAccessiblePath,
   PERMISSIONS
 }

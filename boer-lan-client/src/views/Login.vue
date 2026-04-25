@@ -147,6 +147,7 @@
 <script>
 import { mapActions } from 'vuex'
 import { login } from '@/api/auth'
+import { getDefaultAccessiblePath } from '@/utils/permission'
 import loginBackground from '@/assets/images/login-background-client.png'
 
 const DEFAULT_SERVER_PORT = '8088'
@@ -264,7 +265,7 @@ export default {
         })
 
         this.$message.success(this.$t('login.loginSuccess'))
-        this.$router.push('/home')
+        this.$router.push(getDefaultAccessiblePath())
       } catch (error) {
         const message = error.userMessage || error.response?.data?.message || this.$t('login.loginFailed')
         this.$message.error(message)

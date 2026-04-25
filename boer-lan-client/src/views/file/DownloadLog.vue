@@ -290,6 +290,9 @@ export default {
           description: 'CSV 文件',
           extensions: ['csv']
         })
+        if (saved === null) {
+          return
+        }
         this.$message.success(saved ? '导出文件已保存' : '导出成功')
       } catch (error) {
         console.error('Failed to export download log:', error)

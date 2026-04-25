@@ -23,7 +23,7 @@ func NewUserHandler(db *gorm.DB) *UserHandler {
 
 func isValidUserPhone(phone string) bool {
 	if phone == "" {
-		return false
+		return true
 	}
 	matched, _ := regexp.MatchString(`^1[3-9]\d{9}$`, phone)
 	return matched
@@ -87,6 +87,29 @@ func (h *UserHandler) GetAllUsers(c *gin.Context) {
 		return
 	}
 
+	roleNameSet := make(map[string]struct{}, len(users))
+	for _, user := range users {
+		roleName := strings.TrimSpace(user.Role)
+		if roleName != "" {
+			roleNameSet[roleName] = struct{}{}
+		}
+	}
+
+	rolePermissionMap := make(map[string]string, len(roleNameSet))
+	if len(roleNameSet) > 0 {
+		roleNames := make([]string, 0, len(roleNameSet))
+		for roleName := range roleNameSet {
+			roleNames = append(roleNames, roleName)
+		}
+
+		var roles []model.Role
+		if err := h.db.Select("name", "permissions").Where("name IN ?", roleNames).Find(&roles).Error; err == nil {
+			for _, role := range roles {
+				rolePermissionMap[strings.TrimSpace(role.Name)] = role.Permissions
+			}
+		}
+	}
+
 	userGroupIDs := make(map[uint][]uint, len(users))
 	groupIDSet := make(map[uint]struct{})
 	for _, user := range users {
@@ -126,6 +149,12 @@ func (h *UserHandler) GetAllUsers(c *gin.Context) {
 				groups = append(groups, groupInfo)
 			}
 		}
+
+		effectivePermissions := user.Permissions
+		if rolePermissions := strings.TrimSpace(rolePermissionMap[strings.TrimSpace(user.Role)]); rolePermissions != "" {
+			effectivePermissions = rolePermissions
+		}
+
 		list = append(list, gin.H{
 			"id":          user.ID,
 			"username":    user.Username,
@@ -138,7 +167,7 @@ func (h *UserHandler) GetAllUsers(c *gin.Context) {
 			"group":       user.Group,
 			"groups":      groups,
 			"disabled":    user.Disabled,
-			"permissions": user.Permissions,
+			"permissions": effectivePermissions,
 			"createTime":  user.CreatedAt.Format("2006-01-02 15:04:05"),
 		})
 	}
@@ -187,7 +216,7 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		return
 	}
 	if !isValidUserPhone(req.Phone) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "手机号不能为空且格式需正确"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "手机号格式需正确"})
 		return
 	}
 
@@ -345,7 +374,7 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 	if req.Phone != nil {
 		phone := strings.TrimSpace(*req.Phone)
 		if !isValidUserPhone(phone) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "手机号不能为空且格式需正确"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "手机号格式需正确"})
 			return
 		}
 		updates["phone"] = phone

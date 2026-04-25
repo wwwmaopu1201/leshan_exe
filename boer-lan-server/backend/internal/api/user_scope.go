@@ -91,24 +91,11 @@ func ensureGroupIDsExist(db *gorm.DB, ids []uint) error {
 }
 
 func resolveUserGroupScope(user model.User, roleName string) userGroupScope {
-	role := strings.ToLower(strings.TrimSpace(roleName))
-	if role == "" {
-		role = strings.ToLower(strings.TrimSpace(user.Role))
-	}
+	_ = roleName
 
-	// 管理员默认可查看所有分组；仅当显式配置了 group_ids 时按配置限制。
-	explicitAdminGroupIDs := parseGroupIDsJSON(user.GroupIDs)
-	if role == "admin" {
-		if len(explicitAdminGroupIDs) == 0 {
-			return userGroupScope{All: true}
-		}
-		return userGroupScope{All: false, GroupIDs: explicitAdminGroupIDs}
-	}
-
-	return userGroupScope{
-		All:      false,
-		GroupIDs: collectUserGroupIDs(user),
-	}
+	// 账号分组仅用于组织管理，不再参与业务数据的可见范围控制。
+	// 功能可见性由角色/权限决定，拥有模块权限的账号应看到一致的数据。
+	return userGroupScope{All: true}
 }
 
 func loadUserGroupScope(db *gorm.DB, userID uint, roleName string) (userGroupScope, error) {

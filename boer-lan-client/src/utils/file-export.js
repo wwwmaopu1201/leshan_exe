@@ -42,9 +42,10 @@ async function saveWithBrowserPicker(blob, filename, options = {}) {
     await writable.close()
     return true
   } catch (error) {
-    if (error?.name !== 'AbortError') {
-      console.error('Browser save picker failed:', error)
+    if (error?.name === 'AbortError') {
+      return null
     }
+    console.error('Browser save picker failed:', error)
     return false
   }
 }
@@ -60,7 +61,7 @@ async function saveWithTauri(blob, filename) {
       suggestedName: filename,
       bytes
     })
-    return Boolean(savedPath)
+    return savedPath ? true : null
   } catch (error) {
     console.error('Tauri save dialog failed:', error)
     return false
@@ -78,11 +79,18 @@ export function parseContentDispositionFilename(contentDisposition, fallbackName
 }
 
 export async function saveBlobWithDialog(blob, filename, options = {}) {
-  const saved = await saveWithTauri(blob, filename) || await saveWithBrowserPicker(blob, filename, options)
-  if (!saved) {
-    fallbackDownloadBlob(blob, filename)
+  const tauriSaved = await saveWithTauri(blob, filename)
+  if (tauriSaved === true || tauriSaved === null) {
+    return tauriSaved
   }
-  return saved
+
+  const browserSaved = await saveWithBrowserPicker(blob, filename, options)
+  if (browserSaved === true || browserSaved === null) {
+    return browserSaved
+  }
+
+  fallbackDownloadBlob(blob, filename)
+  return false
 }
 
 export async function saveTextWithDialog(content, filename, options = {}) {

@@ -135,7 +135,6 @@ func main() {
 
 	fmt.Printf("Seeded development data into %s\n", dbPath)
 	fmt.Println("Seed users:")
-	fmt.Println("  admin     / admin123     (系统默认管理员)")
 	fmt.Println("  seedadmin / Seed123456   (演示管理员，查看全部功能和全部分组)")
 	fmt.Println("  seedfull  / Seed123456   (全权限非管理员，分组受限于演示一厂缝制A组)")
 	fmt.Println("  seedfile  / Seed123456   (文件与下发相关功能)")
@@ -897,6 +896,7 @@ func seedProductionRecords(ctx *seedContext) error {
 						ThreadLength: roundFloat(0.9*float64(pieces)+float64(deviceIndex), 2),
 						RunningTime:  roundFloat(runningTime, 2),
 						IdleTime:     roundFloat(idleTime, 2),
+						SourceKey:    fmt.Sprintf("seed-prod-%s-%s-%02d-%02d", deviceCode, pattern.FileName, slot.hour, deviceIndex),
 						RecordDate:   recordTime,
 					}
 					if err := ctx.db.Create(&record).Error; err != nil {
@@ -926,6 +926,7 @@ func seedProductionRecords(ctx *seedContext) error {
 				ThreadLength: roundFloat(1.25*float64(pieces)+float64(deviceIndex)*2.6, 2),
 				RunningTime:  roundFloat(runningTime, 2),
 				IdleTime:     roundFloat(idleTime, 2),
+				SourceKey:    fmt.Sprintf("seed-prod-%s-%s-%02d-%02d", deviceCode, pattern.FileName, dayOffset, deviceIndex),
 				RecordDate:   recordTime,
 			}
 			if err := ctx.db.Create(&record).Error; err != nil {

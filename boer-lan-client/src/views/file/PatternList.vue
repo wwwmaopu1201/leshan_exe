@@ -2,7 +2,7 @@
   <div class="page-container">
     <div class="pattern-layout">
       <aside class="pattern-side">
-        <device-tree-panel v-model="deviceFilter" />
+        <device-tree-panel v-model="deviceFilter" @change="handleDeviceTreeChange" />
       </aside>
       <section class="pattern-main">
         <div class="search-bar">
@@ -138,7 +138,7 @@
             </el-table-column>
             <el-table-column prop="orderNo" label="订单编号" min-width="140" />
             <el-table-column prop="uploadTime" :label="$t('file.uploadTime')" width="170" />
-            <el-table-column :label="$t('common.operation')" width="220" align="center">
+            <el-table-column :label="$t('common.operation')" width="260" align="center">
               <template slot-scope="scope">
                 <el-button type="text" size="small" @click="handlePreview(scope.row)">
                   预览
@@ -146,8 +146,16 @@
                 <el-button type="text" size="small" @click="openEditDialog(scope.row)">
                   编辑
                 </el-button>
+                <el-button
+                  type="text"
+                  size="small"
+                  :loading="localDownloadingIds.includes(scope.row.id)"
+                  @click="handleLocalDownload(scope.row)"
+                >
+                  下载
+                </el-button>
                 <el-button type="text" size="small" @click="handleDownload(scope.row)">
-                  {{ $t('file.download') }}
+                  下发
                 </el-button>
                 <el-button type="text" size="small" class="danger-text" @click="handleDelete(scope.row)">
                   {{ $t('common.delete') }}
@@ -181,7 +189,7 @@
               placeholder="选择设备"
               filterable
               style="width: 220px;"
-              @change="handleDeviceFileSearch"
+              @change="handleDeviceFileDeviceChange"
             >
               <el-option
                 v-for="item in deviceOptions"
@@ -342,10 +350,8 @@
             <el-select
               v-model="uploadForm.orderNo"
               filterable
-              allow-create
-              default-first-option
               clearable
-              placeholder="可选择或输入订单编号"
+              placeholder="请选择订单编号"
             >
               <el-option
                 v-for="item in orderNoOptions"
@@ -434,7 +440,24 @@
           />
         </el-form-item>
         <el-form-item label="订单编号">
-          <el-input v-model.trim="editForm.orderNo" />
+          <div class="inline-field-row">
+            <el-select
+              v-model="editForm.orderNo"
+              filterable
+              clearable
+              placeholder="请选择订单编号"
+            >
+              <el-option
+                v-for="item in orderNoOptions"
+                :key="item"
+                :label="item"
+                :value="item"
+              />
+            </el-select>
+            <el-button icon="el-icon-plus" @click="openQuickCreateDialog('orderNo')">
+              新增
+            </el-button>
+          </div>
         </el-form-item>
       </el-form>
       <span slot="footer" class="dialog-footer">
@@ -504,10 +527,27 @@
         <el-form-item label="订单编号">
           <div class="batch-field-row">
             <el-checkbox v-model="batchEditForm.enabled.orderNo">修改</el-checkbox>
-            <el-input
-              v-model.trim="batchEditForm.values.orderNo"
+            <el-select
+              v-model="batchEditForm.values.orderNo"
               :disabled="!batchEditForm.enabled.orderNo"
-            />
+              filterable
+              clearable
+              placeholder="请选择订单编号"
+            >
+              <el-option
+                v-for="item in orderNoOptions"
+                :key="item"
+                :label="item"
+                :value="item"
+              />
+            </el-select>
+            <el-button
+              icon="el-icon-plus"
+              :disabled="!batchEditForm.enabled.orderNo"
+              @click="openQuickCreateDialog('orderNo')"
+            >
+              新增
+            </el-button>
           </div>
         </el-form-item>
       </el-form>
@@ -719,6 +759,7 @@ import {
   getOrderSummary,
   uploadPattern,
   updatePattern,
+  downloadPatternFile,
   batchUpdatePatterns,
   deletePattern,
   downloadToDevice,
@@ -733,6 +774,7 @@ import {
   clearCompletedUploads
 } from '@/api/pattern'
 import { getDeviceTree, getDeviceList } from '@/api/device'
+import { saveResponseWithDialog } from '@/utils/file-export'
 import DeviceTreePanel from '@/components/DeviceTreePanel.vue'
 
 const defaultUploadForm = () => ({
@@ -810,6 +852,7 @@ export default {
       showEditDialog: false,
       editForm: defaultEditForm(),
       savingEdit: false,
+      localDownloadingIds: [],
       showBatchEditDialog: false,
       batchEditForm: defaultBatchEditForm(),
       savingBatchEdit: false,
@@ -923,6 +966,22 @@ export default {
 
       return devices.length ? Number(devices[0].id) : ''
     },
+    resolveDeviceFileTargetFromTree(payload = this.deviceFilter) {
+      const candidates = []
+      if (payload?.deviceId) {
+        candidates.push(Number(payload.deviceId))
+      }
+      if (Array.isArray(payload?.deviceIds)) {
+        payload.deviceIds.forEach(id => candidates.push(Number(id)))
+      }
+
+      const optionIds = new Set(this.deviceOptions.map(item => Number(item.id)))
+      const matched = candidates.find(id => Number.isFinite(id) && id > 0 && optionIds.has(id))
+      if (matched) {
+        return matched
+      }
+      return ''
+    },
     formatPrice(value) {
       const num = Number(value || 0)
       return num.toFixed(3)
@@ -958,10 +1017,22 @@ export default {
         if (res.code === 0) {
           if (this.quickCreateDialog.mode === 'patternType') {
             await this.fetchPatternTypes()
-            this.uploadForm.patternType = value
+            if (this.showEditDialog) {
+              this.editForm.patternType = value
+            } else if (this.showBatchEditDialog) {
+              this.batchEditForm.values.patternType = value
+            } else {
+              this.uploadForm.patternType = value
+            }
           } else {
             await this.fetchOrderNos()
-            this.uploadForm.orderNo = value
+            if (this.showEditDialog) {
+              this.editForm.orderNo = value
+            } else if (this.showBatchEditDialog) {
+              this.batchEditForm.values.orderNo = value
+            } else {
+              this.uploadForm.orderNo = value
+            }
           }
           this.$message.success(this.quickCreateDialog.mode === 'patternType' ? '花型类型已新增' : '订单编号已新增')
           this.quickCreateDialog.visible = false
@@ -1042,7 +1113,8 @@ export default {
         }
       })
     },
-    async fetchDeviceOptions() {
+    async fetchDeviceOptions(options = {}) {
+      const shouldAutoLoad = options.autoLoad !== false
       try {
         const res = await getDeviceList({ page: 1, pageSize: 1000 })
         if (res.code === 0) {
@@ -1071,6 +1143,9 @@ export default {
           const preferredId = this.resolvePreferredDeviceOptionId(normalizedDevices)
           if (preferredId) {
             this.deviceFileQuery.deviceId = preferredId
+            if (shouldAutoLoad) {
+              this.handleDeviceFileDeviceChange()
+            }
           }
         }
       } catch (error) {
@@ -1088,6 +1163,22 @@ export default {
     handleSelectionChange(rows) {
       this.selectedRows = rows
     },
+    async handleDeviceTreeChange(payload) {
+      this.deviceFilter = payload
+      if (!this.deviceOptions.length) {
+        await this.fetchDeviceOptions({ autoLoad: false })
+      }
+      const targetDeviceId = this.resolveDeviceFileTargetFromTree(payload)
+      if (!targetDeviceId) {
+        return
+      }
+      if (Number(this.deviceFileQuery.deviceId) === Number(targetDeviceId)) {
+        this.handleDeviceFileDeviceChange()
+        return
+      }
+      this.deviceFileQuery.deviceId = targetDeviceId
+      this.handleDeviceFileDeviceChange()
+    },
     handleSizeChange(size) {
       this.pagination.pageSize = size
       this.fetchData()
@@ -1096,7 +1187,8 @@ export default {
       this.pagination.page = page
       this.fetchData()
     },
-    openUploadDialog() {
+    async openUploadDialog() {
+      await this.fetchOrderNos()
       this.showUploadDialog = true
     },
     resetUploadDialog() {
@@ -1177,6 +1269,12 @@ export default {
     },
     handleDeviceFileSelectionChange(rows) {
       this.deviceFileSelectedRows = rows
+    },
+    handleDeviceFileDeviceChange() {
+      this.deviceFileSelectedRows = []
+      this.$refs.deviceFileTableRef?.clearSelection()
+      this.deviceFilePagination.page = 1
+      this.fetchDeviceFileList()
     },
     handleDeviceFileSearch() {
       this.deviceFilePagination.page = 1
@@ -1489,10 +1587,35 @@ export default {
       this.previewPattern = { ...row }
       this.showPreviewDialog = true
     },
-    openEditDialog(row) {
+    async handleLocalDownload(row) {
+      if (!row?.id) return
+      if (this.localDownloadingIds.includes(row.id)) return
+
+      this.localDownloadingIds = [...this.localDownloadingIds, row.id]
+      try {
+        const response = await downloadPatternFile(row.id)
+        const fallbackName = row.fileName || row.name || `pattern-${row.id}`
+        const { filename, saved } = await saveResponseWithDialog(response, fallbackName, {
+          description: '花型文件',
+          mimeType: 'application/octet-stream',
+          extensions: ['dst', 'dsb', 'exp', 'pes', 'jef']
+        })
+        if (saved === null) {
+          return
+        }
+        this.$message.success(`已下载：${filename}`)
+      } catch (error) {
+        console.error('Download pattern file failed:', error)
+        this.$message.error(this.getRequestErrorMessage(error, '下载花型文件失败'))
+      } finally {
+        this.localDownloadingIds = this.localDownloadingIds.filter(id => id !== row.id)
+      }
+    },
+    async openEditDialog(row) {
       if (!row) {
         return
       }
+      await this.fetchOrderNos()
       this.editForm = {
         id: row.id,
         name: row.name || '',
@@ -1537,7 +1660,8 @@ export default {
         this.savingEdit = false
       }
     },
-    openBatchEditDialog() {
+    async openBatchEditDialog() {
+      await this.fetchOrderNos()
       this.batchEditForm = defaultBatchEditForm()
       this.showBatchEditDialog = true
     },

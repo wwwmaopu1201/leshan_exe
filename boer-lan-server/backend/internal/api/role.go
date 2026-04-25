@@ -136,6 +136,7 @@ func (h *RoleHandler) UpdateRole(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "角色不存在"})
 		return
 	}
+	originalRoleName := role.Name
 
 	var req struct {
 		Name            *string `json:"name"`
@@ -191,20 +192,40 @@ func (h *RoleHandler) UpdateRole(c *gin.Context) {
 		return
 	}
 
-	if err := h.db.Model(&role).Updates(updates).Error; err != nil {
+	tx := h.db.Begin()
+	if tx.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": tx.Error.Error()})
+		return
+	}
+
+	if err := tx.Model(&role).Updates(updates).Error; err != nil {
+		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	// 角色名称变更时，同步账号表中的角色名
+	userUpdates := map[string]interface{}{}
 	if nameAny, ok := updates["name"]; ok {
 		newName := nameAny.(string)
-		if newName != role.Name {
-			if err := h.db.Model(&model.User{}).Where("role = ?", role.Name).Update("role", newName).Error; err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "更新账号角色失败: " + err.Error()})
-				return
-			}
+		if newName != originalRoleName {
+			userUpdates["role"] = newName
 		}
+	}
+	if permissionsAny, ok := updates["permissions"]; ok {
+		userUpdates["permissions"] = permissionsAny
+	}
+
+	if len(userUpdates) > 0 {
+		if err := tx.Model(&model.User{}).Where("role = ?", originalRoleName).Updates(userUpdates).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "同步账号角色权限失败: " + err.Error()})
+			return
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{

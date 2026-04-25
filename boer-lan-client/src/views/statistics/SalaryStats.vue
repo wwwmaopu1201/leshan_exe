@@ -5,8 +5,9 @@
         <device-tree-panel
           v-model="searchForm.deviceFilter"
           title="设备树筛选"
+          search-placeholder="搜索设备、员工或分组"
           :min-height="620"
-          @change="handleSearch"
+          @change="handleTreeChange"
         />
       </aside>
 
@@ -24,9 +25,14 @@
               />
             </el-form-item>
             <el-form-item :label="$t('statistics.employee')">
-              <el-select v-model="searchForm.employeeId" clearable placeholder="全部员工">
+              <el-select
+                v-model="searchForm.employeeId"
+                clearable
+                placeholder="全部员工"
+                @change="handleEmployeeChange"
+              >
                 <el-option
-                  v-for="emp in employeeList"
+                  v-for="emp in employeeOptions"
                   :key="emp.id"
                   :label="emp.name"
                   :value="emp.id"
@@ -250,6 +256,7 @@
 import * as echarts from 'echarts'
 import { getSalaryStats, getSalaryDetail, exportStatistics } from '@/api/statistics'
 import { getEmployeeList } from '@/api/employee'
+import { getDeviceList } from '@/api/device'
 import DeviceTreePanel from '@/components/DeviceTreePanel.vue'
 import { saveResponseWithDialog } from '@/utils/file-export'
 
@@ -292,6 +299,8 @@ export default {
         deviceFilter: defaultDeviceFilter()
       },
       employeeList: [],
+      deviceList: [],
+      scopedEmployeeOptions: [],
       summaryData: {
         totalSalary: 0,
         totalPieces: 0,
@@ -319,6 +328,9 @@ export default {
     }
   },
   computed: {
+    employeeOptions() {
+      return this.scopedEmployeeOptions
+    },
     pagedTableData() {
       const start = (this.pagination.page - 1) * this.pagination.pageSize
       return this.tableData.slice(start, start + this.pagination.pageSize)
@@ -346,6 +358,7 @@ export default {
   },
   mounted() {
     this.fetchEmployees()
+    this.fetchDevices()
     this.fetchData()
     window.addEventListener('resize', this.handleResize)
   },
@@ -359,36 +372,142 @@ export default {
         const res = await getEmployeeList({ page: 1, pageSize: 1000 })
         if (res.code === 0) {
           this.employeeList = Array.isArray(res.data) ? res.data : (res.data?.list || [])
+          this.scopedEmployeeOptions = this.resolveScopedEmployees(this.tableData)
         }
       } catch (error) {
         console.error('Failed to fetch employees:', error)
       }
     },
+    async fetchDevices() {
+      try {
+        const res = await getDeviceList({ page: 1, pageSize: 1000 })
+        if (res.code === 0) {
+          this.deviceList = Array.isArray(res.data) ? res.data : (res.data?.list || [])
+        }
+      } catch (error) {
+        console.error('Failed to fetch devices:', error)
+      }
+    },
+    findEmployee(employeeId) {
+      const id = String(employeeId || '')
+      return this.employeeList.find(item => String(item.id) === id)
+    },
+    findEmployeeByDevicePayload(payload = {}) {
+      const employeeCode = String(payload.employeeCode || '').trim()
+      const employeeName = String(payload.employeeName || '').trim()
+      if (employeeCode) {
+        const byCode = this.employeeList.find(item => String(item.code || '').trim() === employeeCode)
+        if (byCode) return byCode
+      }
+      if (employeeName) {
+        return this.employeeList.find(item => String(item.name || '').trim() === employeeName)
+      }
+      return null
+    },
+    findDeviceByEmployee(employee) {
+      if (!employee) return null
+      const employeeCode = String(employee.code || '').trim()
+      const employeeName = String(employee.name || '').trim()
+      return this.deviceList.find(device => {
+        const deviceEmployeeCode = String(device.employeeCode || '').trim()
+        const deviceEmployeeName = String(device.employeeName || '').trim()
+        return (employeeCode && deviceEmployeeCode === employeeCode) || (employeeName && deviceEmployeeName === employeeName)
+      })
+    },
+    resolveScopedEmployees(rows) {
+      const byId = new Map()
+      ;(rows || []).forEach(row => {
+        const employee = this.findEmployee(row.employeeId)
+        if (employee) {
+          byId.set(String(employee.id), employee)
+        }
+      })
+      return Array.from(byId.values())
+    },
+    handleEmployeeChange(employeeId) {
+      const employee = this.findEmployee(employeeId)
+      const matchedDevice = this.findDeviceByEmployee(employee)
+      if (employee && matchedDevice) {
+        this.searchForm.deviceFilter = {
+          label: matchedDevice.name || matchedDevice.deviceName || matchedDevice.code || employee.name,
+          nodeType: 'device',
+          groupId: String(matchedDevice.groupId || ''),
+          deviceId: String(matchedDevice.id),
+          deviceIds: [Number(matchedDevice.id)],
+          employeeCode: matchedDevice.employeeCode || employee.code || '',
+          employeeName: matchedDevice.employeeName || employee.name || ''
+        }
+      } else if (!employee) {
+        this.searchForm.deviceFilter = defaultDeviceFilter()
+      }
+      this.pagination.page = 1
+      this.fetchData()
+    },
+    handleTreeChange(payload) {
+      if (payload?.nodeType === 'device') {
+        const employee = this.findEmployeeByDevicePayload(payload)
+        this.searchForm.employeeId = employee ? employee.id : ''
+        this.searchForm.employeeKeyword = ''
+      } else if (payload?.nodeType === 'group') {
+        this.searchForm.employeeId = ''
+        this.searchForm.employeeKeyword = ''
+      }
+      this.pagination.page = 1
+      this.fetchData()
+    },
+    buildSalaryParams(overrides = {}) {
+      return {
+        startDate: this.searchForm.dateRange?.[0],
+        endDate: this.searchForm.dateRange?.[1],
+        employeeId: this.searchForm.employeeId,
+        employeeKeyword: this.searchForm.employeeKeyword,
+        deviceId: this.searchForm.deviceFilter.deviceId,
+        deviceIds: this.searchForm.deviceFilter.deviceIds.join(','),
+        fallbackLatest: 1,
+        page: 1,
+        pageSize: 2000,
+        ...overrides
+      }
+    },
+    applySalaryResponse(res) {
+      const rawList = res?.data?.list || []
+      if (res?.data?.fallbackRange?.startDate && res?.data?.fallbackRange?.endDate) {
+        this.searchForm.dateRange = [res.data.fallbackRange.startDate, res.data.fallbackRange.endDate]
+      } else if (rawList.length) {
+        const dates = rawList.map(row => row.date).filter(Boolean).sort()
+        if (dates.length && (!this.searchForm.dateRange?.[0] || !this.searchForm.dateRange?.[1])) {
+          this.searchForm.dateRange = [dates[0], dates[dates.length - 1]]
+        }
+      }
+
+      this.summaryData = res?.data?.summary || { totalSalary: 0, totalPieces: 0, averageSalary: 0 }
+      this.tableData = rawList
+      this.scopedEmployeeOptions = this.resolveScopedEmployees(this.tableData)
+      this.pagination.total = this.tableData.length
+      const maxPage = Math.max(1, Math.ceil(this.pagination.total / this.pagination.pageSize))
+      if (this.pagination.page > maxPage) {
+        this.pagination.page = 1
+      }
+      this.chartData = {
+        salaryRank: res?.data?.salaryRank || [],
+        salaryTrend: res?.data?.salaryTrend || []
+      }
+    },
     async fetchData() {
       this.loading = true
       try {
-        const res = await getSalaryStats({
-          startDate: this.searchForm.dateRange?.[0],
-          endDate: this.searchForm.dateRange?.[1],
-          employeeId: this.searchForm.employeeId,
-          employeeKeyword: this.searchForm.employeeKeyword,
-          deviceId: this.searchForm.deviceFilter.deviceId,
-          deviceIds: this.searchForm.deviceFilter.deviceIds.join(','),
-          deviceKeyword: this.searchForm.deviceKeyword,
-          salaryMin: this.searchForm.salaryMin,
-          salaryMax: this.searchForm.salaryMax,
-          page: 1,
-          pageSize: 2000
-        })
-        if (res.code === 0) {
-          const rawList = res.data.list || []
-          this.summaryData = res.data.summary || { totalSalary: 0, totalPieces: 0, averageSalary: 0 }
-          this.tableData = this.applyLocalFilters(rawList)
-          this.pagination.total = this.tableData.length
-          this.chartData = {
-            salaryRank: res.data.salaryRank || [],
-            salaryTrend: res.data.salaryTrend || []
+        let res = await getSalaryStats(this.buildSalaryParams())
+        if (res.code === 0 && !(res.data.list || []).length) {
+          const fallbackRes = await getSalaryStats(this.buildSalaryParams({
+            startDate: '1970-01-01',
+            endDate: '2999-12-31'
+          }))
+          if (fallbackRes.code === 0 && (fallbackRes.data.list || []).length) {
+            res = fallbackRes
           }
+        }
+        if (res.code === 0) {
+          this.applySalaryResponse(res)
           this.$nextTick(() => {
             this.initCharts()
             this.syncTableHeight()
@@ -452,7 +571,18 @@ export default {
           endDate: this.searchForm.dateRange?.[1]
         })
         if (res.code === 0) {
-          this.detailDialog.rows = Array.isArray(res.data) ? res.data : []
+          const rows = Array.isArray(res.data) ? res.data : []
+          this.detailDialog.rows = rows.length ? rows : [{
+            deviceName: row.deviceName || '-',
+            patternName: row.patternName || '-',
+            patternStitches: row.stitches || row.patternStitches || 0,
+            startTime: row.date || '',
+            endTime: row.date || '',
+            sewCount: row.totalPieces || 0,
+            unitPrice: row.unitPrice || 0,
+            orderNo: row.orderNo || '',
+            totalAmount: row.totalAmount || row.salary || 0
+          }]
           this.$nextTick(() => {
             this.syncDetailDialogTableHeight()
           })
@@ -484,6 +614,9 @@ export default {
           description: 'CSV 文件',
           extensions: ['csv']
         })
+        if (saved === null) {
+          return
+        }
         this.$message.success(saved ? '导出文件已保存' : '导出成功')
       } catch (error) {
         console.error('Failed to export salary stats:', error)

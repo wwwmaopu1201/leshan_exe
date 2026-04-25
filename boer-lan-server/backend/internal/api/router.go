@@ -33,6 +33,7 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, se
 	protected.Use(EnsureActiveAccount(db))
 	{
 		permDevice := RequirePermission(db, "deviceManagement", "deviceInfo")
+		permDeviceTreeRead := RequirePermission(db, "deviceManagement", "deviceInfo", "statistics", "salaryStatistics", "statusStatistics")
 		permRemoteMonitoring := RequirePermission(db, "remoteMonitoring", "deviceManagement")
 		permPatternFiles := RequirePermission(db, "fileManagement", "patternFiles")
 		permDevicePatternFiles := RequirePermission(db, "fileManagement", "devicePatternFiles")
@@ -43,6 +44,7 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, se
 		permStatusStats := RequirePermission(db, "statistics", "statusStatistics")
 		permStatsExport := RequirePermission(db, "statistics", "salaryStatistics", "statusStatistics")
 		permEmployee := RequirePermission(db, "employeeManagement")
+		permEmployeeListRead := RequirePermission(db, "employeeManagement", "statistics", "salaryStatistics")
 		permAdmin := RequireAdmin()
 
 		// Auth
@@ -54,7 +56,7 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, se
 		protected.GET("/auth/login-logs", authHandler.GetLoginLogs)
 
 		// Device
-		protected.GET("/device/tree", permDevice, deviceHandler.GetDeviceTree)
+		protected.GET("/device/tree", permDeviceTreeRead, deviceHandler.GetDeviceTree)
 		protected.GET("/device/list", permDevice, deviceHandler.GetDeviceList)
 		protected.GET("/device/:id", permDevice, deviceHandler.GetDevice)
 		protected.POST("/device", permDevice, deviceHandler.CreateDevice)
@@ -85,6 +87,7 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, se
 		protected.PUT("/pattern/order-summary", permPatternFiles, patternHandler.RenameOrderNo)
 		protected.DELETE("/pattern/order-summary", permPatternFiles, patternHandler.ClearOrderNo)
 		protected.POST("/pattern/upload", permPatternFiles, patternHandler.UploadPattern)
+		protected.GET("/pattern/:id/file", permPatternFiles, patternHandler.DownloadPatternFile)
 		protected.PUT("/pattern/:id", permPatternFiles, patternHandler.UpdatePattern)
 		protected.POST("/pattern/batch-update", permPatternFiles, patternHandler.BatchUpdatePatterns)
 		protected.POST("/pattern/download", permPatternFiles, patternHandler.DownloadToDevice)
@@ -126,7 +129,7 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, se
 		// Employee
 		employeeHandler := NewEmployeeHandler(db)
 		protected.GET("/employee/groups", permEmployee, employeeHandler.GetEmployeeGroups)
-		protected.GET("/employee/list", permEmployee, employeeHandler.GetEmployeeList)
+		protected.GET("/employee/list", permEmployeeListRead, employeeHandler.GetEmployeeList)
 		protected.GET("/employee/:id", permEmployee, employeeHandler.GetEmployee)
 		protected.POST("/employee", permEmployee, employeeHandler.CreateEmployee)
 		protected.PUT("/employee/:id", permEmployee, employeeHandler.UpdateEmployee)
