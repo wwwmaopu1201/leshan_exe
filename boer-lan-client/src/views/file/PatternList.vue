@@ -1346,6 +1346,15 @@ export default {
     },
     syncTableHeights() {
       this.$nextTick(() => {
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 1366
+        if (viewportWidth <= 1200) {
+          const isCompact = viewportWidth <= 640
+          this.serverTableHeight = isCompact ? 260 : 320
+          this.deviceFileTableHeight = isCompact ? 280 : 340
+          this.syncUploadQueueDialogTableHeight()
+          return
+        }
+
         const syncHeight = (cardRefName, tableRefName, stateKey, minHeight = 220) => {
           const card = this.$refs[cardRefName] && this.$refs[cardRefName].$el
           const table = this.$refs[tableRefName] && this.$refs[tableRefName].$el
@@ -1954,10 +1963,31 @@ export default {
 @media (max-width: 1200px) {
   .pattern-layout {
     flex-direction: column;
+    height: auto;
+    min-height: 0;
   }
 
   .pattern-side {
     width: 100%;
+  }
+
+  .pattern-main {
+    overflow: visible;
+  }
+
+  .pattern-main > .page-table-card {
+    flex: none;
+    min-height: auto;
+    overflow: visible;
+  }
+
+  .pattern-main > .page-table-card ::v-deep .el-card__body {
+    height: auto;
+    overflow: visible;
+  }
+
+  .device-file-card {
+    margin-top: 8px;
   }
 }
 
