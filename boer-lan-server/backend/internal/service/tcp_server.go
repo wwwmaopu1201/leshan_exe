@@ -2,10 +2,13 @@ package service
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"strings"
 	"sync"
 	"time"
+
+	"boer-lan-server/internal/model"
 
 	"gorm.io/gorm"
 )
@@ -114,6 +117,9 @@ func NewTCPServer(db *gorm.DB) *TCPServer {
 
 // Start 启动TCP服务器
 func (s *TCPServer) Start() {
+	if err := s.ResetStaleDeviceStatuses(); err != nil {
+		log.Printf("reset stale device statuses failed: %v", err)
+	}
 	go s.serve()
 	go s.offlineChecker()
 }
@@ -151,6 +157,14 @@ func (s *TCPServer) serve() {
 		dc := NewDeviceConnection(conn, s.db, s.connMgr)
 		go dc.Handle()
 	}
+}
+
+// ResetStaleDeviceStatuses clears persisted online-like states from a previous
+// server process. Real devices will move back online as soon as they reconnect.
+func (s *TCPServer) ResetStaleDeviceStatuses() error {
+	return s.db.Model(&model.Device{}).
+		Where("status <> ?", "offline").
+		Update("status", "offline").Error
 }
 
 // offlineChecker 定时检查连接空闲超时的设备
