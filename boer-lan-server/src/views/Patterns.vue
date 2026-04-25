@@ -402,7 +402,7 @@
               :value="item.id"
             />
           </el-select>
-          <div class="dialog-tip">在线设备会优先立即执行，离线设备会保留在等待队列中。</div>
+          <div class="dialog-tip">同一设备按队列顺序下发；设备工作中或离线时会等待，队首任务等待超过10分钟才判定失败。</div>
         </el-form-item>
       </el-form>
       <span slot="footer" class="dialog-footer">

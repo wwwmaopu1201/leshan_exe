@@ -372,7 +372,7 @@ export default {
   font-size: 12px;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 0px) {
   .password-shell {
     padding: 8px;
   }

@@ -742,7 +742,7 @@ export default {
   background: #fff2f2;
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 0px) {
   .device-page-layout {
     flex-direction: column;
   }
@@ -752,7 +752,7 @@ export default {
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 0px) {
   .scope-bar {
     align-items: flex-start;
     flex-direction: column;

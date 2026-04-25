@@ -17,7 +17,7 @@ import (
 const (
 	transferTypeUpload             = 1
 	transferTypeDownload           = 2
-	patternTransferResponseTimeout = 5 * time.Minute
+	patternTransferResponseTimeout = 10 * time.Minute
 	patternUploadStartTimeout      = 30 * time.Second
 	patternUploadIdleTimeout       = 3 * time.Second
 	patternUploadResumeInterval    = 3 * time.Second

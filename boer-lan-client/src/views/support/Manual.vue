@@ -379,7 +379,7 @@ export default {
   color: #2f6df6;
 }
 
-@media (max-width: 980px) {
+@media (max-width: 0px) {
   .manual-layout {
     flex-direction: column;
     height: auto;
@@ -411,7 +411,7 @@ export default {
   }
 }
 
-@media (max-width: 560px) {
+@media (max-width: 0px) {
   .manual-sidebar {
     padding: 10px;
   }

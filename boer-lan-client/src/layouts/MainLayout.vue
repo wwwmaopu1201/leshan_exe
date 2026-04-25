@@ -257,7 +257,8 @@ export default {
 
 <style lang="scss" scoped>
 .main-layout {
-  height: 100vh;
+  height: 100%;
+  min-height: 768px;
   display: flex;
   flex-direction: column;
   background: #eef2f6;
@@ -467,63 +468,4 @@ export default {
   padding: 8px;
 }
 
-@media (max-width: 1200px) {
-  .server-tag {
-    display: none;
-  }
-
-  .lang-switch {
-    display: none;
-  }
-}
-
-@media (max-width: 768px) {
-  .topbar {
-    padding: 0 8px;
-  }
-
-  .topbar-left {
-    flex: 1;
-  }
-
-  .topbar-title {
-    max-width: 44vw;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .sidebar {
-    width: 58px;
-  }
-
-  .sidebar-menu {
-    ::v-deep .el-submenu__title,
-    ::v-deep .el-menu-item {
-      margin: 0 6px 4px;
-      padding: 0 !important;
-      text-align: center;
-    }
-
-    ::v-deep .el-submenu__title > span,
-    ::v-deep .el-menu-item > span,
-    ::v-deep .el-submenu__icon-arrow,
-    ::v-deep .el-menu--inline {
-      display: none;
-    }
-
-    ::v-deep .menu-icon {
-      margin-right: 0;
-    }
-  }
-
-  .user-copy,
-  .user-info .el-icon-arrow-down {
-    display: none;
-  }
-
-  .content {
-    padding: 6px;
-  }
-}
 </style>

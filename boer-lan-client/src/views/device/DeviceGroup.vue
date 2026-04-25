@@ -1,8 +1,8 @@
 <template>
   <div class="page-container">
-    <el-row :gutter="20">
-      <el-col :span="8">
-        <el-card shadow="never" class="card">
+    <el-row :gutter="20" class="group-page-layout">
+      <el-col :span="8" class="group-page-side">
+        <el-card shadow="never" class="card group-tree-card">
           <div class="card-header flex-between">
             <span>设备分组</span>
             <div>
@@ -40,8 +40,8 @@
       </el-card>
       </el-col>
 
-      <el-col :span="16">
-        <el-card shadow="never" class="card page-table-card">
+      <el-col :span="16" class="group-page-main">
+        <el-card shadow="never" class="card page-table-card group-detail-card">
           <div class="card-header">
             分组信息 - {{ selectedGroup?.label || '请选择分组' }}
           </div>
@@ -1517,6 +1517,42 @@ export default {
 </script>
 
 <style lang="scss" scoped>
+.group-page-layout {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.group-page-side,
+.group-page-main {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.group-tree-card,
+.group-detail-card {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.group-tree-card ::v-deep .el-card__body,
+.group-detail-card ::v-deep .el-card__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.group-tree-card ::v-deep .el-tree {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
 .tree-node {
   .tree-node-label {
     cursor: pointer;
@@ -1623,7 +1659,7 @@ export default {
   }
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 0px) {
   .device-page-layout {
     flex-direction: column;
   }
@@ -1633,7 +1669,7 @@ export default {
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 0px) {
   .empty-state {
     padding: 32px 0;
   }

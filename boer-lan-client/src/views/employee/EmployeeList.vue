@@ -829,7 +829,7 @@ export default {
   color: #ef5a5a !important;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 0px) {
   .import-toolbar {
     align-items: stretch;
     flex-direction: column;

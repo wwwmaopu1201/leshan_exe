@@ -572,6 +572,7 @@
         default-expand-all
         :props="{ children: 'children', label: 'label' }"
       />
+      <div class="dialog-tip">同一设备按队列顺序下发；设备工作中或离线时会等待，队首任务等待超过10分钟才判定失败。</div>
       <span slot="footer" class="dialog-footer">
         <el-button @click="showDeviceDialog = false">{{ $t('common.cancel') }}</el-button>
         <el-button type="primary" @click="confirmDownload">确认下发</el-button>
@@ -1937,6 +1938,13 @@ export default {
   margin-bottom: 12px;
 }
 
+.dialog-tip {
+  margin-top: 8px;
+  color: #909399;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .text-muted {
   color: #909399;
 }
@@ -1960,7 +1968,7 @@ export default {
   }
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 0px) {
   .pattern-layout {
     flex-direction: column;
     height: auto;
@@ -1991,7 +1999,7 @@ export default {
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 0px) {
   .pattern-layout {
     gap: 8px;
   }

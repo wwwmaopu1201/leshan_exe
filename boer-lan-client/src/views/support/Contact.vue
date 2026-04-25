@@ -229,7 +229,7 @@ export default {
   line-height: 1.9;
 }
 
-@media (max-width: 980px) {
+@media (max-width: 0px) {
   .support-grid {
     grid-template-columns: 1fr;
     gap: 8px;
@@ -240,7 +240,7 @@ export default {
   }
 }
 
-@media (max-width: 560px) {
+@media (max-width: 0px) {
   .contact-card {
     padding: 10px;
   }

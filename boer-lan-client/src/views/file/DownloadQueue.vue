@@ -59,6 +59,14 @@
             <div class="queue-stat-value">{{ failedCount }}</div>
           </div>
         </div>
+
+        <div class="queue-note">
+          <div class="queue-note-main">
+            <i class="el-icon-info"></i>
+            <span>同一设备按队列顺序下发；设备工作中或离线时会等待，队首任务等待超过10分钟才判定失败。</span>
+          </div>
+          <span class="queue-note-time">最后刷新 {{ lastUpdatedAt || '-' }}</span>
+        </div>
       </div>
 
       <div ref="tableCard" class="card queue-table-card page-table-card">
@@ -494,7 +502,7 @@ export default {
   background: rgba(138, 152, 173, 0.05);
 }
 
-@media (max-width: 1080px) {
+@media (max-width: 0px) {
   .queue-note,
   .section-title {
     align-items: flex-start;
@@ -507,7 +515,7 @@ export default {
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 0px) {
   .queue-shell {
     gap: 8px;
   }
@@ -537,7 +545,7 @@ export default {
   }
 }
 
-@media (max-width: 420px) {
+@media (max-width: 0px) {
   .queue-overview {
     grid-template-columns: 1fr;
   }

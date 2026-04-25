@@ -811,7 +811,7 @@ export default {
   }
 }
 
-@media (max-width: 1180px) {
+@media (max-width: 0px) {
   .dashboard-layout {
     grid-template-columns: 1fr;
   }
@@ -822,7 +822,7 @@ export default {
   }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 0px) {
   .dashboard-layout {
     padding: 6px;
     gap: 8px;
@@ -876,7 +876,7 @@ export default {
   }
 }
 
-@media (max-width: 560px) {
+@media (max-width: 0px) {
   .dashboard-stat-row,
   .metric-card__metrics,
   .runtime-panel__summary,

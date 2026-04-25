@@ -1263,7 +1263,7 @@ export default {
   }
 }
 
-@media (max-width: 1280px) {
+@media (max-width: 0px) {
   .monitor-layout {
     flex-direction: column;
   }
@@ -1287,7 +1287,7 @@ export default {
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 0px) {
   .monitor-layout {
     gap: 8px;
     min-height: auto;
@@ -1329,7 +1329,7 @@ export default {
   }
 }
 
-@media (max-width: 520px) {
+@media (max-width: 0px) {
   .status-row ::v-deep .el-col {
     width: 100%;
   }

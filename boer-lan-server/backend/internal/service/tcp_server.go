@@ -12,7 +12,7 @@ import (
 
 const (
 	TCPPort               = 38400
-	ConnectionIdleTimeout = 3 * time.Minute
+	ConnectionIdleTimeout = 2 * time.Minute
 	OfflineCheckInterval  = 15 * time.Second
 	ReconnectGracePeriod  = 5 * time.Second
 )

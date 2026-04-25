@@ -1171,7 +1171,7 @@ export default {
   }
 }
 
-@media (max-width: 1280px) {
+@media (max-width: 0px) {
   .home-top-grid {
     grid-template-columns: minmax(0, 1fr) minmax(280px, 0.82fr);
   }
@@ -1187,7 +1187,7 @@ export default {
   }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 0px) {
   .home-layout {
     padding: 6px;
     gap: 8px;
@@ -1230,7 +1230,7 @@ export default {
   }
 }
 
-@media (max-width: 520px) {
+@media (max-width: 0px) {
   .panel-header--split {
     align-items: flex-start;
   }

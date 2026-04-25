@@ -476,13 +476,13 @@ export default {
   flex-direction: column;
 }
 
-@media (max-width: 1080px) {
+@media (max-width: 0px) {
   .profile-layout {
     grid-template-columns: 1fr;
   }
 }
 
-@media (max-width: 720px) {
+@media (max-width: 0px) {
   .profile-overview-head {
     align-items: flex-start;
     flex-direction: column;

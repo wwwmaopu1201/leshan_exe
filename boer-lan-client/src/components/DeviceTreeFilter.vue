@@ -425,7 +425,7 @@ export default {
   background: rgba(47, 109, 246, 0.1);
 }
 
-@media (max-width: 640px) {
+@media (max-width: 0px) {
   .device-tree-filter,
   .filter-btn {
     width: 100%;

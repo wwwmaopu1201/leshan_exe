@@ -725,7 +725,7 @@ export default {
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 0px) {
   .device-tree-panel {
     padding: 6px;
   }
