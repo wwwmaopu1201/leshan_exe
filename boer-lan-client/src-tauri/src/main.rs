@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 
-const TRIAL_DURATION_SECONDS: u64 = 30 * 24 * 60 * 60;
+const TRIAL_DURATION_SECONDS: u64 = 15 * 24 * 60 * 60;
 const ROLLBACK_LEEWAY_SECONDS: u64 = 10 * 60;
 const TRIAL_POLICY_VERSION: u32 = 2;
 
