@@ -496,5 +496,21 @@ export default {
   .full-row {
     grid-column: auto;
   }
+
+  .profile-layout {
+    gap: 8px;
+  }
+
+  .profile-overview-head h3 {
+    font-size: 18px;
+  }
+
+  .summary-item {
+    padding: 12px;
+  }
+
+  .profile-note {
+    padding: 10px 12px;
+  }
 }
 </style>

@@ -656,6 +656,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 16px;
   margin-bottom: 18px;
 }
@@ -739,5 +740,27 @@ export default {
 
 ::v-deep .el-table .row-ungrouped > td {
   background: #fff2f2;
+}
+
+@media (max-width: 1200px) {
+  .device-page-layout {
+    flex-direction: column;
+  }
+
+  .device-page-side {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .scope-bar {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .scope-copy h3 {
+    font-size: 16px;
+  }
 }
 </style>

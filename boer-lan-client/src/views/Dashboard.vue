@@ -539,7 +539,7 @@ export default {
 }
 
 .dashboard-layout {
-  min-width: 1180px;
+  min-width: 0;
   padding: 10px;
   display: grid;
   grid-template-columns: 272px minmax(0, 1fr);
@@ -708,6 +708,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
 }
 
@@ -806,8 +807,88 @@ export default {
 
 @media (max-width: 1440px) {
   .dashboard-layout {
-    min-width: 1100px;
     grid-template-columns: 258px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 1180px) {
+  .dashboard-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-side ::v-deep .device-tree-panel {
+    height: auto;
+    max-height: 320px;
+  }
+}
+
+@media (max-width: 900px) {
+  .dashboard-layout {
+    padding: 6px;
+    gap: 8px;
+  }
+
+  .dashboard-main,
+  .dashboard-stat-row,
+  .dashboard-chart-row {
+    gap: 8px;
+  }
+
+  .dashboard-stat-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-chart-row {
+    grid-template-columns: 1fr;
+  }
+
+  .metric-card {
+    min-height: 86px;
+    padding: 12px;
+  }
+
+  .runtime-panel,
+  .utilization-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .runtime-panel__summary,
+  .utilization-panel__summary {
+    min-height: auto;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .runtime-panel__value,
+  .utilization-panel__value {
+    font-size: 24px;
+  }
+
+  .runtime-panel__chart,
+  .utilization-panel__chart {
+    height: 220px;
+  }
+
+  .production-chart {
+    height: 280px;
+  }
+}
+
+@media (max-width: 560px) {
+  .dashboard-stat-row,
+  .metric-card__metrics,
+  .runtime-panel__summary,
+  .utilization-panel__summary {
+    grid-template-columns: 1fr;
+  }
+
+  .side-legend,
+  .board-card__legend {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    height: auto;
   }
 }
 </style>

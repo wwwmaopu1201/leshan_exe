@@ -232,10 +232,32 @@ export default {
 @media (max-width: 980px) {
   .support-grid {
     grid-template-columns: 1fr;
+    gap: 8px;
   }
 
   .faq-card {
     min-height: auto;
+  }
+}
+
+@media (max-width: 560px) {
+  .contact-card {
+    padding: 10px;
+  }
+
+  .contact-info-card,
+  .message-card {
+    min-height: auto;
+  }
+
+  .contact-item {
+    padding: 10px 12px;
+  }
+
+  .contact-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
   }
 }
 </style>

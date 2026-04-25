@@ -274,6 +274,7 @@ export default {
 .header-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
 }
 
@@ -382,6 +383,7 @@ export default {
   .manual-layout {
     flex-direction: column;
     height: auto;
+    gap: 8px;
   }
 
   .manual-sidebar {
@@ -400,11 +402,34 @@ export default {
 
   .manual-content {
     height: auto;
+    padding: 12px;
   }
 
   .content-body {
     overflow: visible;
     padding-right: 0;
+  }
+}
+
+@media (max-width: 560px) {
+  .manual-sidebar {
+    padding: 10px;
+  }
+
+  .content-header {
+    gap: 10px;
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+  }
+
+  .manual-section {
+    margin-bottom: 24px;
+  }
+
+  .point-card,
+  .tip-box,
+  .faq-item {
+    padding: 10px 12px;
   }
 }
 </style>

@@ -1585,6 +1585,7 @@ export default {
 .group-device-section {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
 }
@@ -1619,6 +1620,26 @@ export default {
     &.danger {
       color: #f56c6c;
     }
+  }
+}
+
+@media (max-width: 1200px) {
+  .device-page-layout {
+    flex-direction: column;
+  }
+
+  .device-page-side {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .empty-state {
+    padding: 32px 0;
+  }
+
+  .tree-node .tree-node-label {
+    min-width: 0;
   }
 }
 </style>

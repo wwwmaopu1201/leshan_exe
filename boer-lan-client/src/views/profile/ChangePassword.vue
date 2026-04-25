@@ -259,6 +259,7 @@ export default {
 .password-head__tabs {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
 }
 
@@ -373,12 +374,25 @@ export default {
 
 @media (max-width: 768px) {
   .password-shell {
-    padding: 12px;
+    padding: 8px;
   }
 
   .password-panel,
   .password-form-wrap {
     width: 100%;
+  }
+
+  .password-head {
+    margin-bottom: 18px;
+  }
+
+  .password-avatar {
+    margin-left: 0;
+  }
+
+  .password-form__actions ::v-deep .el-form-item__content {
+    flex-wrap: wrap;
+    margin-left: 0 !important;
   }
 }
 </style>

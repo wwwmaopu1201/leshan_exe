@@ -1920,6 +1920,7 @@ export default {
 .device-file-actions {
   margin-bottom: 12px;
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
@@ -1947,6 +1948,45 @@ export default {
       font-size: 60px;
       margin-bottom: 10px;
     }
+  }
+}
+
+@media (max-width: 1200px) {
+  .pattern-layout {
+    flex-direction: column;
+  }
+
+  .pattern-side {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .pattern-layout {
+    gap: 8px;
+  }
+
+  .conflict-mode-group,
+  .batch-field-row,
+  .inline-field-row,
+  .device-file-toolbar,
+  .device-file-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .batch-field-row .el-checkbox,
+  .batch-field-row .el-select,
+  .batch-field-row .el-input,
+  .batch-field-row .el-input-number,
+  .inline-field-row .el-select,
+  .inline-field-row .el-input {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .preview-container .preview-placeholder {
+    height: 150px;
   }
 }
 </style>

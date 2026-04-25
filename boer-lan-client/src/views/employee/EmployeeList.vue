@@ -816,6 +816,7 @@ export default {
 .import-toolbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 14px;
 }
@@ -828,6 +829,17 @@ export default {
   color: #ef5a5a !important;
 }
 
+@media (max-width: 640px) {
+  .import-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .import-toolbar .el-select,
+  .import-toolbar .el-button {
+    width: 100% !important;
+  }
+}
 </style>
 <style lang="scss">
 .employee-group-popper {

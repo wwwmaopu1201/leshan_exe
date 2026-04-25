@@ -1288,6 +1288,22 @@ export default {
 }
 
 @media (max-width: 768px) {
+  .monitor-layout {
+    gap: 8px;
+    min-height: auto;
+  }
+
+  .device-tree-panel {
+    padding: 8px;
+  }
+
+  .hero-card,
+  .panel-header,
+  .connection-meta .meta-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .hero-actions,
   .hero-buttons {
     width: 100%;
@@ -1297,6 +1313,39 @@ export default {
   .toolbar-field .el-input,
   .toolbar-field .el-input-number {
     width: 100%;
+  }
+
+  .status-row ::v-deep .el-col {
+    width: 50%;
+  }
+
+  .monitor-screen {
+    height: 300px;
+    border-radius: 8px;
+  }
+
+  .chart-container {
+    height: 240px;
+  }
+}
+
+@media (max-width: 520px) {
+  .status-row ::v-deep .el-col {
+    width: 100%;
+  }
+
+  .hero-buttons .el-button {
+    flex: 1 1 calc(50% - 6px);
+    min-width: 0;
+    margin-left: 0;
+  }
+
+  .screen-placeholder i {
+    font-size: 48px;
+  }
+
+  .screen-placeholder p {
+    font-size: 14px;
   }
 }
 </style>

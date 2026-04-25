@@ -424,4 +424,25 @@ export default {
 ::v-deep .device-tree-filter-popover .el-tree-node.is-current > .el-tree-node__content {
   background: rgba(47, 109, 246, 0.1);
 }
+
+@media (max-width: 640px) {
+  .device-tree-filter,
+  .filter-btn {
+    width: 100%;
+  }
+
+  .filter-btn {
+    min-width: 0;
+  }
+
+  .filter-header,
+  .selection-bar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .tree-wrapper {
+    max-height: 260px;
+  }
+}
 </style>

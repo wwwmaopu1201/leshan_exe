@@ -572,6 +572,7 @@ export default {
 .panel-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 4px;
 }
 
@@ -721,6 +722,26 @@ export default {
     &.danger {
       color: #ef5a5a;
     }
+  }
+}
+
+@media (max-width: 640px) {
+  .device-tree-panel {
+    padding: 6px;
+  }
+
+  .panel-header,
+  .selection-bar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .panel-actions {
+    width: 100%;
+  }
+
+  .tree-wrapper {
+    max-height: 300px;
   }
 }
 </style>

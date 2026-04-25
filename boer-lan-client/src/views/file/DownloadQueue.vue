@@ -506,4 +506,40 @@ export default {
     justify-content: flex-start;
   }
 }
+
+@media (max-width: 640px) {
+  .queue-shell {
+    gap: 8px;
+  }
+
+  .queue-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .queue-stat {
+    min-height: 90px;
+    padding: 12px;
+  }
+
+  .queue-stat-value {
+    margin-top: 10px;
+    font-size: 24px;
+  }
+
+  .queue-hero-actions .el-button {
+    flex: 1 1 calc(50% - 6px);
+    margin-left: 0;
+  }
+
+  .queue-note-time {
+    white-space: normal;
+  }
+}
+
+@media (max-width: 420px) {
+  .queue-overview {
+    grid-template-columns: 1fr;
+  }
+}
 </style>

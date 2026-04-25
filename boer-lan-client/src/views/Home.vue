@@ -772,7 +772,7 @@ export default {
 }
 
 .home-layout {
-  min-width: 1180px;
+  min-width: 0;
   padding: 10px;
   display: flex;
   flex-direction: column;
@@ -816,6 +816,7 @@ export default {
 .panel-header {
   display: flex;
   align-items: center;
+  gap: 8px;
   min-height: 22px;
 }
 
@@ -850,7 +851,7 @@ export default {
 
 .status-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
   gap: 12px;
   padding-top: 6px;
 }
@@ -1112,8 +1113,7 @@ export default {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: nowrap;
-  white-space: nowrap;
+  flex-wrap: wrap;
 }
 
 .production-toolbar__tabs {
@@ -1166,12 +1166,95 @@ export default {
 }
 
 @media (max-width: 1440px) {
-  .home-layout {
-    min-width: 1100px;
-  }
-
   .home-top-grid {
     grid-template-columns: 1.32fr 0.9fr 1.08fr;
+  }
+}
+
+@media (max-width: 1280px) {
+  .home-top-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 0.82fr);
+  }
+
+  .home-stack {
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto;
+  }
+
+  .home-bottom-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .home-layout {
+    padding: 6px;
+    gap: 8px;
+  }
+
+  .home-top-grid,
+  .home-stack,
+  .home-bottom-grid,
+  .ranking-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .home-stack {
+    grid-column: auto;
+  }
+
+  .panel-card--usage,
+  .panel-card--pattern,
+  .panel-card--ranking,
+  .panel-card--chart {
+    min-height: auto;
+  }
+
+  .status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .status-item__value {
+    font-size: 24px;
+  }
+
+  .pattern-empty {
+    min-height: 180px;
+  }
+
+  .chart-surface--running,
+  .chart-surface--production {
+    height: 220px;
+  }
+}
+
+@media (max-width: 520px) {
+  .panel-header--split {
+    align-items: flex-start;
+  }
+
+  .usage-tabs,
+  .production-toolbar__tabs {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .usage-tabs__button,
+  .production-toolbar__tab {
+    width: 100%;
+  }
+
+  .production-toolbar ::v-deep .el-input,
+  .production-toolbar ::v-deep .el-input__inner {
+    width: 100%;
+  }
+
+  .chart-legend {
+    flex-wrap: wrap;
+    gap: 8px;
   }
 }
 </style>

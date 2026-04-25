@@ -271,6 +271,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.08);
 }
 
@@ -296,11 +297,13 @@ export default {
 .shell-body {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   display: flex;
 }
 
 .sidebar {
   width: 206px;
+  flex-shrink: 0;
   background: #ffffff;
   border-right: 1px solid #dbe3ec;
   transition: width 0.28s ease;
@@ -475,12 +478,48 @@ export default {
 }
 
 @media (max-width: 768px) {
+  .topbar {
+    padding: 0 8px;
+  }
+
+  .topbar-left {
+    flex: 1;
+  }
+
+  .topbar-title {
+    max-width: 44vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .sidebar {
-    position: fixed;
-    top: 46px;
-    left: 0;
-    bottom: 0;
-    z-index: 20;
+    width: 58px;
+  }
+
+  .sidebar-menu {
+    ::v-deep .el-submenu__title,
+    ::v-deep .el-menu-item {
+      margin: 0 6px 4px;
+      padding: 0 !important;
+      text-align: center;
+    }
+
+    ::v-deep .el-submenu__title > span,
+    ::v-deep .el-menu-item > span,
+    ::v-deep .el-submenu__icon-arrow,
+    ::v-deep .el-menu--inline {
+      display: none;
+    }
+
+    ::v-deep .menu-icon {
+      margin-right: 0;
+    }
+  }
+
+  .user-copy,
+  .user-info .el-icon-arrow-down {
+    display: none;
   }
 
   .content {
