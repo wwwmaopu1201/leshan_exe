@@ -238,11 +238,16 @@
           <el-select v-model="editForm.groupId" clearable style="width: 100%;">
             <el-option label="未分组" :value="null" />
             <el-option
-              v-for="item in groups"
+              v-for="item in groupTreeOptions"
               :key="item.id"
-              :label="item.parent ? `${item.parent.name} / ${item.name}` : item.name"
+              :label="item.name"
               :value="item.id"
-            />
+            >
+              <div class="group-option" :style="{ paddingLeft: `${item.level * 18}px` }">
+                <i :class="item.hasChildren ? 'el-icon-folder-opened' : 'el-icon-folder'"></i>
+                <span>{{ item.name }}</span>
+              </div>
+            </el-option>
           </el-select>
         </el-form-item>
         <el-form-item label="备注">
@@ -265,11 +270,16 @@
           <el-select v-model="moveTargetGroupId" clearable placeholder="可选择“未分组”" style="width: 100%;">
             <el-option label="未分组" :value="null" />
             <el-option
-              v-for="item in groups"
+              v-for="item in groupTreeOptions"
               :key="item.id"
-              :label="item.parent ? `${item.parent.name} / ${item.name}` : item.name"
+              :label="item.name"
               :value="item.id"
-            />
+            >
+              <div class="group-option" :style="{ paddingLeft: `${item.level * 18}px` }">
+                <i :class="item.hasChildren ? 'el-icon-folder-opened' : 'el-icon-folder'"></i>
+                <span>{{ item.name }}</span>
+              </div>
+            </el-option>
           </el-select>
         </el-form-item>
         <div class="dialog-tip">已选择 {{ selectedDeviceIds.length }} 台设备</div>
@@ -352,6 +362,9 @@ export default {
   computed: {
     groupNameMap() {
       return new Map((this.groups || []).map(group => [Number(group.id), group.name]))
+    },
+    groupTreeOptions() {
+      return this.flattenGroupTree(this.groupTree)
     },
     treeScopeLabel() {
       if (this.treeSelection.mode === 'group') {
@@ -460,6 +473,20 @@ export default {
         id: item.id || item.ID,
         parentId: item.parentId || item.ParentID || item.parent?.id || null
       }))
+    },
+    flattenGroupTree(nodes = [], level = 0) {
+      const result = []
+      nodes.forEach(node => {
+        const children = Array.isArray(node.children) ? node.children : []
+        result.push({
+          id: node.id,
+          name: node.name,
+          level,
+          hasChildren: children.length > 0
+        })
+        result.push(...this.flattenGroupTree(children, level + 1))
+      })
+      return result
     },
     collectDescendantGroupIds(groupId) {
       const target = Number(groupId)
@@ -978,6 +1005,25 @@ export default {
 
 .tree-scroll ::v-deep .el-tree-node.is-current > .el-tree-node__content {
   background: #e8f2ff;
+}
+
+.group-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.group-option i {
+  color: #7a8599;
+  font-size: 14px;
+  flex: none;
+}
+
+.group-option span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .group-context-menu {

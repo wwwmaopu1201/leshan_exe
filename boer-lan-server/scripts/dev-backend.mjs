@@ -1,12 +1,12 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
-import { resolveSharedDataDir, resolveSharedPortFile } from './shared-data-dir.mjs'
+import { resolveDefaultSharedDataDir } from './shared-data-dir.mjs'
 
 const rootDir = process.cwd()
 const backendDir = path.join(rootDir, 'backend')
-const dataDir = resolveSharedDataDir()
-const portFile = resolveSharedPortFile()
+const dataDir = resolveDefaultSharedDataDir()
+const portFile = path.join(dataDir, 'backend-port.txt')
 
 fs.mkdirSync(dataDir, { recursive: true })
 

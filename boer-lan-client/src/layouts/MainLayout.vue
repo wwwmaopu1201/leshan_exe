@@ -75,8 +75,8 @@
             <el-menu-item v-if="canAccess.deviceManagement" index="/device/list">
               {{ $t('menu.deviceList') }}
             </el-menu-item>
-            <el-menu-item v-if="canAccess.deviceManagement" index="/device/group">
-              {{ $t('menu.deviceGroup') }}
+            <el-menu-item v-if="canAccess.deviceManagement" index="/device/types">
+              {{ $t('menu.deviceTypeManager') }}
             </el-menu-item>
             <el-menu-item v-if="canAccess.remoteMonitoring" index="/device/monitor">
               {{ $t('menu.remoteMonitor') }}

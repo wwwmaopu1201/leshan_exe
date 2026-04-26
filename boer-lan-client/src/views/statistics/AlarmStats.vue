@@ -70,8 +70,8 @@
               <div class="stat-card__body">
                 <div class="stat-icon"><i class="el-icon-time"></i></div>
                 <div class="stat-info stat-card__content">
-                <div class="stat-value">{{ summary.totalDuration }}</div>
-                <div class="stat-label">总报警时长(min)</div>
+                <div class="stat-value">{{ formatDurationFromMinutes(summary.totalDuration) }}</div>
+                <div class="stat-label">总报警时长</div>
                 </div>
               </div>
             </el-card>
@@ -162,6 +162,7 @@ import * as echarts from 'echarts'
 import { getAlarmStats, exportStatistics } from '@/api/statistics'
 import DeviceTreePanel from '@/components/DeviceTreePanel.vue'
 import { saveResponseWithDialog } from '@/utils/file-export'
+import { formatDurationFromMinutes } from '@/utils'
 
 const getDefaultRange = () => {
   const end = new Date()
@@ -321,6 +322,9 @@ export default {
       this.charts[key] = chart
       return chart
     },
+    formatDurationFromMinutes(minutes) {
+      return formatDurationFromMinutes(minutes)
+    },
     initCharts() {
       this.initAlarmTypePieChart()
       this.initAlarmTrendChart()
@@ -359,7 +363,19 @@ export default {
       const counts = trendData.map(item => item.count)
       const durations = trendData.map(item => item.avgDuration)
       chart.setOption({
-        tooltip: { trigger: 'axis' },
+        tooltip: {
+          trigger: 'axis',
+          formatter: params => {
+            const title = params?.[0]?.axisValue || ''
+            const rows = (params || []).map(item => {
+              const value = item.seriesName === '平均时长'
+                ? this.formatDurationFromMinutes(item.value)
+                : item.value
+              return `${item.marker}${item.seriesName}: ${value}`
+            })
+            return [title, ...rows].join('<br/>')
+          }
+        },
         legend: {
           top: 0,
           data: ['报警次数', '平均时长'],
@@ -374,7 +390,14 @@ export default {
         },
         yAxis: [
           { type: 'value', name: '次数', axisLabel: { color: '#6a7f9d' }, splitLine: { lineStyle: { color: '#edf2f8' } } },
-          { type: 'value', name: '时长(min)', axisLabel: { color: '#6a7f9d' } }
+          {
+            type: 'value',
+            name: '时长',
+            axisLabel: {
+              color: '#6a7f9d',
+              formatter: value => this.formatDurationFromMinutes(value)
+            }
+          }
         ],
         series: [
           {

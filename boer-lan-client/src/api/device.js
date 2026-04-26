@@ -25,6 +25,50 @@ export function getDeviceDetail(id) {
   })
 }
 
+// 获取设备类型列表
+export function getDeviceTypes() {
+  return request({
+    url: '/device/types',
+    method: 'get'
+  })
+}
+
+// 获取设备类型汇总
+export function getDeviceTypeSummary(params) {
+  return request({
+    url: '/device/type-summary',
+    method: 'get',
+    params
+  })
+}
+
+// 新增设备类型
+export function createDeviceType(data) {
+  return request({
+    url: '/device/type-summary',
+    method: 'post',
+    data
+  })
+}
+
+// 重命名设备类型
+export function renameDeviceType(data) {
+  return request({
+    url: '/device/type-summary',
+    method: 'put',
+    data
+  })
+}
+
+// 删除设备类型，关联设备会回到默认类型
+export function deleteDeviceType(data) {
+  return request({
+    url: '/device/type-summary',
+    method: 'delete',
+    data
+  })
+}
+
 // 创建设备
 export function createDevice(data) {
   return request({

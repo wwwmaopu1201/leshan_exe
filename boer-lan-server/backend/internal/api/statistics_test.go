@@ -1,6 +1,9 @@
 package api
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -16,7 +19,7 @@ func TestGetDeviceUsageIncludesGroupsLinesAndIdleDevices(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Group{}, &model.Device{}, &model.ProductionRecord{}); err != nil {
+	if err := db.AutoMigrate(&model.Group{}, &model.Device{}, &model.DeviceRuntimeSession{}, &model.ProductionRecord{}); err != nil {
 		t.Fatalf("migrate schema: %v", err)
 	}
 
@@ -53,6 +56,16 @@ func TestGetDeviceUsageIncludesGroupsLinesAndIdleDevices(t *testing.T) {
 		RecordDate:  time.Now(),
 	}).Error; err != nil {
 		t.Fatalf("create production record: %v", err)
+	}
+	if err := db.Create(&model.DeviceRuntimeSession{
+		DeviceID:        activeDevice.ID,
+		StartedAt:       startTime,
+		LastSeenAt:      endTime,
+		EndedAt:         &endTime,
+		DurationSeconds: int64(endTime.Sub(startTime).Seconds()),
+		EndReason:       "test",
+	}).Error; err != nil {
+		t.Fatalf("create runtime session: %v", err)
 	}
 
 	handler := NewStatisticsHandler(db)
@@ -97,7 +110,7 @@ func TestDashboardUtilizationUsesProcessingOverRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Device{}, &model.ProductionRecord{}); err != nil {
+	if err := db.AutoMigrate(&model.Device{}, &model.DeviceRuntimeSession{}, &model.ProductionRecord{}); err != nil {
 		t.Fatalf("migrate schema: %v", err)
 	}
 
@@ -118,6 +131,16 @@ func TestDashboardUtilizationUsesProcessingOverRuntime(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("create production record: %v", err)
 	}
+	if err := db.Create(&model.DeviceRuntimeSession{
+		DeviceID:        device.ID,
+		StartedAt:       startTime,
+		LastSeenAt:      endTime,
+		EndedAt:         &endTime,
+		DurationSeconds: int64(endTime.Sub(startTime).Seconds()),
+		EndReason:       "test",
+	}).Error; err != nil {
+		t.Fatalf("create runtime session: %v", err)
+	}
 
 	handler := NewStatisticsHandler(db)
 	got := handler.getTodayUtilizationRate("", nil, 1)
@@ -136,5 +159,97 @@ func TestDashboardUtilizationUsesProcessingOverRuntime(t *testing.T) {
 	}
 	if todayUtilization["value"] != 25.0 {
 		t.Fatalf("expected today utilization trend 25%%, got %#v", todayUtilization["value"])
+	}
+}
+
+func TestDashboardUtilizationExtendsTodayRuntimeForOnlineDevice(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:dashboard_online_runtime_test?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Device{}, &model.DeviceRuntimeSession{}, &model.ProductionRecord{}); err != nil {
+		t.Fatalf("migrate schema: %v", err)
+	}
+
+	device := model.Device{Code: "D-005", Name: "在线设备", Status: "online"}
+	if err := db.Create(&device).Error; err != nil {
+		t.Fatalf("create device: %v", err)
+	}
+	startTime := time.Now().Add(-10 * time.Minute)
+	endTime := time.Now().Add(-9 * time.Minute)
+	if err := db.Create(&model.ProductionRecord{
+		DeviceID:    device.ID,
+		RunningTime: 1.0 / 60.0,
+		StartTime:   &startTime,
+		EndTime:     &endTime,
+		SourceKey:   "test-dashboard-online-runtime-001",
+		RecordDate:  time.Now(),
+	}).Error; err != nil {
+		t.Fatalf("create production record: %v", err)
+	}
+	if err := db.Create(&model.DeviceRuntimeSession{
+		DeviceID:   device.ID,
+		StartedAt:  startTime,
+		LastSeenAt: endTime,
+	}).Error; err != nil {
+		t.Fatalf("create runtime session: %v", err)
+	}
+
+	handler := NewStatisticsHandler(db)
+	got := handler.getTodayUtilizationRate("", nil, 1)
+	if got >= 100 {
+		t.Fatalf("expected online device utilization below 100%%, got %#v", got)
+	}
+	if got <= 0 {
+		t.Fatalf("expected positive utilization, got %#v", got)
+	}
+}
+
+func TestDashboardEmptyDeviceIDsScopeReturnsZeroData(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:dashboard_empty_scope_test?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Device{}, &model.DeviceRuntimeSession{}, &model.ProductionRecord{}, &model.AlarmRecord{}); err != nil {
+		t.Fatalf("migrate schema: %v", err)
+	}
+
+	device := model.Device{Code: "D-004", Name: "未分组设备"}
+	if err := db.Create(&device).Error; err != nil {
+		t.Fatalf("create device: %v", err)
+	}
+	if err := db.Create(&model.ProductionRecord{
+		DeviceID:   device.ID,
+		Pieces:     8,
+		SourceKey:  "test-dashboard-empty-scope-001",
+		RecordDate: time.Now(),
+	}).Error; err != nil {
+		t.Fatalf("create production record: %v", err)
+	}
+
+	handler := NewStatisticsHandler(db)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/statistics/dashboard?deviceIds=0", nil)
+	c.Set("role", "admin")
+
+	handler.GetDashboardData(c)
+
+	var body struct {
+		Code int `json:"code"`
+		Data struct {
+			TotalPieces      float64 `json:"totalPieces"`
+			TodayPieces      float64 `json:"todayPieces"`
+			ScopeDeviceCount float64 `json:"scopeDeviceCount"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Code != 0 {
+		t.Fatalf("expected success response, got code=%d body=%s", body.Code, recorder.Body.String())
+	}
+	if body.Data.TotalPieces != 0 || body.Data.TodayPieces != 0 || body.Data.ScopeDeviceCount != 0 {
+		t.Fatalf("expected empty scope zero data, got %#v", body.Data)
 	}
 }

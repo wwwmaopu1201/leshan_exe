@@ -134,12 +134,12 @@
             <el-table-column prop="endTime" label="结束时间" width="160" />
             <el-table-column prop="sewDuration" label="缝纫时长" width="120" align="right">
               <template slot-scope="scope">
-                <span class="text-success">{{ formatDurationFromHours(scope.row.sewDuration) }}</span>
+                <span class="text-success">{{ formatSewDuration(scope.row) }}</span>
               </template>
             </el-table-column>
             <el-table-column prop="avgSewDuration" label="平均缝纫时长" width="170" align="right">
               <template slot-scope="scope">
-                <span class="text-warning">{{ formatDurationPerCountFromMinutes(scope.row.avgSewDuration) }}</span>
+                <span class="text-warning">{{ formatAvgSewDuration(scope.row) }}</span>
               </template>
             </el-table-column>
           </el-table>
@@ -163,6 +163,11 @@ import * as echarts from 'echarts'
 import { getDurationStats, exportStatistics } from '@/api/statistics'
 import DeviceTreePanel from '@/components/DeviceTreePanel.vue'
 import { saveResponseWithDialog } from '@/utils/file-export'
+import {
+  formatDurationFromHours,
+  formatDurationFromSeconds,
+  formatDurationPerCountFromMinutes
+} from '@/utils'
 
 const getDefaultRange = () => {
   const end = new Date()
@@ -317,26 +322,23 @@ export default {
       this.charts[key] = chart
       return chart
     },
-    normalizeDurationValue(value, precision = 2) {
-      const number = Number(value)
-      if (!Number.isFinite(number)) return 0
-      return Number(number.toFixed(precision))
-    },
     formatDurationFromHours(hours) {
-      const value = Number(hours)
-      if (!Number.isFinite(value)) return '0分钟'
-      if (Math.abs(value) < 1) {
-        return `${this.normalizeDurationValue(value * 60)}分钟`
+      return formatDurationFromHours(hours)
+    },
+    formatSewDuration(row) {
+      if (row && row.sewDurationSeconds !== undefined && row.sewDurationSeconds !== null) {
+        return formatDurationFromSeconds(row.sewDurationSeconds)
       }
-      return `${this.normalizeDurationValue(value)}小时`
+      return formatDurationFromHours(row?.sewDuration)
+    },
+    formatAvgSewDuration(row) {
+      if (row && row.avgSewDurationSeconds !== undefined && row.avgSewDurationSeconds !== null) {
+        return `${formatDurationFromSeconds(row.avgSewDurationSeconds)}/次`
+      }
+      return formatDurationPerCountFromMinutes(row?.avgSewDuration)
     },
     formatDurationPerCountFromMinutes(minutes) {
-      const value = Number(minutes)
-      if (!Number.isFinite(value)) return '0分钟/次'
-      if (Math.abs(value) < 60) {
-        return `${this.normalizeDurationValue(value)}分钟/次`
-      }
-      return `${this.normalizeDurationValue(value / 60)}小时/次`
+      return formatDurationPerCountFromMinutes(minutes)
     },
     initCharts() {
       this.initDurationPieChart()

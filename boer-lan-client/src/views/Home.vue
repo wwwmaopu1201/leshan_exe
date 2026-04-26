@@ -52,9 +52,9 @@
             >
               <el-table-column prop="rank" label="序号" width="58" align="center" />
               <el-table-column prop="name" :label="usageNameLabel" min-width="134" show-overflow-tooltip />
-              <el-table-column prop="runningTimeLabel" label="运行时长" width="110" align="center" />
-              <el-table-column prop="idleTimeLabel" label="待机时长" width="110" align="center" />
-              <el-table-column prop="efficiencyLabel" label="开机利用率" width="104" align="center" />
+              <el-table-column prop="runningTimeLabel" label="运行时长" width="126" align="center" />
+              <el-table-column prop="idleTimeLabel" label="待机时长" width="126" align="center" />
+              <el-table-column prop="efficiencyLabel" label="使用率" width="104" align="center" />
             </el-table>
           </el-card>
         </div>
@@ -215,6 +215,7 @@
 import * as echarts from 'echarts'
 import { getDeviceGroups, getDeviceList } from '@/api/device'
 import { getHomeStats, getProcessOverview } from '@/api/statistics'
+import { formatDurationFromHours } from '@/utils'
 
 const USAGE_TABS = [
   { key: 'device', label: '设备' },
@@ -296,9 +297,9 @@ export default {
           color: 'is-orange'
         },
         {
-          key: 'workingRate',
-          label: '设备在缝率',
-          value: this.formatPlainPercent(this.safePercent(this.homeStats.workingDevices, this.homeStats.totalDevices)),
+          key: 'onlineRate',
+          label: '设备在线率',
+          value: this.formatPlainPercent(this.safePercent(this.homeStats.onlineDevices, this.homeStats.totalDevices)),
           unit: '%',
           icon: 'el-icon-data-analysis',
           color: 'is-blue'
@@ -318,7 +319,7 @@ export default {
           return {
             name: item.name || meta.name || `设备${item.deviceId || ''}`,
             groupId: this.toNumber(meta.groupId),
-            group: meta.group || '未分组',
+            group: meta.groupName || meta.group || '未分组',
             lineId: this.toNumber(meta.lineId),
             line: meta.line || '未分线',
             runningTime: this.toNumber(item.runningTime),
@@ -415,11 +416,7 @@ export default {
       return `${this.toNumber(value).toFixed(2)}%`
     },
     formatDuration(hours) {
-      const seconds = Math.max(0, Math.round(this.toNumber(hours) * 3600))
-      const hh = String(Math.floor(seconds / 3600)).padStart(2, '0')
-      const mm = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0')
-      const ss = String(seconds % 60).padStart(2, '0')
-      return `${hh}:${mm}:${ss}`
+      return formatDurationFromHours(this.toNumber(hours))
     },
     formatAxisDate(date, index) {
       const raw = String(date || '').trim()
@@ -482,6 +479,7 @@ export default {
         ...meta,
         groupId,
         group: this.resolveGroupLabel(groupId, item.groupName || meta.group),
+        groupName: this.resolveGroupName(groupId, item.groupName || meta.group),
         line: itemLineName || lineMeta.name,
         lineId: itemLineId || lineMeta.id
       }
@@ -514,6 +512,13 @@ export default {
         return String(fallbackName || '').trim() || '未分组'
       }
       return chain.map(item => item.name).join(' / ')
+    },
+    resolveGroupName(groupId, fallbackName = '') {
+      const chain = this.getVisibleGroupChain(groupId)
+      if (!chain.length) {
+        return String(fallbackName || '').trim() || '未分组'
+      }
+      return chain[chain.length - 1]?.name || String(fallbackName || '').trim() || '未分组'
     },
     resolveLineMeta(groupId) {
       const chain = this.getVisibleGroupChain(groupId)
@@ -1113,12 +1118,15 @@ export default {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 .production-toolbar__tabs {
   display: inline-flex;
   align-items: center;
+  flex: 0 0 auto;
   gap: 6px;
 }
 
@@ -1141,12 +1149,18 @@ export default {
 }
 
 .production-toolbar__sep {
+  flex: 0 0 auto;
   color: #7b8798;
   font-size: 12px;
 }
 
+.production-toolbar ::v-deep .el-date-editor.el-input {
+  flex: 0 0 112px;
+  width: 112px;
+}
+
 .production-toolbar ::v-deep .el-input__inner {
-  width: 104px;
+  width: 112px;
   height: 26px;
   line-height: 26px;
   padding: 0 10px;

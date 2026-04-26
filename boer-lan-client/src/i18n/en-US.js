@@ -29,6 +29,7 @@ export default {
     device: 'Device Management',
     deviceList: 'Device List',
     deviceGroup: 'Device Group',
+    deviceTypeManager: 'Device Type',
     remoteMonitor: 'Remote Monitor',
     file: 'Pattern Management',
     patternList: 'Pattern List',

@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +20,57 @@ type DeviceHandler struct {
 
 func NewDeviceHandler(db *gorm.DB) *DeviceHandler {
 	return &DeviceHandler{db: db}
+}
+
+func normalizeDeviceType(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || value == "模板机" {
+		return model.DefaultDeviceType
+	}
+	return value
+}
+
+func (h *DeviceHandler) upsertDeviceTypeCatalog(value string) error {
+	value = normalizeDeviceType(value)
+	if value == "" {
+		return nil
+	}
+	return h.db.FirstOrCreate(&model.DeviceTypeCatalog{}, model.DeviceTypeCatalog{Value: value}).Error
+}
+
+func (h *DeviceHandler) loadDeviceTypeCatalogValues() ([]string, error) {
+	values := make([]string, 0)
+	if err := h.db.Model(&model.DeviceTypeCatalog{}).Order("value ASC").Pluck("value", &values).Error; err != nil {
+		return nil, err
+	}
+	return values, nil
+}
+
+func sortDeviceTypes(values []string) []string {
+	unique := make(map[string]struct{}, len(values)+1)
+	unique[model.DefaultDeviceType] = struct{}{}
+	for _, value := range values {
+		value = normalizeDeviceType(value)
+		if value != "" {
+			unique[value] = struct{}{}
+		}
+	}
+
+	result := make([]string, 0, len(unique))
+	for value := range unique {
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	sort.SliceStable(result, func(i, j int) bool {
+		if result[i] == model.DefaultDeviceType {
+			return true
+		}
+		if result[j] == model.DefaultDeviceType {
+			return false
+		}
+		return result[i] < result[j]
+	})
+	return result
 }
 
 func applyDeviceGroupParentScope(query *gorm.DB, parentID *uint) *gorm.DB {
@@ -491,6 +543,295 @@ func (h *DeviceHandler) GetDevice(c *gin.Context) {
 	})
 }
 
+func (h *DeviceHandler) GetDeviceTypes(c *gin.Context) {
+	types := make([]string, 0)
+	query := h.db.Model(&model.Device{}).Where("type <> ''")
+	scope := h.getCurrentUserScope(c)
+	if !scope.All {
+		if len(scope.GroupIDs) == 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"code": 0,
+				"data": sortDeviceTypes(nil),
+			})
+			return
+		}
+		query = query.Where("group_id IN ?", scope.GroupIDs)
+	}
+
+	if err := query.Distinct("type").Pluck("type", &types).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "查询设备类型失败",
+		})
+		return
+	}
+	catalogTypes, err := h.loadDeviceTypeCatalogValues()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "查询设备类型失败",
+		})
+		return
+	}
+	types = append(types, catalogTypes...)
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": sortDeviceTypes(types),
+	})
+}
+
+func (h *DeviceHandler) GetDeviceTypeSummary(c *gin.Context) {
+	scope := h.getCurrentUserScope(c)
+	query := h.db.Model(&model.Device{}).Where("type <> ''")
+	if !scope.All {
+		if len(scope.GroupIDs) == 0 {
+			query = query.Where("1 = 0")
+		} else {
+			query = query.Where("group_id IN ?", scope.GroupIDs)
+		}
+	}
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		query = query.Where("type LIKE ?", "%"+keyword+"%")
+	}
+
+	var rows []struct {
+		Value       string
+		DeviceCount int64
+		UpdateTime  string
+	}
+	if err := query.
+		Select("type as value, COUNT(*) as device_count, MAX(updated_at) as update_time").
+		Group("type").
+		Order("device_count DESC, value ASC").
+		Scan(&rows).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "查询设备类型汇总失败",
+		})
+		return
+	}
+
+	summaryMap := make(map[string]gin.H, len(rows)+1)
+	for _, row := range rows {
+		value := normalizeDeviceType(row.Value)
+		if value == "" {
+			continue
+		}
+		updateTime := strings.TrimSpace(row.UpdateTime)
+		if updateTime == "" {
+			updateTime = "-"
+		}
+		summaryMap[value] = gin.H{
+			"value":       value,
+			"deviceCount": row.DeviceCount,
+			"updateTime":  updateTime,
+			"isDefault":   value == model.DefaultDeviceType,
+		}
+	}
+
+	catalogValues, err := h.loadDeviceTypeCatalogValues()
+	if err != nil {
+		catalogValues = nil
+	}
+	catalogValues = append(catalogValues, model.DefaultDeviceType)
+	for _, value := range catalogValues {
+		value = normalizeDeviceType(value)
+		if value == "" {
+			continue
+		}
+		if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" && !strings.Contains(value, keyword) {
+			continue
+		}
+		if _, exists := summaryMap[value]; !exists {
+			summaryMap[value] = gin.H{
+				"value":       value,
+				"deviceCount": int64(0),
+				"updateTime":  "-",
+				"isDefault":   value == model.DefaultDeviceType,
+			}
+		}
+	}
+
+	list := make([]gin.H, 0, len(summaryMap))
+	for _, item := range summaryMap {
+		list = append(list, item)
+	}
+	sort.Slice(list, func(i, j int) bool {
+		leftDefault := list[i]["isDefault"].(bool)
+		rightDefault := list[j]["isDefault"].(bool)
+		if leftDefault != rightDefault {
+			return leftDefault
+		}
+		leftCount := list[i]["deviceCount"].(int64)
+		rightCount := list[j]["deviceCount"].(int64)
+		if leftCount != rightCount {
+			return leftCount > rightCount
+		}
+		return list[i]["value"].(string) < list[j]["value"].(string)
+	})
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": list,
+	})
+}
+
+func (h *DeviceHandler) CreateDeviceType(c *gin.Context) {
+	var req struct {
+		Value string `json:"value" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "参数错误",
+		})
+		return
+	}
+	value := normalizeDeviceType(req.Value)
+	if value == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "设备类型不能为空",
+		})
+		return
+	}
+	if err := h.upsertDeviceTypeCatalog(value); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "新增设备类型失败",
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"data":    gin.H{"value": value},
+		"message": "success",
+	})
+}
+
+func (h *DeviceHandler) RenameDeviceType(c *gin.Context) {
+	var req struct {
+		OldValue string `json:"oldValue" binding:"required"`
+		NewValue string `json:"newValue" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "参数错误",
+		})
+		return
+	}
+	oldValue := normalizeDeviceType(req.OldValue)
+	newValue := normalizeDeviceType(req.NewValue)
+	if oldValue == "" || newValue == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "设备类型不能为空",
+		})
+		return
+	}
+	if oldValue == model.DefaultDeviceType && newValue != model.DefaultDeviceType {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "默认设备类型不能改名",
+		})
+		return
+	}
+	if oldValue == newValue {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    0,
+			"data":    gin.H{"affected": 0},
+			"message": "success",
+		})
+		return
+	}
+
+	var affected int64
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.FirstOrCreate(&model.DeviceTypeCatalog{}, model.DeviceTypeCatalog{Value: newValue}).Error; err != nil {
+			return err
+		}
+		result := tx.Model(&model.Device{}).Where("type = ?", oldValue).Update("type", newValue)
+		if result.Error != nil {
+			return result.Error
+		}
+		affected = result.RowsAffected
+		if err := tx.Where("value = ?", oldValue).Delete(&model.DeviceTypeCatalog{}).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "更新设备类型失败",
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"data":    gin.H{"affected": affected},
+		"message": "success",
+	})
+}
+
+func (h *DeviceHandler) DeleteDeviceType(c *gin.Context) {
+	var req struct {
+		Value string `json:"value" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "参数错误",
+		})
+		return
+	}
+	value := normalizeDeviceType(req.Value)
+	if value == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "设备类型不能为空",
+		})
+		return
+	}
+	if value == model.DefaultDeviceType {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "默认设备类型不能删除",
+		})
+		return
+	}
+
+	var affected int64
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.FirstOrCreate(&model.DeviceTypeCatalog{}, model.DeviceTypeCatalog{Value: model.DefaultDeviceType}).Error; err != nil {
+			return err
+		}
+		result := tx.Model(&model.Device{}).Where("type = ?", value).Update("type", model.DefaultDeviceType)
+		if result.Error != nil {
+			return result.Error
+		}
+		affected = result.RowsAffected
+		if err := tx.Where("value = ?", value).Delete(&model.DeviceTypeCatalog{}).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "删除设备类型失败",
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"data":    gin.H{"affected": affected},
+		"message": "success",
+	})
+}
+
 func (h *DeviceHandler) CreateDevice(c *gin.Context) {
 	var device model.Device
 	if err := c.ShouldBindJSON(&device); err != nil {
@@ -504,7 +845,7 @@ func (h *DeviceHandler) CreateDevice(c *gin.Context) {
 	device.Code = strings.TrimSpace(device.Code)
 	device.Name = strings.TrimSpace(device.Name)
 	device.InitialName = strings.TrimSpace(device.InitialName)
-	device.Type = strings.TrimSpace(device.Type)
+	device.Type = normalizeDeviceType(device.Type)
 	device.ModelName = strings.TrimSpace(device.ModelName)
 	device.EmployeeCode = strings.TrimSpace(device.EmployeeCode)
 	device.EmployeeName = strings.TrimSpace(device.EmployeeName)
@@ -521,6 +862,13 @@ func (h *DeviceHandler) CreateDevice(c *gin.Context) {
 	}
 	if device.InitialName == "" {
 		device.InitialName = device.Name
+	}
+	if err := h.upsertDeviceTypeCatalog(device.Type); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "设备类型保存失败",
+		})
+		return
 	}
 
 	scope := h.getCurrentUserScope(c)
@@ -638,7 +986,15 @@ func (h *DeviceHandler) UpdateDevice(c *gin.Context) {
 		updates["sort_order"] = *req.SortOrder
 	}
 	if req.Type != nil {
-		updates["type"] = strings.TrimSpace(*req.Type)
+		deviceType := normalizeDeviceType(*req.Type)
+		if err := h.upsertDeviceTypeCatalog(deviceType); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "设备类型保存失败",
+			})
+			return
+		}
+		updates["type"] = deviceType
 	}
 	if req.ModelName != nil {
 		updates["model_name"] = strings.TrimSpace(*req.ModelName)

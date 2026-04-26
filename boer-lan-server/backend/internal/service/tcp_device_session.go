@@ -125,7 +125,7 @@ func (dc *DeviceConnection) provisionalIdentity() (code, name, deviceType, model
 		name = "待识别设备"
 	}
 
-	deviceType = "模板机"
+	deviceType = model.DefaultDeviceType
 	modelName = "待识别"
 	return
 }
@@ -158,7 +158,7 @@ func (dc *DeviceConnection) upsertDeviceRecord(code, name, deviceType, modelName
 			Code:         code,
 			Name:         fallbackString(name, "设备 "+code),
 			InitialName:  fallbackString(name, "设备 "+code),
-			Type:         fallbackString(deviceType, "模板机"),
+			Type:         fallbackString(deviceType, model.DefaultDeviceType),
 			ModelName:    fallbackString(modelName, "待识别"),
 			IdentifiedBy: dc.resolveIdentifiedBy(code, mainboardSN),
 			MainboardSN:  mainboardSN,
@@ -257,6 +257,7 @@ func (dc *DeviceConnection) bindDeviceRecord(device model.Device, reason string)
 		dc.connMgr.Register(dc.deviceCode, dc)
 	}
 
+	ensureDeviceRuntimeSession(dc.db, dc.deviceID, time.Now())
 	emitTCPLog(dc.db, "info", true, "[TCP] Device session bound: code=%s id=%d reason=%s", dc.deviceCode, dc.deviceID, reason)
 }
 
@@ -394,7 +395,7 @@ func (dc *DeviceConnection) ensureProductionDeviceBinding(payloadDeviceCode uint
 		name = "设备" + code
 	}
 
-	deviceType := "模板机"
+	deviceType := model.DefaultDeviceType
 	modelName := "待识别"
 	if dc.deviceModel > 0 {
 		deviceType, modelName = mapDeviceModel(dc.deviceModel)
@@ -498,4 +499,5 @@ func (dc *DeviceConnection) updateDeviceRuntime(updates map[string]interface{}) 
 	if err := dc.db.Model(&model.Device{}).Where("id = ?", dc.deviceID).Updates(updates).Error; err != nil {
 		emitTCPLog(dc.db, "warn", true, "[TCP] Update device runtime failed: device=%s id=%d err=%v", dc.deviceCode, dc.deviceID, err)
 	}
+	ensureDeviceRuntimeSession(dc.db, dc.deviceID, time.Now())
 }

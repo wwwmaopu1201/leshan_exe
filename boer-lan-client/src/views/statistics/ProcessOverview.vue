@@ -70,8 +70,8 @@
               <div class="stat-card__body">
                 <div class="stat-icon"><i class="el-icon-time"></i></div>
                 <div class="stat-info stat-card__content">
-                <div class="stat-value">{{ overview.totalHours }}</div>
-                <div class="stat-label">总运行时长(h)</div>
+                <div class="stat-value">{{ formatDurationFromHours(overview.totalHours) }}</div>
+                <div class="stat-label">总运行时长</div>
                 </div>
               </div>
             </el-card>
@@ -134,11 +134,19 @@
             <el-table-column prop="sewSpeed" label="缝纫速度(针/分钟)" width="140" align="right" />
             <el-table-column prop="startTime" label="开始时间" width="160" />
             <el-table-column prop="processCount" label="加工次数" width="90" align="right" />
-            <el-table-column prop="avgProcessDuration" label="平均加工时长(min/次)" width="160" align="right" />
+            <el-table-column prop="avgProcessDuration" label="平均加工时长" width="170" align="right">
+              <template slot-scope="scope">
+                {{ formatDurationPerCountFromMinutes(scope.row.avgProcessDuration) }}
+              </template>
+            </el-table-column>
             <el-table-column prop="patternSewCount" label="花型缝纫次数" width="120" align="right" />
             <el-table-column prop="alarmInfo" label="报警信息" min-width="140" />
             <el-table-column prop="alarmTime" label="报警时间" width="160" />
-            <el-table-column prop="cumulativeUpTime" label="累计开机时长(h)" width="130" align="right" />
+            <el-table-column prop="cumulativeUpTime" label="累计开机时长" width="150" align="right">
+              <template slot-scope="scope">
+                {{ formatDurationFromHours(scope.row.cumulativeUpTime) }}
+              </template>
+            </el-table-column>
           </el-table>
 
           <el-pagination
@@ -160,6 +168,10 @@ import * as echarts from 'echarts'
 import { getProcessOverview, exportStatistics } from '@/api/statistics'
 import DeviceTreePanel from '@/components/DeviceTreePanel.vue'
 import { saveResponseWithDialog } from '@/utils/file-export'
+import {
+  formatDurationFromHours,
+  formatDurationPerCountFromMinutes
+} from '@/utils'
 
 const getDefaultRange = () => {
   const end = new Date()
@@ -313,6 +325,12 @@ export default {
       const chart = echarts.init(ref)
       this.charts[key] = chart
       return chart
+    },
+    formatDurationFromHours(hours) {
+      return formatDurationFromHours(hours)
+    },
+    formatDurationPerCountFromMinutes(minutes) {
+      return formatDurationPerCountFromMinutes(minutes)
     },
     initCharts() {
       this.initProductionChart()

@@ -160,21 +160,30 @@
       width="620px"
       @close="resetEditForm"
     >
-      <el-form ref="editFormRef" :model="editForm" :rules="editRules" label-width="110px">
+      <el-form ref="editFormRef" :model="editForm" :rules="currentEditRules" label-width="110px">
         <el-form-item :label="$t('device.deviceCode')" prop="code">
-          <el-input v-model="editForm.code" />
+          <el-input v-model="editForm.code" :disabled="isEditingExistingDevice" />
         </el-form-item>
         <el-form-item :label="$t('device.deviceName')" prop="name">
           <el-input v-model="editForm.name" />
         </el-form-item>
         <el-form-item :label="$t('device.initialName')" prop="initialName">
-          <el-input v-model="editForm.initialName" />
+          <el-input v-model="editForm.initialName" :disabled="isEditingExistingDevice" />
         </el-form-item>
         <el-form-item :label="$t('device.deviceType')" prop="type">
-          <el-select v-model="editForm.type">
-            <el-option label="缝纫机" value="缝纫机" />
-            <el-option label="绣花机" value="绣花机" />
-          </el-select>
+          <div class="device-type-control">
+            <el-select v-model="editForm.type" filterable placeholder="请选择设备类型">
+              <el-option
+                v-for="type in deviceTypeOptions"
+                :key="type"
+                :label="type"
+                :value="type"
+              />
+            </el-select>
+            <el-button icon="el-icon-plus" @click="openDeviceTypeDialog">
+              添加类型
+            </el-button>
+          </div>
         </el-form-item>
         <el-form-item :label="$t('device.deviceModel')" prop="model">
           <el-select v-model="editForm.model">
@@ -184,7 +193,7 @@
           </el-select>
         </el-form-item>
         <el-form-item :label="$t('device.ipAddress')" prop="ip">
-          <el-input v-model="editForm.ip" placeholder="192.168.1.xxx" />
+          <el-input v-model="editForm.ip" :disabled="isEditingExistingDevice" placeholder="192.168.1.xxx" />
         </el-form-item>
         <el-form-item :label="$t('employee.employeeCode')" prop="employeeCode">
           <el-input v-model="editForm.employeeCode" />
@@ -193,7 +202,7 @@
           <el-input v-model="editForm.employeeName" />
         </el-form-item>
         <el-form-item :label="$t('device.mainboardSn')" prop="mainboardSn">
-          <el-input v-model="editForm.mainboardSn" />
+          <el-input v-model="editForm.mainboardSn" :disabled="isEditingExistingDevice" />
         </el-form-item>
         <el-form-item :label="$t('common.remark')" prop="remark">
           <el-input v-model="editForm.remark" type="textarea" :rows="3" />
@@ -212,6 +221,29 @@
       <span slot="footer" class="dialog-footer">
         <el-button @click="showEditDialog = false">{{ $t('common.cancel') }}</el-button>
         <el-button type="primary" @click="handleSaveDevice">{{ $t('common.confirm') }}</el-button>
+      </span>
+    </el-dialog>
+
+    <el-dialog
+      title="新增设备类型"
+      :visible.sync="showDeviceTypeDialog"
+      width="420px"
+      @closed="resetDeviceTypeForm"
+    >
+      <el-form label-width="92px">
+        <el-form-item label="类型名称">
+          <el-input
+            v-model.trim="deviceTypeForm.value"
+            placeholder="请输入设备类型"
+            @keyup.enter.native="handleCreateDeviceType"
+          />
+        </el-form-item>
+      </el-form>
+      <span slot="footer" class="dialog-footer">
+        <el-button @click="showDeviceTypeDialog = false">{{ $t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="creatingDeviceType" @click="handleCreateDeviceType">
+          {{ $t('common.save') }}
+        </el-button>
       </span>
     </el-dialog>
 
@@ -246,12 +278,16 @@ import DeviceTreePanel from '@/components/DeviceTreePanel.vue'
 import {
   getDeviceList,
   createDevice,
+  createDeviceType,
   updateDevice,
   deleteDevice,
   batchDeleteDevices,
   moveToGroup,
-  getDeviceGroups
+  getDeviceGroups,
+  getDeviceTypes
 } from '@/api/device'
+
+const DEFAULT_DEVICE_TYPE = '电控类型'
 
 const defaultTreeFilter = () => ({
   label: '',
@@ -271,6 +307,7 @@ export default {
       loading: false,
       tableData: [],
       groupOptions: [],
+      deviceTypeOptions: [DEFAULT_DEVICE_TYPE],
       selectedRows: [],
       treeFilter: defaultTreeFilter(),
       searchForm: {
@@ -289,7 +326,7 @@ export default {
         code: '',
         name: '',
         initialName: '',
-        type: '',
+        type: DEFAULT_DEVICE_TYPE,
         model: '',
         ip: '',
         employeeCode: '',
@@ -307,10 +344,29 @@ export default {
       },
       showMoveDialog: false,
       moveTargetGroupId: null,
+      showDeviceTypeDialog: false,
+      creatingDeviceType: false,
+      deviceTypeForm: {
+        value: ''
+      },
       tableHeight: 320
     }
   },
   computed: {
+    isEditingExistingDevice() {
+      return Boolean(this.editForm.id)
+    },
+    currentEditRules() {
+      if (!this.isEditingExistingDevice) {
+        return this.editRules
+      }
+      const rules = { ...this.editRules }
+      delete rules.code
+      delete rules.ip
+      delete rules.initialName
+      delete rules.mainboardSn
+      return rules
+    },
     groupNameMap() {
       return new Map((this.groupOptions || []).map(group => [Number(group.id), group.name]))
     },
@@ -329,6 +385,7 @@ export default {
   },
   mounted() {
     this.fetchGroups()
+    this.fetchDeviceTypes()
     this.fetchData()
     window.addEventListener('resize', this.syncTableHeight)
   },
@@ -345,6 +402,32 @@ export default {
       } catch (error) {
         console.error('Failed to fetch groups:', error)
       }
+    },
+    async fetchDeviceTypes() {
+      try {
+        const res = await getDeviceTypes()
+        if (res.code === 0) {
+          const types = Array.isArray(res.data) ? res.data : []
+          this.deviceTypeOptions = this.normalizeDeviceTypeOptions(types)
+        }
+      } catch (error) {
+        console.error('Failed to fetch device types:', error)
+        this.deviceTypeOptions = [DEFAULT_DEVICE_TYPE]
+      }
+    },
+    normalizeDeviceTypeOptions(types = []) {
+      const merged = new Set([DEFAULT_DEVICE_TYPE])
+      types.forEach(item => {
+        const value = String(item || '').trim()
+        if (value) {
+          merged.add(value)
+        }
+      })
+      return Array.from(merged).sort((a, b) => {
+        if (a === DEFAULT_DEVICE_TYPE) return -1
+        if (b === DEFAULT_DEVICE_TYPE) return 1
+        return a.localeCompare(b, 'zh-Hans-CN')
+      })
     },
     async fetchData() {
       this.loading = true
@@ -508,7 +591,7 @@ export default {
         code: '',
         name: '',
         initialName: '',
-        type: '',
+        type: DEFAULT_DEVICE_TYPE,
         model: '',
         ip: '',
         employeeCode: '',
@@ -525,7 +608,7 @@ export default {
         code: row.code,
         name: row.name,
         initialName: row.initialName || '',
-        type: row.type,
+        type: row.type || DEFAULT_DEVICE_TYPE,
         model: row.model,
         ip: row.ip,
         employeeCode: row.employeeCode || '',
@@ -546,6 +629,38 @@ export default {
       this.moveTargetGroupId = null
       this.showMoveDialog = true
     },
+    openDeviceTypeDialog() {
+      this.deviceTypeForm.value = ''
+      this.showDeviceTypeDialog = true
+    },
+    resetDeviceTypeForm() {
+      this.creatingDeviceType = false
+      this.deviceTypeForm.value = ''
+    },
+    async handleCreateDeviceType() {
+      const value = String(this.deviceTypeForm.value || '').trim()
+      if (!value) {
+        this.$message.warning('设备类型不能为空')
+        return
+      }
+      this.creatingDeviceType = true
+      try {
+        const res = await createDeviceType({ value })
+        if (res.code === 0) {
+          this.$message.success('设备类型已新增')
+          this.showDeviceTypeDialog = false
+          await this.fetchDeviceTypes()
+          this.editForm.type = res.data?.value || value
+        } else {
+          this.$message.error(res.message || '设备类型新增失败')
+        }
+      } catch (error) {
+        console.error('Create device type failed:', error)
+        this.$message.error('设备类型新增失败')
+      } finally {
+        this.creatingDeviceType = false
+      }
+    },
     resetEditForm() {
       this.$refs.editFormRef?.resetFields()
     },
@@ -553,15 +668,11 @@ export default {
       try {
         await this.$refs.editFormRef.validate()
         const payload = {
-          code: this.editForm.code,
           name: this.editForm.name,
-          initialName: this.editForm.initialName,
           type: this.editForm.type,
           model: this.editForm.model,
-          ip: this.editForm.ip,
           employeeCode: this.editForm.employeeCode,
           employeeName: this.editForm.employeeName,
-          mainboardSn: this.editForm.mainboardSn,
           remark: this.editForm.remark,
           groupId: this.editForm.groupId
         }
@@ -569,12 +680,19 @@ export default {
         if (this.editForm.id) {
           res = await updateDevice(this.editForm.id, payload)
         } else {
-          res = await createDevice(payload)
+          res = await createDevice({
+            ...payload,
+            code: this.editForm.code,
+            initialName: this.editForm.initialName,
+            ip: this.editForm.ip,
+            mainboardSn: this.editForm.mainboardSn
+          })
         }
         if (res.code === 0) {
           this.$message.success(this.$t('common.success'))
           this.showEditDialog = false
           this.fetchGroups()
+          this.fetchDeviceTypes()
           this.fetchData()
         } else {
           this.$message.error(res.message || '保存失败')
@@ -702,6 +820,21 @@ export default {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.device-type-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  .el-select {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .el-button {
+    flex: 0 0 auto;
+  }
 }
 
 .danger-text {

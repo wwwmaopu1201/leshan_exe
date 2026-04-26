@@ -1,7 +1,9 @@
 package api
 
 import (
+	"archive/zip"
 	"errors"
+	"io"
 	"math"
 	"net/http"
 	"os"
@@ -24,7 +26,6 @@ type PatternHandler struct {
 }
 
 var (
-	errPatternNameFormat = errors.New("pattern name format invalid")
 	errPatternFieldValue = errors.New("pattern field invalid")
 )
 
@@ -252,34 +253,11 @@ func formatFileSize(size int64) string {
 	return strconv.FormatInt(size, 10) + "B"
 }
 
-func isValidPatternName(name string) bool {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return false
-	}
-	parts := strings.FieldsFunc(name, func(r rune) bool {
-		return r == '+' || r == '＋'
-	})
-	if len(parts) != 3 {
-		return false
-	}
-	for _, part := range parts {
-		if strings.TrimSpace(part) == "" {
-			return false
-		}
-	}
-	return true
-}
-
 func (h *PatternHandler) validateAndBuildPatternUpdates(req PatternUpdateRequest) (map[string]interface{}, error) {
 	updates := make(map[string]interface{})
 
 	if req.Name != nil {
-		name := strings.TrimSpace(*req.Name)
-		if !isValidPatternName(name) {
-			return nil, errPatternNameFormat
-		}
-		updates["name"] = name
+		updates["name"] = strings.TrimSpace(*req.Name)
 	}
 
 	if req.PatternType != nil {
@@ -425,6 +403,123 @@ func (h *PatternHandler) GetPatternList(c *gin.Context) {
 		},
 		"message": "success",
 	})
+}
+
+func (h *PatternHandler) DownloadPatternFiles(c *gin.Context) {
+	var patterns []model.Pattern
+	query := h.db.Model(&model.Pattern{})
+	scope := h.getCurrentUserScope(c)
+
+	if !scope.All {
+		patternIDs, err := h.queryScopedPatternIDs(scope, c.GetUint("userId"))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "查询花型范围失败",
+			})
+			return
+		}
+		if len(patternIDs) == 0 {
+			c.JSON(http.StatusNotFound, gin.H{
+				"code":    404,
+				"message": "没有可下载的花型文件",
+			})
+			return
+		}
+		query = query.Where("id IN ?", patternIDs)
+	}
+
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		like := "%" + keyword + "%"
+		query = query.Where(
+			"name LIKE ? OR file_name LIKE ? OR pattern_type LIKE ? OR order_no LIKE ?",
+			like,
+			like,
+			like,
+			like,
+		)
+	}
+	if patternType := strings.TrimSpace(c.Query("patternType")); patternType != "" {
+		query = query.Where("pattern_type = ?", patternType)
+	}
+	if orderNo := strings.TrimSpace(c.Query("orderNo")); orderNo != "" {
+		query = query.Where("order_no LIKE ?", "%"+orderNo+"%")
+	}
+
+	startDate, err := parseDateFilter(c.Query("startDate"), false)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "开始日期格式错误，应为 yyyy-MM-dd",
+		})
+		return
+	}
+	endDate, err := parseDateFilter(c.Query("endDate"), true)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "结束日期格式错误，应为 yyyy-MM-dd",
+		})
+		return
+	}
+	if startDate != nil {
+		query = query.Where("created_at >= ?", *startDate)
+	}
+	if endDate != nil {
+		query = query.Where("created_at <= ?", *endDate)
+	}
+
+	if err := query.Order("created_at DESC").Find(&patterns).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "查询花型文件失败",
+		})
+		return
+	}
+
+	files := make([]struct {
+		pattern model.Pattern
+		path    string
+		info    os.FileInfo
+	}, 0, len(patterns))
+	for _, pattern := range patterns {
+		filePath := strings.TrimSpace(pattern.FilePath)
+		if filePath == "" {
+			continue
+		}
+		info, err := os.Stat(filePath)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		files = append(files, struct {
+			pattern model.Pattern
+			path    string
+			info    os.FileInfo
+		}{pattern: pattern, path: filePath, info: info})
+	}
+
+	if len(files) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": "没有可下载的花型文件",
+		})
+		return
+	}
+
+	archiveName := "server-pattern-files.zip"
+	c.Header("Content-Type", "application/zip")
+	c.Header("Content-Disposition", `attachment; filename="`+archiveName+`"`)
+	c.Header("Access-Control-Expose-Headers", "Content-Disposition")
+
+	zipWriter := zip.NewWriter(c.Writer)
+	defer zipWriter.Close()
+
+	usedNames := make(map[string]int, len(files))
+	for _, item := range files {
+		if err := addPatternFileToZip(zipWriter, item.pattern, item.path, item.info, usedNames); err != nil {
+			continue
+		}
+	}
 }
 
 func (h *PatternHandler) GetPatternTypes(c *gin.Context) {
@@ -886,13 +981,6 @@ func (h *PatternHandler) UploadPattern(c *gin.Context) {
 	name := strings.TrimSpace(c.PostForm("name"))
 	if name == "" {
 		name = file.Filename
-	} else if !isValidPatternName(name) {
-		cleanupSavedFile()
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "花型名称需为“款式+部位+尺码”格式",
-		})
-		return
 	}
 	patternType := strings.TrimSpace(c.PostForm("patternType"))
 	orderNo := strings.TrimSpace(c.PostForm("orderNo"))
@@ -1006,6 +1094,11 @@ func (h *PatternHandler) DownloadPatternFile(c *gin.Context) {
 		return
 	}
 
+	c.Header("Access-Control-Expose-Headers", "Content-Disposition")
+	c.FileAttachment(filePath, patternDownloadFileName(pattern, filePath))
+}
+
+func patternDownloadFileName(pattern model.Pattern, filePath string) string {
 	fileName := strings.TrimSpace(pattern.FileName)
 	if pattern.Name != "" {
 		fileExt := filepath.Ext(fileName)
@@ -1017,9 +1110,45 @@ func (h *PatternHandler) DownloadPatternFile(c *gin.Context) {
 	if fileName == "" {
 		fileName = filepath.Base(filePath)
 	}
+	return filepath.Base(strings.ReplaceAll(strings.ReplaceAll(fileName, "/", "_"), "\\", "_"))
+}
 
-	c.Header("Access-Control-Expose-Headers", "Content-Disposition")
-	c.FileAttachment(filePath, fileName)
+func uniqueArchiveFileName(fileName string, used map[string]int) string {
+	fileName = filepath.Base(strings.TrimSpace(fileName))
+	if fileName == "" || fileName == "." {
+		fileName = "pattern-file"
+	}
+	count := used[fileName]
+	if count == 0 {
+		used[fileName] = 1
+		return fileName
+	}
+	used[fileName] = count + 1
+	ext := filepath.Ext(fileName)
+	base := strings.TrimSuffix(fileName, ext)
+	return base + "-" + strconv.Itoa(count+1) + ext
+}
+
+func addPatternFileToZip(zipWriter *zip.Writer, pattern model.Pattern, filePath string, info os.FileInfo, used map[string]int) error {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	header, err := zip.FileInfoHeader(info)
+	if err != nil {
+		return err
+	}
+	header.Name = uniqueArchiveFileName(patternDownloadFileName(pattern, filePath), used)
+	header.Method = zip.Deflate
+
+	writer, err := zipWriter.CreateHeader(header)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(writer, file)
+	return err
 }
 
 func (h *PatternHandler) UpdatePattern(c *gin.Context) {
@@ -1063,9 +1192,6 @@ func (h *PatternHandler) UpdatePattern(c *gin.Context) {
 	updates, err := h.validateAndBuildPatternUpdates(req)
 	if err != nil {
 		message := "提交字段不合法（名称不能为空，针数/工价不能为负数）"
-		if errors.Is(err, errPatternNameFormat) {
-			message = "花型名称需为“款式+部位+尺码”格式"
-		}
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": message,
@@ -1151,9 +1277,6 @@ func (h *PatternHandler) BatchUpdatePatterns(c *gin.Context) {
 	updates, err := h.validateAndBuildPatternUpdates(req.PatternUpdateRequest)
 	if err != nil {
 		message := "提交字段不合法（名称不能为空，针数/工价不能为负数）"
-		if errors.Is(err, errPatternNameFormat) {
-			message = "花型名称需为“款式+部位+尺码”格式"
-		}
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": message,

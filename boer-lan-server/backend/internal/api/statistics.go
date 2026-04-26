@@ -164,6 +164,14 @@ func calculateUtilizationRate(processingHours, runtimeHours float64) float64 {
 	return rate
 }
 
+type deviceDailyRuntimeAgg struct {
+	Date       string
+	DeviceID   uint
+	Processing float64
+	Runtime    float64
+	Idle       float64
+}
+
 func resolveProductionDurationHours(startTime, endTime *time.Time, fallback float64) float64 {
 	if startTime != nil && endTime != nil && !startTime.IsZero() && !endTime.IsZero() && endTime.After(*startTime) {
 		return endTime.Sub(*startTime).Hours()
@@ -172,6 +180,130 @@ func resolveProductionDurationHours(startTime, endTime *time.Time, fallback floa
 		return 0
 	}
 	return fallback
+}
+
+func (h *StatisticsHandler) loadDeviceDailyRuntimeAggs(startDate, endDate, deviceId string, deviceIDs []uint, extendTodayForOnline bool) []deviceDailyRuntimeAgg {
+	dateExpr := h.localDateExpr("record_date")
+	query := applyDashboardDeviceFilter(h.db.Model(&model.ProductionRecord{}), deviceId, deviceIDs)
+	if strings.TrimSpace(startDate) != "" {
+		query = query.Where(fmt.Sprintf("%s >= ?", dateExpr), startDate)
+	}
+	if strings.TrimSpace(endDate) != "" {
+		query = query.Where(fmt.Sprintf("%s <= ?", dateExpr), endDate)
+	}
+
+	var productionRows []struct {
+		Date       string
+		DeviceID   uint
+		Processing float64
+		IdleTime   float64
+	}
+	query.
+		Select(fmt.Sprintf("%s as date, device_id, COALESCE(SUM(running_time), 0) as processing, COALESCE(SUM(idle_time), 0) as idle_time", dateExpr)).
+		Group(dateExpr + ", device_id").
+		Scan(&productionRows)
+
+	buckets := make(map[string]*deviceDailyRuntimeAgg)
+	bucketFor := func(date string, deviceID uint) *deviceDailyRuntimeAgg {
+		key := fmt.Sprintf("%s:%d", date, deviceID)
+		current := buckets[key]
+		if current == nil {
+			current = &deviceDailyRuntimeAgg{
+				Date:     date,
+				DeviceID: deviceID,
+			}
+			buckets[key] = current
+		}
+		return current
+	}
+
+	for _, row := range productionRows {
+		current := bucketFor(row.Date, row.DeviceID)
+		current.Processing += math.Max(row.Processing, 0)
+		current.Idle += math.Max(row.IdleTime, 0)
+	}
+
+	startAt, endAt := resolveStatsTimeBounds(startDate, endDate)
+	sessionQuery := h.db.Model(&model.DeviceRuntimeSession{}).
+		Where("started_at < ?", endAt).
+		Where("ended_at IS NULL OR ended_at > ?", startAt)
+	if strings.TrimSpace(deviceId) != "" {
+		sessionQuery = sessionQuery.Where("device_id = ?", deviceId)
+	} else if len(deviceIDs) > 0 {
+		sessionQuery = sessionQuery.Where("device_id IN ?", deviceIDs)
+	}
+
+	var sessions []model.DeviceRuntimeSession
+	if err := sessionQuery.Find(&sessions).Error; err == nil {
+		now := time.Now()
+		for _, session := range sessions {
+			sessionStart := session.StartedAt.In(time.Local)
+			sessionEnd := now
+			if session.EndedAt != nil && !session.EndedAt.IsZero() {
+				sessionEnd = session.EndedAt.In(time.Local)
+			} else if !extendTodayForOnline {
+				sessionEnd = session.LastSeenAt.In(time.Local)
+			}
+			if sessionEnd.IsZero() || !sessionEnd.After(sessionStart) {
+				continue
+			}
+
+			if sessionStart.Before(startAt) {
+				sessionStart = startAt
+			}
+			if sessionEnd.After(endAt) {
+				sessionEnd = endAt
+			}
+			if !sessionEnd.After(sessionStart) {
+				continue
+			}
+
+			for cursor := sessionStart; cursor.Before(sessionEnd); {
+				nextDay := time.Date(cursor.Year(), cursor.Month(), cursor.Day()+1, 0, 0, 0, 0, time.Local)
+				segmentEnd := sessionEnd
+				if nextDay.Before(segmentEnd) {
+					segmentEnd = nextDay
+				}
+				dateKey := formatLocalStatsDate(cursor)
+				current := bucketFor(dateKey, session.DeviceID)
+				current.Runtime += segmentEnd.Sub(cursor).Hours()
+				cursor = segmentEnd
+			}
+		}
+	}
+
+	result := make([]deviceDailyRuntimeAgg, 0, len(buckets))
+	for _, item := range buckets {
+		if item.Runtime <= 0 && item.Processing > 0 {
+			item.Runtime = item.Processing + item.Idle
+		}
+		if item.Runtime > item.Processing {
+			item.Idle = item.Runtime - item.Processing
+		}
+		item.Runtime = math.Max(item.Runtime, 0)
+		item.Idle = math.Max(item.Idle, 0)
+		result = append(result, *item)
+	}
+
+	return result
+}
+
+func resolveStatsTimeBounds(startDate, endDate string) (time.Time, time.Time) {
+	start := parseStatsDateOrDefault(startDate, time.Date(1970, 1, 1, 0, 0, 0, 0, time.Local))
+	endBase := parseStatsDateOrDefault(endDate, time.Now())
+	end := time.Date(endBase.Year(), endBase.Month(), endBase.Day()+1, 0, 0, 0, 0, time.Local)
+	if !end.After(start) {
+		end = start.Add(24 * time.Hour)
+	}
+	return start, end
+}
+
+func parseStatsDateOrDefault(raw string, fallback time.Time) time.Time {
+	parsed, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(raw), time.Local)
+	if err != nil {
+		return time.Date(fallback.Year(), fallback.Month(), fallback.Day(), 0, 0, 0, 0, time.Local)
+	}
+	return parsed
 }
 
 func (h *StatisticsHandler) GetHomeStats(c *gin.Context) {
@@ -248,28 +380,15 @@ func (h *StatisticsHandler) getWeeklyEfficiency(deviceIDs []uint) []gin.H {
 			weekday = 7
 		}
 
-		var rows []struct {
-			DeviceID       uint
-			ProcessingTime float64
-			RunningTime    float64
-		}
-		dateExpr := h.localDateExpr("record_date")
-		runtimeExpr := h.productionRuntimeHoursExpr("", "")
-		dailyQuery := h.db.Model(&model.ProductionRecord{}).
-			Select(fmt.Sprintf("device_id, COALESCE(SUM(running_time), 0) as processing_time, COALESCE(SUM(%s), 0) as running_time", runtimeExpr)).
-			Where(fmt.Sprintf("%s = ?", dateExpr), formatLocalStatsDate(date))
-		if len(deviceIDs) > 0 {
-			dailyQuery = dailyQuery.Where("device_id IN ?", deviceIDs)
-		}
-		dailyQuery.Group("device_id").Scan(&rows)
+		rows := h.loadDeviceDailyRuntimeAggs(formatLocalStatsDate(date), formatLocalStatsDate(date), "", deviceIDs, true)
 
 		efficiency := 0.0
 		validDeviceCount := 0
 		for _, row := range rows {
-			if row.RunningTime <= 0 {
+			if row.Runtime <= 0 {
 				continue
 			}
-			efficiency += calculateUtilizationRate(row.ProcessingTime, row.RunningTime)
+			efficiency += calculateUtilizationRate(row.Processing, row.Runtime)
 			validDeviceCount++
 		}
 		if totalDevices > 0 {
@@ -381,35 +500,39 @@ func (h *StatisticsHandler) getTopProduction(deviceIDs []uint) []gin.H {
 func (h *StatisticsHandler) getDeviceUsage(deviceIDs []uint) []gin.H {
 	startDate := time.Now().AddDate(0, 0, -6).Format("2006-01-02")
 
-	var rows []struct {
-		DeviceID       uint
-		Name           string
-		GroupID        *uint
-		GroupName      string
-		ProcessingTime float64
-		RunningTime    float64
-		IdleTime       float64
+	var devices []struct {
+		DeviceID  uint
+		Name      string
+		GroupID   *uint
+		GroupName string
 	}
 
-	dateExpr := h.localDateExpr("pr.record_date")
-	runtimeExpr := h.productionRuntimeHoursExpr("pr", "")
 	query := h.db.Table("devices d").
-		Select(fmt.Sprintf("d.id as device_id, %s, d.group_id, g.name as group_name, COALESCE(SUM(pr.running_time), 0) as processing_time, COALESCE(SUM(%s), 0) as running_time, COALESCE(SUM(pr.idle_time), 0) as idle_time", h.deviceNameExpr("d.id", "name"), runtimeExpr)).
-		Joins(fmt.Sprintf("LEFT JOIN production_records pr ON pr.device_id = d.id AND %s >= ?", dateExpr), startDate).
+		Select(fmt.Sprintf("d.id as device_id, %s, d.group_id, g.name as group_name", h.deviceNameExpr("d.id", "name"))).
 		Joins("LEFT JOIN groups g ON d.group_id = g.id").
 		Where("d.deleted_at IS NULL")
 	if len(deviceIDs) > 0 {
 		query = query.Where("d.id IN ?", deviceIDs)
 	}
 	query.
-		Group("d.id, d.name, d.group_id, g.name").
-		Order("running_time DESC, idle_time ASC").
-		Scan(&rows)
+		Order("d.sort_order ASC, d.code ASC, d.id ASC").
+		Scan(&devices)
+
+	usageByDeviceID := make(map[uint]deviceDailyRuntimeAgg)
+	for _, item := range h.loadDeviceDailyRuntimeAggs(startDate, formatLocalStatsDate(time.Now()), "", deviceIDs, true) {
+		current := usageByDeviceID[item.DeviceID]
+		current.DeviceID = item.DeviceID
+		current.Processing += item.Processing
+		current.Runtime += item.Runtime
+		current.Idle += item.Idle
+		usageByDeviceID[item.DeviceID] = current
+	}
 
 	lineByGroupID := h.buildLineMetaByGroupID()
-	result := make([]gin.H, 0, len(rows))
-	for _, row := range rows {
-		efficiency := calculateUtilizationRate(row.ProcessingTime, row.RunningTime)
+	result := make([]gin.H, 0, len(devices))
+	for _, row := range devices {
+		usage := usageByDeviceID[row.DeviceID]
+		efficiency := calculateUtilizationRate(usage.Processing, usage.Runtime)
 		lineMeta := groupLineMeta{}
 		if row.GroupID != nil {
 			lineMeta = lineByGroupID[*row.GroupID]
@@ -421,9 +544,9 @@ func (h *StatisticsHandler) getDeviceUsage(deviceIDs []uint) []gin.H {
 			"groupName":      row.GroupName,
 			"lineId":         lineMeta.ID,
 			"lineName":       lineMeta.Name,
-			"processingTime": roundFloat(row.ProcessingTime, 2),
-			"runningTime":    roundFloat(row.RunningTime, 2),
-			"idleTime":       roundFloat(row.IdleTime, 2),
+			"processingTime": roundFloat(usage.Processing, 2),
+			"runningTime":    roundFloat(usage.Runtime, 2),
+			"idleTime":       roundFloat(usage.Idle, 2),
 			"efficiency":     roundFloat(efficiency, 2),
 		})
 	}
@@ -590,17 +713,13 @@ func (h *StatisticsHandler) getProductionByDay(deviceIDs []uint) []gin.H {
 }
 
 func (h *StatisticsHandler) GetDashboardData(c *gin.Context) {
-	deviceId := strings.TrimSpace(c.Query("deviceId"))
-	deviceIDs := parseDeviceIDs(c.Query("deviceIds"))
-	deviceId, deviceIDs = h.scopeDeviceFilter(c, deviceId, deviceIDs)
+	deviceId, deviceIDs := h.resolveDashboardDeviceScope(c)
 
 	var totalPieces int
 	var todayPieces int
 	var threadLength float64
 	var avgUsedThreadLength float64
 
-	var todayProcessingTime, todayRuntimeTime float64
-	runtimeExpr := h.productionRuntimeHoursExpr("", "")
 	summaryQuery := applyDashboardDeviceFilter(h.db.Model(&model.ProductionRecord{}), deviceId, deviceIDs)
 	summaryQuery.Select("COALESCE(SUM(pieces), 0)").Scan(&totalPieces)
 	summaryQuery.Select("COALESCE(SUM(thread_length), 0)").Scan(&threadLength)
@@ -612,8 +731,12 @@ func (h *StatisticsHandler) GetDashboardData(c *gin.Context) {
 		deviceIDs,
 	)
 	todayQuery.Select("COALESCE(SUM(pieces), 0)").Scan(&todayPieces)
-	todayQuery.Select("COALESCE(SUM(running_time), 0)").Scan(&todayProcessingTime)
-	todayQuery.Select(fmt.Sprintf("COALESCE(SUM(%s), 0)", runtimeExpr)).Scan(&todayRuntimeTime)
+
+	var todayProcessingTime, todayRuntimeTime float64
+	for _, item := range h.loadDeviceDailyRuntimeAggs(formatLocalStatsDate(time.Now()), formatLocalStatsDate(time.Now()), deviceId, deviceIDs, true) {
+		todayProcessingTime += item.Processing
+		todayRuntimeTime += item.Runtime
+	}
 
 	runtimeTime := todayRuntimeTime
 	processingTime := todayProcessingTime
@@ -669,6 +792,18 @@ func (h *StatisticsHandler) GetDashboardData(c *gin.Context) {
 		},
 		"message": "success",
 	})
+}
+
+func (h *StatisticsHandler) resolveDashboardDeviceScope(c *gin.Context) (string, []uint) {
+	deviceId := strings.TrimSpace(c.Query("deviceId"))
+	rawDeviceIDs, hasDeviceIDs := c.GetQuery("deviceIds")
+	deviceIDs := parseDeviceIDs(rawDeviceIDs)
+
+	if deviceId == "" && hasDeviceIDs && len(deviceIDs) == 0 {
+		return "", []uint{0}
+	}
+
+	return h.scopeDeviceFilter(c, deviceId, deviceIDs)
 }
 
 func applyDashboardDeviceFilter(query *gorm.DB, deviceId string, deviceIDs []uint) *gorm.DB {
@@ -841,34 +976,16 @@ func (h *StatisticsHandler) getHourlyProduction(deviceId string, deviceIDs []uin
 }
 
 func (h *StatisticsHandler) getTodayUtilizationRate(deviceId string, deviceIDs []uint, deviceCount int64) float64 {
-	runtimeExpr := h.productionRuntimeHoursExpr("", "")
+	rows := h.loadDeviceDailyRuntimeAggs(formatLocalStatsDate(time.Now()), formatLocalStatsDate(time.Now()), deviceId, deviceIDs, true)
+
 	if strings.TrimSpace(deviceId) != "" {
-		var totals struct {
-			Processing float64
-			Runtime    float64
+		var totals deviceDailyRuntimeAgg
+		for _, row := range rows {
+			totals.Processing += row.Processing
+			totals.Runtime += row.Runtime
 		}
-		applyDashboardDeviceFilter(
-			h.db.Model(&model.ProductionRecord{}).Where(fmt.Sprintf("%s = ?", h.localDateExpr("record_date")), formatLocalStatsDate(time.Now())),
-			deviceId,
-			deviceIDs,
-		).
-			Select(fmt.Sprintf("COALESCE(SUM(running_time), 0) as processing, COALESCE(SUM(%s), 0) as runtime", runtimeExpr)).
-			Scan(&totals)
 		return roundFloat(calculateUtilizationRate(totals.Processing, totals.Runtime), 2)
 	}
-
-	var rows []struct {
-		Processing float64
-		Runtime    float64
-	}
-	applyDashboardDeviceFilter(
-		h.db.Model(&model.ProductionRecord{}).Where(fmt.Sprintf("%s = ?", h.localDateExpr("record_date")), formatLocalStatsDate(time.Now())),
-		deviceId,
-		deviceIDs,
-	).
-		Select(fmt.Sprintf("COALESCE(SUM(running_time), 0) as processing, COALESCE(SUM(%s), 0) as runtime", runtimeExpr)).
-		Group("device_id").
-		Scan(&rows)
 
 	totalUtilization := 0.0
 	for _, row := range rows {
@@ -889,21 +1006,7 @@ func (h *StatisticsHandler) getTodayUtilizationRate(deviceId string, deviceIDs [
 
 func (h *StatisticsHandler) getRuntimeAndUtilizationTrends(deviceId string, deviceIDs []uint, avgDeviceCount int64) ([]gin.H, []gin.H) {
 	startDate := time.Now().AddDate(0, 0, -6).Format("2006-01-02")
-	recordDateExpr := h.localDateExpr("record_date")
-	runtimeExpr := h.productionRuntimeHoursExpr("", "")
-	query := applyDashboardDeviceFilter(h.db.Model(&model.ProductionRecord{}), deviceId, deviceIDs).
-		Select(fmt.Sprintf("%s as date, device_id, COALESCE(SUM(running_time), 0) as processing_time, COALESCE(SUM(%s), 0) as running_time", recordDateExpr, runtimeExpr)).
-		Where(fmt.Sprintf("%s >= ?", recordDateExpr), startDate)
-
-	var rows []struct {
-		Date           string
-		DeviceID       uint
-		ProcessingTime float64
-		RunningTime    float64
-	}
-	query.Group(recordDateExpr + ", device_id").
-		Order("date ASC").
-		Scan(&rows)
+	rows := h.loadDeviceDailyRuntimeAggs(startDate, formatLocalStatsDate(time.Now()), deviceId, deviceIDs, true)
 
 	type dayAgg struct {
 		RuntimeTotal    float64
@@ -914,10 +1017,10 @@ func (h *StatisticsHandler) getRuntimeAndUtilizationTrends(deviceId string, devi
 	rowMap := make(map[string]dayAgg, len(rows))
 	for _, row := range rows {
 		agg := rowMap[row.Date]
-		agg.RuntimeTotal += row.RunningTime
-		agg.ProcessingTotal += row.ProcessingTime
-		if row.RunningTime > 0 {
-			agg.UtilSum += calculateUtilizationRate(row.ProcessingTime, row.RunningTime)
+		agg.RuntimeTotal += row.Runtime
+		agg.ProcessingTotal += row.Processing
+		if row.Runtime > 0 {
+			agg.UtilSum += calculateUtilizationRate(row.Processing, row.Runtime)
 			agg.UtilCount++
 		}
 		rowMap[row.Date] = agg
@@ -1197,20 +1300,31 @@ func (h *StatisticsHandler) GetProcessOverview(c *gin.Context) {
 	page, pageSize = normalizePagination(page, pageSize)
 
 	baseQuery := h.buildProductionStatsBaseQuery(startDate, endDate, deviceId, deviceIDs)
-	runtimeExpr := h.productionRuntimeHoursExpr("pr", "")
 
 	var summaryRow struct {
-		TotalPieces     int64
-		TotalThread     float64
-		TotalProcessing float64
-		TotalRuntime    float64
+		TotalPieces int64
+		TotalThread float64
 	}
 	baseQuery.Session(&gorm.Session{}).
-		Select(fmt.Sprintf("COALESCE(SUM(pr.pieces), 0) as total_pieces, COALESCE(SUM(pr.thread_length), 0) as total_thread, COALESCE(SUM(pr.running_time), 0) as total_processing, COALESCE(SUM(%s), 0) as total_runtime", runtimeExpr)).
+		Select("COALESCE(SUM(pr.pieces), 0) as total_pieces, COALESCE(SUM(pr.thread_length), 0) as total_thread").
 		Scan(&summaryRow)
 
-	totalHours := summaryRow.TotalRuntime
-	avgEfficiency := roundFloat(calculateUtilizationRate(summaryRow.TotalProcessing, summaryRow.TotalRuntime), 2)
+	usageStartDate, usageEndDate := startDate, endDate
+	if strings.TrimSpace(usageStartDate) == "" && strings.TrimSpace(usageEndDate) == "" {
+		today := formatLocalStatsDate(time.Now())
+		usageStartDate = today
+		usageEndDate = today
+	}
+
+	totalProcessing := 0.0
+	totalHours := 0.0
+	usageByDeviceDate := make(map[string]deviceDailyRuntimeAgg)
+	for _, item := range h.loadDeviceDailyRuntimeAggs(usageStartDate, usageEndDate, deviceId, deviceIDs, true) {
+		totalProcessing += item.Processing
+		totalHours += item.Runtime
+		usageByDeviceDate[makeDeviceDateKey(item.DeviceID, item.Date)] = item
+	}
+	avgEfficiency := roundFloat(calculateUtilizationRate(totalProcessing, totalHours), 2)
 
 	var total int64
 	baseQuery.Session(&gorm.Session{}).Count(&total)
@@ -1241,7 +1355,6 @@ func (h *StatisticsHandler) GetProcessOverview(c *gin.Context) {
 	list := make([]gin.H, 0, len(listRows))
 	for _, row := range listRows {
 		runningHours := resolveProductionDurationHours(row.StartTime, row.EndTime, row.DurationHours)
-		efficiency := calculateUtilizationRate(row.RunningTime, runningHours)
 		startTime, _ := deriveProductionTimeRange(row.RecordDate, row.CreatedAt, runningHours)
 		sewSpeed := 0.0
 		if runningHours > 0 {
@@ -1252,6 +1365,8 @@ func (h *StatisticsHandler) GetProcessOverview(c *gin.Context) {
 			avgProcessDuration = (runningHours * 60) / float64(row.Pieces)
 		}
 		dateKey := row.RecordDate.Format("2006-01-02")
+		deviceDayUsage := usageByDeviceDate[makeDeviceDateKey(row.DeviceID, dateKey)]
+		efficiency := calculateUtilizationRate(deviceDayUsage.Processing, deviceDayUsage.Runtime)
 		patternCountKey := makeDevicePatternDateKey(row.DeviceID, row.PatternID, row.PatternName, dateKey)
 		patternSewCount := patternSewCountMap[patternCountKey]
 		alarmInfo := alarmInfoMap[makeDeviceDateKey(row.DeviceID, dateKey)]
@@ -1288,21 +1403,29 @@ func (h *StatisticsHandler) GetProcessOverview(c *gin.Context) {
 	}
 
 	var trendRows []struct {
-		Date           string
-		Pieces         int64
-		ProcessingTime float64
-		RunningTime    float64
+		Date   string
+		Pieces int64
 	}
 	productionDateExpr := h.localDateExpr("pr.record_date")
 	baseQuery.Session(&gorm.Session{}).
-		Select(fmt.Sprintf("%s as date, COALESCE(SUM(pr.pieces), 0) as pieces, COALESCE(SUM(pr.running_time), 0) as processing_time, COALESCE(SUM(%s), 0) as running_time", productionDateExpr, runtimeExpr)).
+		Select(fmt.Sprintf("%s as date, COALESCE(SUM(pr.pieces), 0) as pieces", productionDateExpr)).
 		Group(productionDateExpr).
 		Order("date").
 		Scan(&trendRows)
 
+	usageByDate := make(map[string]deviceDailyRuntimeAgg)
+	for _, item := range usageByDeviceDate {
+		current := usageByDate[item.Date]
+		current.Date = item.Date
+		current.Processing += item.Processing
+		current.Runtime += item.Runtime
+		usageByDate[item.Date] = current
+	}
+
 	productionTrend := make([]gin.H, 0, len(trendRows))
 	for _, row := range trendRows {
-		efficiency := calculateUtilizationRate(row.ProcessingTime, row.RunningTime)
+		usage := usageByDate[row.Date]
+		efficiency := calculateUtilizationRate(usage.Processing, usage.Runtime)
 		productionTrend = append(productionTrend, gin.H{
 			"date":       row.Date,
 			"pieces":     row.Pieces,
@@ -1518,10 +1641,10 @@ func (h *StatisticsHandler) GetDurationStats(c *gin.Context) {
 	totalTime := prodSummary.RunningTime + prodSummary.IdleTime + alarmHours
 
 	summary := gin.H{
-		"totalTime":   roundFloat(totalTime, 2),
-		"runningTime": roundFloat(prodSummary.RunningTime, 2),
-		"idleTime":    roundFloat(prodSummary.IdleTime, 2),
-		"alarmTime":   roundFloat(alarmHours, 2),
+		"totalTime":   roundFloat(totalTime, 6),
+		"runningTime": roundFloat(prodSummary.RunningTime, 6),
+		"idleTime":    roundFloat(prodSummary.IdleTime, 6),
+		"alarmTime":   roundFloat(alarmHours, 6),
 	}
 
 	var total int64
@@ -1557,30 +1680,41 @@ func (h *StatisticsHandler) GetDurationStats(c *gin.Context) {
 			endTime = *row.EndTime
 		}
 		avgSewDuration := 0.0
+		sewDurationSeconds := int64(math.Round(runningHours * 3600))
+		avgSewDurationSeconds := int64(0)
+		if sewDurationSeconds < 0 {
+			sewDurationSeconds = 0
+		}
 		if row.Pieces > 0 {
 			avgSewDuration = (runningHours * 60) / float64(row.Pieces)
+			avgSewDurationSeconds = int64(math.Round(runningHours * 3600 / float64(row.Pieces)))
+			if avgSewDurationSeconds < 0 {
+				avgSewDurationSeconds = 0
+			}
 		}
 		list = append(list, gin.H{
-			"id":             row.ID,
-			"deviceName":     row.DeviceName,
-			"employeeCode":   row.EmployeeCode,
-			"employeeName":   row.EmployeeName,
-			"date":           row.RecordDate.Format("2006-01-02"),
-			"patternName":    row.PatternName,
-			"startTime":      startTime.Format("2006-01-02 15:04:05"),
-			"endTime":        endTime.Format("2006-01-02 15:04:05"),
-			"sewDuration":    roundFloat(runningHours, 2),
-			"avgSewDuration": roundFloat(avgSewDuration, 2),
-			"totalTime":      roundFloat(runningHours+row.IdleTime, 2),
-			"runningTime":    roundFloat(runningHours, 2),
-			"idleTime":       roundFloat(row.IdleTime, 2),
+			"id":                    row.ID,
+			"deviceName":            row.DeviceName,
+			"employeeCode":          row.EmployeeCode,
+			"employeeName":          row.EmployeeName,
+			"date":                  row.RecordDate.Format("2006-01-02"),
+			"patternName":           row.PatternName,
+			"startTime":             startTime.Format("2006-01-02 15:04:05"),
+			"endTime":               endTime.Format("2006-01-02 15:04:05"),
+			"sewDuration":           roundFloat(runningHours, 6),
+			"sewDurationSeconds":    sewDurationSeconds,
+			"avgSewDuration":        roundFloat(avgSewDuration, 4),
+			"avgSewDurationSeconds": avgSewDurationSeconds,
+			"totalTime":             roundFloat(runningHours+row.IdleTime, 6),
+			"runningTime":           roundFloat(runningHours, 6),
+			"idleTime":              roundFloat(row.IdleTime, 6),
 		})
 	}
 
 	durationPie := []gin.H{
-		{"name": "运行时长", "value": roundFloat(prodSummary.RunningTime, 2)},
-		{"name": "空闲时长", "value": roundFloat(prodSummary.IdleTime, 2)},
-		{"name": "报警时长", "value": roundFloat(alarmHours, 2)},
+		{"name": "运行时长", "value": roundFloat(prodSummary.RunningTime, 6)},
+		{"name": "空闲时长", "value": roundFloat(prodSummary.IdleTime, 6)},
+		{"name": "报警时长", "value": roundFloat(alarmHours, 6)},
 	}
 
 	var prodTrendRows []struct {
@@ -1640,9 +1774,9 @@ func (h *StatisticsHandler) GetDurationStats(c *gin.Context) {
 		row := trendMap[date]
 		durationTrend = append(durationTrend, gin.H{
 			"date":        row.Date,
-			"runningTime": roundFloat(row.RunningTime, 2),
-			"idleTime":    roundFloat(row.IdleTime, 2),
-			"alarmTime":   roundFloat(row.AlarmTime, 2),
+			"runningTime": roundFloat(row.RunningTime, 6),
+			"idleTime":    roundFloat(row.IdleTime, 6),
+			"alarmTime":   roundFloat(row.AlarmTime, 6),
 		})
 	}
 
@@ -1663,8 +1797,8 @@ func (h *StatisticsHandler) GetDurationStats(c *gin.Context) {
 	for _, row := range deviceSummaryRows {
 		deviceStats = append(deviceStats, gin.H{
 			"name":        row.Name,
-			"runningTime": roundFloat(row.RunningTime, 2),
-			"idleTime":    roundFloat(row.IdleTime, 2),
+			"runningTime": roundFloat(row.RunningTime, 6),
+			"idleTime":    roundFloat(row.IdleTime, 6),
 		})
 	}
 

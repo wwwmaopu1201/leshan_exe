@@ -16,12 +16,7 @@ function resolveAppIdentifier() {
   }
 }
 
-export function resolveSharedDataDir() {
-  const envOverride = String(process.env.BOERLAN_DATA_DIR || '').trim()
-  if (envOverride) {
-    return envOverride
-  }
-
+export function resolveDefaultSharedDataDir() {
   const identifier = resolveAppIdentifier()
   const homeDir = os.homedir()
   switch (process.platform) {
@@ -32,6 +27,15 @@ export function resolveSharedDataDir() {
     default:
       return path.join(process.env.XDG_DATA_HOME || path.join(homeDir, '.local', 'share'), identifier)
   }
+}
+
+export function resolveSharedDataDir() {
+  const envOverride = String(process.env.BOERLAN_DATA_DIR || '').trim()
+  if (envOverride) {
+    return envOverride
+  }
+
+  return resolveDefaultSharedDataDir()
 }
 
 export function resolveSharedDatabasePath() {

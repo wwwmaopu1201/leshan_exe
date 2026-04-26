@@ -67,8 +67,8 @@
             </div>
           </div>
 
-          <div class="table-actions flex-between">
-            <div class="action-group">
+          <div class="table-actions flex-between server-pattern-actions">
+            <div class="action-group server-pattern-actions__group">
               <el-button type="primary" icon="el-icon-plus" @click="openUploadDialog">
                 添加文件
               </el-button>
@@ -93,6 +93,14 @@
                 @click="handleBatchDownload"
               >
                 {{ $t('file.batchDownload') }}
+              </el-button>
+              <el-button
+                icon="el-icon-folder-opened"
+                :loading="localDownloadingAll"
+                :disabled="loading || pagination.total === 0"
+                @click="handleDownloadAllToLocal"
+              >
+                全部下载到本地
               </el-button>
               <el-button icon="el-icon-upload" @click="openDeviceFileDialog">
                 定位设备文件模块
@@ -138,7 +146,7 @@
             </el-table-column>
             <el-table-column prop="orderNo" label="订单编号" min-width="140" />
             <el-table-column prop="uploadTime" :label="$t('file.uploadTime')" width="170" />
-            <el-table-column :label="$t('common.operation')" width="260" align="center">
+            <el-table-column :label="$t('common.operation')" width="340" align="center" class-name="server-pattern-operation-column">
               <template slot-scope="scope">
                 <el-button type="text" size="small" @click="handlePreview(scope.row)">
                   预览
@@ -152,7 +160,7 @@
                   :loading="localDownloadingIds.includes(scope.row.id)"
                   @click="handleLocalDownload(scope.row)"
                 >
-                  下载
+                  下载到本地
                 </el-button>
                 <el-button type="text" size="small" @click="handleDownload(scope.row)">
                   下发
@@ -301,7 +309,6 @@
       <el-form :model="uploadForm" label-width="90px">
         <el-form-item label="花型名称">
           <el-input v-model.trim="uploadForm.name" placeholder="默认使用文件名" />
-          <div class="name-rule-tip">命名建议：款式+部位+尺码（例如：JK01+前片+M）</div>
         </el-form-item>
         <el-form-item label="花型类型">
           <div class="inline-field-row">
@@ -398,9 +405,8 @@
       width="520px"
     >
       <el-form :model="editForm" label-width="90px">
-        <el-form-item label="花型名称" required>
+        <el-form-item label="花型名称">
           <el-input v-model.trim="editForm.name" />
-          <div class="name-rule-tip">命名规则：款式+部位+尺码（例如：JK01+前片+M）</div>
         </el-form-item>
         <el-form-item label="花型类型">
           <el-select
@@ -761,6 +767,7 @@ import {
   uploadPattern,
   updatePattern,
   downloadPatternFile,
+  downloadPatternFiles,
   batchUpdatePatterns,
   deletePattern,
   downloadToDevice,
@@ -854,6 +861,7 @@ export default {
       editForm: defaultEditForm(),
       savingEdit: false,
       localDownloadingIds: [],
+      localDownloadingAll: false,
       showBatchEditDialog: false,
       batchEditForm: defaultBatchEditForm(),
       savingBatchEdit: false,
@@ -913,14 +921,17 @@ export default {
     window.removeEventListener('resize', this.syncTableHeights)
   },
   methods: {
-    isValidPatternName(name) {
-      const value = String(name || '').trim()
-      if (!value) return false
-      const parts = value.split(/[+＋]/).map(part => part.trim()).filter(Boolean)
-      return parts.length === 3
-    },
     getRequestErrorMessage(error, fallback) {
       return error?.response?.data?.message || error?.message || fallback
+    },
+    getPatternQueryParams() {
+      return {
+        keyword: this.searchForm.keyword,
+        patternType: this.searchForm.patternType,
+        orderNo: this.searchForm.orderNo,
+        startDate: this.searchForm.dateRange?.[0],
+        endDate: this.searchForm.dateRange?.[1]
+      }
     },
     isConnectedDeviceStatus(status) {
       return connectedDeviceStatuses.includes(String(status || '').trim())
@@ -1051,11 +1062,7 @@ export default {
       this.loading = true
       try {
         const res = await getPatternList({
-          keyword: this.searchForm.keyword,
-          patternType: this.searchForm.patternType,
-          orderNo: this.searchForm.orderNo,
-          startDate: this.searchForm.dateRange?.[0],
-          endDate: this.searchForm.dateRange?.[1],
+          ...this.getPatternQueryParams(),
           page: this.pagination.page,
           pageSize: this.pagination.pageSize
         })
@@ -1215,10 +1222,6 @@ export default {
       }
 
       const uploadName = String(this.uploadForm.name || '').trim()
-      if (uploadName && !this.isValidPatternName(uploadName)) {
-        this.$message.warning('花型名称需为“款式+部位+尺码”格式')
-        return
-      }
 
       this.uploading = true
       try {
@@ -1621,6 +1624,28 @@ export default {
         this.localDownloadingIds = this.localDownloadingIds.filter(id => id !== row.id)
       }
     },
+    async handleDownloadAllToLocal() {
+      if (this.localDownloadingAll || this.pagination.total === 0) return
+
+      this.localDownloadingAll = true
+      try {
+        const response = await downloadPatternFiles(this.getPatternQueryParams())
+        const { filename, saved } = await saveResponseWithDialog(response, `server-pattern-files-${Date.now()}.zip`, {
+          description: '花型文件压缩包',
+          mimeType: 'application/zip',
+          extensions: ['zip']
+        })
+        if (saved === null) {
+          return
+        }
+        this.$message.success(`已下载：${filename}`)
+      } catch (error) {
+        console.error('Download all pattern files failed:', error)
+        this.$message.error(this.getRequestErrorMessage(error, '下载服务器花型文件失败'))
+      } finally {
+        this.localDownloadingAll = false
+      }
+    },
     async openEditDialog(row) {
       if (!row) {
         return
@@ -1638,14 +1663,6 @@ export default {
     },
     async submitEdit() {
       const editName = String(this.editForm.name || '').trim()
-      if (!editName) {
-        this.$message.warning('花型名称不能为空')
-        return
-      }
-      if (!this.isValidPatternName(editName)) {
-        this.$message.warning('花型名称需为“款式+部位+尺码”格式')
-        return
-      }
 
       this.savingEdit = true
       try {
@@ -1826,6 +1843,40 @@ export default {
   gap: 10px;
 }
 
+.server-pattern-actions {
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.server-pattern-actions__group {
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  min-width: 0;
+  gap: 6px;
+}
+
+.server-pattern-actions__group .el-button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+::v-deep .server-pattern-operation-column .cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  gap: 8px;
+}
+
+::v-deep .server-pattern-operation-column .el-button {
+  flex: 0 0 auto;
+  margin-left: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+
 .danger-text {
   color: #F56C6C !important;
 }
@@ -1864,12 +1915,6 @@ export default {
 
 .device-file-card {
   margin-top: 18px;
-}
-
-.name-rule-tip {
-  margin-top: 4px;
-  font-size: 12px;
-  color: #909399;
 }
 
 .upload-area {

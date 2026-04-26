@@ -417,6 +417,8 @@ func initDB() {
 		&model.User{},
 		&model.Operator{},
 		&model.Device{},
+		&model.DeviceTypeCatalog{},
+		&model.DeviceRuntimeSession{},
 		&model.Pattern{},
 		&model.PatternTypeCatalog{},
 		&model.OrderNoCatalog{},
@@ -542,8 +544,24 @@ func initDefaultData(db *gorm.DB) {
 	ensureDefaultRole("user", "系统默认普通角色")
 	ensureDefaultRootGroup(db)
 	normalizeTopLevelGroupsUnderRoot(db)
+	ensureDefaultDeviceType(db)
+	backfillDefaultDeviceTypes(db)
 
 	ensureDefaultAdminUser(db)
+}
+
+func ensureDefaultDeviceType(db *gorm.DB) {
+	if err := db.FirstOrCreate(&model.DeviceTypeCatalog{}, model.DeviceTypeCatalog{Value: model.DefaultDeviceType}).Error; err != nil {
+		log.Printf("Failed to ensure default device type: %v", err)
+	}
+}
+
+func backfillDefaultDeviceTypes(db *gorm.DB) {
+	if err := db.Model(&model.Device{}).
+		Where("type IS NULL OR TRIM(type) = '' OR type = ?", "模板机").
+		Update("type", model.DefaultDeviceType).Error; err != nil {
+		log.Printf("Failed to backfill default device types: %v", err)
+	}
 }
 
 func ensureDefaultRootGroup(db *gorm.DB) {

@@ -63,6 +63,16 @@ const routes = [
         }
       },
       {
+        path: 'device/types',
+        name: 'DeviceTypeManager',
+        component: () => import('@/views/device/DeviceTypeManager.vue'),
+        meta: {
+          title: 'menu.deviceTypeManager',
+          parent: 'menu.device',
+          permission: PERMISSIONS.DEVICE_MANAGEMENT
+        }
+      },
+      {
         path: 'device/monitor',
         name: 'RemoteMonitor',
         component: () => import('@/views/device/RemoteMonitor.vue'),

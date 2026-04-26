@@ -29,6 +29,7 @@ export default {
     device: '设备管理',
     deviceList: '设备列表',
     deviceGroup: '设备分组',
+    deviceTypeManager: '设备类型',
     remoteMonitor: '远程监控',
     file: '花型管理',
     patternList: '花型列表',

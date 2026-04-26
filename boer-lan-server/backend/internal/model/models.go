@@ -6,6 +6,8 @@ import (
 	"gorm.io/gorm"
 )
 
+const DefaultDeviceType = "电控类型"
+
 // User 用户模型（客户端用户）
 type User struct {
 	gorm.Model
@@ -62,7 +64,7 @@ type Device struct {
 	Code               string    `gorm:"size:50;index;not null" json:"code"`
 	Name               string    `gorm:"size:100;not null" json:"name"`
 	InitialName        string    `gorm:"size:100" json:"initialName"`       // 初始名称
-	Type               string    `gorm:"size:50" json:"type"`               // 缝纫机, 绣花机
+	Type               string    `gorm:"size:50" json:"type"`               // 设备类型
 	ModelName          string    `gorm:"size:50" json:"model"`              // BM-2000, BM-3000
 	IdentifiedBy       string    `gorm:"size:30" json:"identifiedBy"`       // protocol, mainboard, ip-pending
 	EmployeeCode       string    `gorm:"size:50" json:"employeeCode"`       // 当前员工工号
@@ -90,6 +92,24 @@ type Device struct {
 	Group              *Group    `gorm:"foreignKey:GroupID" json:"group,omitempty"`
 	SortOrder          int       `gorm:"default:0" json:"sortOrder"` // 分组内排序
 	LastOnline         time.Time `json:"lastOnline"`
+}
+
+// DeviceTypeCatalog 设备类型目录
+type DeviceTypeCatalog struct {
+	gorm.Model
+	Value string `gorm:"size:100;uniqueIndex;not null" json:"value"`
+}
+
+// DeviceRuntimeSession 设备开机/在线运行区间
+type DeviceRuntimeSession struct {
+	gorm.Model
+	DeviceID        uint       `gorm:"index;not null" json:"deviceId"`
+	Device          *Device    `gorm:"foreignKey:DeviceID" json:"device,omitempty"`
+	StartedAt       time.Time  `gorm:"index;not null" json:"startedAt"`
+	LastSeenAt      time.Time  `gorm:"index" json:"lastSeenAt"`
+	EndedAt         *time.Time `gorm:"index" json:"endedAt"`
+	DurationSeconds int64      `gorm:"default:0" json:"durationSeconds"`
+	EndReason       string     `gorm:"size:50" json:"endReason"`
 }
 
 // Pattern 花型文件

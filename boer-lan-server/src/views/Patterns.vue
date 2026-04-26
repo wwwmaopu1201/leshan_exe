@@ -256,8 +256,8 @@
       @closed="resetUploadDialog"
     >
       <el-form ref="uploadFormRef" :model="uploadForm" :rules="uploadRules" label-width="100px">
-        <el-form-item label="花型名称" prop="name">
-          <el-input v-model.trim="uploadForm.name" placeholder="款式+部位+尺码" />
+        <el-form-item label="花型名称">
+          <el-input v-model.trim="uploadForm.name" placeholder="默认使用文件名" />
         </el-form-item>
         <el-form-item label="花型类型">
           <el-select
@@ -327,8 +327,8 @@
       @closed="resetEditDialog"
     >
       <el-form ref="editFormRef" :model="editForm" :rules="editRules" label-width="100px">
-        <el-form-item label="花型名称" prop="name">
-          <el-input v-model.trim="editForm.name" placeholder="款式+部位+尺码" />
+        <el-form-item label="花型名称">
+          <el-input v-model.trim="editForm.name" />
         </el-form-item>
         <el-form-item label="花型类型">
           <el-select
@@ -727,9 +727,6 @@ export default {
       uploadConflictResolver: null,
       uploadFileList: [],
       uploadRules: {
-        name: [
-          { required: true, message: '请输入花型名称', trigger: 'blur' }
-        ],
         file: [
           {
             validator: (_, __, callback) => {
@@ -743,11 +740,7 @@ export default {
           }
         ]
       },
-      editRules: {
-        name: [
-          { required: true, message: '请输入花型名称', trigger: 'blur' }
-        ]
-      }
+      editRules: {}
     }
   },
   mounted() {
@@ -1374,7 +1367,10 @@ export default {
         this.uploading = true
         const formData = new FormData()
         formData.append('file', currentFile)
-        formData.append('name', this.uploadForm.name.trim())
+        const uploadName = this.uploadForm.name.trim()
+        if (uploadName) {
+          formData.append('name', uploadName)
+        }
         if (this.uploadForm.patternType) {
           formData.append('patternType', this.uploadForm.patternType)
         }

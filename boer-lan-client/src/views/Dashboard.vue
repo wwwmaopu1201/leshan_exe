@@ -73,11 +73,11 @@
               <div class="runtime-panel__summary">
                 <div class="runtime-panel__metric">
                   <div class="runtime-panel__label">当天运行时长</div>
-                  <div class="runtime-panel__value">{{ formatHours(dashboardData.runningTime) }}小时</div>
+                  <div class="runtime-panel__value">{{ formatDuration(dashboardData.runningTime) }}</div>
                 </div>
                 <div class="runtime-panel__metric">
                   <div class="runtime-panel__label">当天加工时长</div>
-                  <div class="runtime-panel__value is-green">{{ formatHours(dashboardData.processingTime) }}小时</div>
+                  <div class="runtime-panel__value is-green">{{ formatDuration(dashboardData.processingTime) }}</div>
                 </div>
               </div>
               <div ref="runtimeChart" class="runtime-panel__chart"></div>
@@ -116,6 +116,7 @@ import * as echarts from 'echarts'
 import { getDeviceTree } from '@/api/device'
 import { getDashboardData } from '@/api/statistics'
 import DeviceTreePanel from '@/components/DeviceTreePanel.vue'
+import { formatDurationFromHours } from '@/utils'
 
 const defaultTreeScope = () => ({
   label: '',
@@ -231,8 +232,8 @@ export default {
     formatPercent(value) {
       return `${this.toNumber(value).toFixed(0)}%`
     },
-    formatHours(value) {
-      return this.toNumber(value).toFixed(2)
+    formatDuration(value) {
+      return formatDurationFromHours(this.toNumber(value))
     },
     async fetchDeviceTree() {
       try {
@@ -381,7 +382,8 @@ export default {
         ip: '',
         deviceCount: payload.deviceIds?.length || this.countDeviceNodes(node?.children || [])
       }
-      this.loadDashboardData({ deviceIds: (payload.deviceIds || []).join(',') })
+      const deviceIds = payload.deviceIds || []
+      this.loadDashboardData({ deviceIds: deviceIds.length > 0 ? deviceIds.join(',') : '0' })
     },
     initCharts() {
       this.initRuntimeChart()
@@ -404,7 +406,16 @@ export default {
 
       chart.setOption({
         animationDuration: 500,
-        tooltip: { trigger: 'axis' },
+        tooltip: {
+          trigger: 'axis',
+          formatter: params => {
+            const title = params?.[0]?.axisValue || ''
+            const rows = (params || []).map(item => {
+              return `${item.marker}${item.seriesName}: ${this.formatDuration(item.value)}`
+            })
+            return [title, ...rows].join('<br/>')
+          }
+        },
         grid: { left: 16, right: 12, top: 24, bottom: 18, containLabel: true },
         xAxis: {
           type: 'category',
@@ -418,7 +429,11 @@ export default {
           axisTick: { show: false },
           axisLine: { show: false },
           splitLine: { lineStyle: { color: '#ecf1f6', type: 'dashed' } },
-          axisLabel: { color: '#6d7b8f', fontSize: 11 }
+          axisLabel: {
+            color: '#6d7b8f',
+            fontSize: 11,
+            formatter: value => this.formatDuration(value)
+          }
         },
         series: [
           {
@@ -754,6 +769,10 @@ export default {
   align-items: stretch;
 }
 
+.runtime-panel {
+  grid-template-columns: 178px minmax(0, 1fr);
+}
+
 .runtime-panel__summary {
   min-height: 188px;
   padding: 0 0 8px 6px;
@@ -790,6 +809,12 @@ export default {
 
 .runtime-panel__value.is-green {
   color: #6dc56e;
+}
+
+.runtime-panel__value {
+  font-size: 20px;
+  line-height: 1.15;
+  white-space: nowrap;
 }
 
 .runtime-panel__chart,

@@ -4,7 +4,7 @@ server:
 
 database:
   type: sqlite  # sqlite 或 mysql
-  path: ./data/boer-lan.db  # SQLite数据库文件路径
+  path: ""  # 留空时使用生产应用数据目录下的 boer-lan.db
   # MySQL配置（切换到MySQL时取消注释并修改type为mysql）
   # host: localhost
   # port: 3306

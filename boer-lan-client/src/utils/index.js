@@ -43,6 +43,30 @@ export function formatNumber(num) {
   return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 }
 
+// 时长格式化：统一显示为“时分秒”，入参按秒/分钟/小时换算
+export function formatDurationFromSeconds(value) {
+  const raw = Number(value)
+  const totalSeconds = Number.isFinite(raw) ? Math.max(0, Math.round(raw)) : 0
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  return `${hours}时${String(minutes).padStart(2, '0')}分${String(seconds).padStart(2, '0')}秒`
+}
+
+export function formatDurationFromMinutes(value) {
+  const raw = Number(value)
+  return formatDurationFromSeconds(Number.isFinite(raw) ? raw * 60 : 0)
+}
+
+export function formatDurationFromHours(value) {
+  const raw = Number(value)
+  return formatDurationFromSeconds(Number.isFinite(raw) ? raw * 3600 : 0)
+}
+
+export function formatDurationPerCountFromMinutes(value) {
+  return `${formatDurationFromMinutes(value)}/次`
+}
+
 // 防抖函数
 export function debounce(fn, delay = 300) {
   let timer = null

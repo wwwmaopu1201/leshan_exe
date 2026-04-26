@@ -92,6 +92,9 @@ func main() {
 		if err := seedEmployees(ctx); err != nil {
 			return err
 		}
+		if err := seedDeviceTypes(ctx); err != nil {
+			return err
+		}
 		if err := seedDevices(ctx); err != nil {
 			return err
 		}
@@ -170,6 +173,8 @@ func autoMigrate(db *gorm.DB) error {
 		&model.User{},
 		&model.Operator{},
 		&model.Device{},
+		&model.DeviceTypeCatalog{},
+		&model.DeviceRuntimeSession{},
 		&model.Pattern{},
 		&model.PatternTypeCatalog{},
 		&model.OrderNoCatalog{},
@@ -594,6 +599,10 @@ func seedEmployees(ctx *seedContext) error {
 	return nil
 }
 
+func seedDeviceTypes(ctx *seedContext) error {
+	return ctx.db.FirstOrCreate(&model.DeviceTypeCatalog{}, model.DeviceTypeCatalog{Value: model.DefaultDeviceType}).Error
+}
+
 func seedDevices(ctx *seedContext) error {
 	deviceDefs := []struct {
 		code         string
@@ -638,7 +647,7 @@ func seedDevices(ctx *seedContext) error {
 			Code:         def.code,
 			Name:         def.name,
 			InitialName:  def.initialName,
-			Type:         def.deviceType,
+			Type:         model.DefaultDeviceType,
 			ModelName:    def.model,
 			EmployeeCode: def.employeeCode,
 			EmployeeName: employeeName,

@@ -14,7 +14,7 @@ func TestResetStaleDeviceStatuses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Device{}); err != nil {
+	if err := db.AutoMigrate(&model.Device{}, &model.DeviceRuntimeSession{}); err != nil {
 		t.Fatalf("migrate devices: %v", err)
 	}
 

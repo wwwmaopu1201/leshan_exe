@@ -869,8 +869,10 @@ func (dc *DeviceConnection) scheduleOfflineTransition() {
 		}
 
 		if deviceID > 0 {
+			offlineAt := time.Now()
 			dc.db.Model(&model.Device{}).Where("id = ? AND status != ?", deviceID, "offline").
 				Update("status", "offline")
+			closeDeviceRuntimeSessions(dc.db, deviceID, offlineAt, "disconnect")
 		}
 		emitTCPLog(dc.db, "info", true, "[TCP] Device disconnected: %s", deviceCode)
 	})
@@ -1129,9 +1131,9 @@ func parseProtocolBCDDateTime(data []byte) (time.Time, error) {
 
 func mapDeviceModel(code uint32) (deviceType, modelName string) {
 	if code == 0 {
-		return "模板机", "未知型号"
+		return model.DefaultDeviceType, "未知型号"
 	}
-	return "模板机", fmt.Sprintf("%d", code)
+	return model.DefaultDeviceType, fmt.Sprintf("%d", code)
 }
 
 type productionDataNew struct {
