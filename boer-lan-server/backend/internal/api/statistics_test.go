@@ -350,3 +350,81 @@ func TestGetDurationStatsSummaryUsesRuntimeSessions(t *testing.T) {
 	assertClose("alarm time", body.Data.Summary.AlarmTime, 5.0/60.0)
 	assertClose("idle time", body.Data.Summary.IdleTime, 45.0/60.0)
 }
+
+func TestGetProcessOverviewListUsesRuntimeSessionForCumulativeUpTime(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:process_overview_uptime_test?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.User{}, &model.Device{}, &model.Employee{}, &model.Pattern{}, &model.DeviceRuntimeSession{}, &model.ProductionRecord{}, &model.AlarmRecord{}); err != nil {
+		t.Fatalf("migrate schema: %v", err)
+	}
+
+	user := model.User{Username: "admin", Password: "x", Nickname: "admin", Role: "admin"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	device := model.Device{Code: "D-007", Name: "加工概况设备"}
+	if err := db.Create(&device).Error; err != nil {
+		t.Fatalf("create device: %v", err)
+	}
+
+	now := time.Now()
+	runtimeStart := now.Add(-10 * time.Second)
+	processStart := now.Add(-9 * time.Second)
+	processEnd := now.Add(-8 * time.Second)
+	if err := db.Create(&model.DeviceRuntimeSession{
+		DeviceID:        device.ID,
+		StartedAt:       runtimeStart,
+		LastSeenAt:      now,
+		EndedAt:         &now,
+		DurationSeconds: int64(now.Sub(runtimeStart).Seconds()),
+		EndReason:       "test",
+	}).Error; err != nil {
+		t.Fatalf("create runtime session: %v", err)
+	}
+	if err := db.Create(&model.ProductionRecord{
+		DeviceID:    device.ID,
+		Pieces:      1,
+		Stitches:    120,
+		RunningTime: 1.0 / 3600.0,
+		StartTime:   &processStart,
+		EndTime:     &processEnd,
+		SourceKey:   "test-process-overview-uptime-001",
+		RecordDate:  now,
+	}).Error; err != nil {
+		t.Fatalf("create production record: %v", err)
+	}
+
+	handler := NewStatisticsHandler(db)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	today := formatLocalStatsDate(now)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/statistics/process?startDate="+today+"&endDate="+today, nil)
+	c.Set("userId", user.ID)
+	c.Set("role", "admin")
+
+	handler.GetProcessOverview(c)
+
+	var body struct {
+		Code int `json:"code"`
+		Data struct {
+			List []struct {
+				CumulativeUpTime float64 `json:"cumulativeUpTime"`
+			} `json:"list"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Code != 0 {
+		t.Fatalf("expected success response, got code=%d body=%s", body.Code, recorder.Body.String())
+	}
+	if len(body.Data.List) != 1 {
+		t.Fatalf("expected one process row, got %d body=%s", len(body.Data.List), recorder.Body.String())
+	}
+	want := 10.0 / 3600.0
+	if math.Abs(body.Data.List[0].CumulativeUpTime-want) > 0.00001 {
+		t.Fatalf("expected cumulative uptime %.6fh from runtime session, got %.6f", want, body.Data.List[0].CumulativeUpTime)
+	}
+}

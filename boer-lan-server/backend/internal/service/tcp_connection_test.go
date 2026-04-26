@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"testing"
 	"time"
+
+	"boer-lan-server/internal/alarmcatalog"
 )
 
 func buildProductionDataNewTestPayload(userBeforeStop bool) []byte {
@@ -53,5 +55,18 @@ func TestParseProductionDataNewPayloadStopReasonBeforeUser(t *testing.T) {
 	}
 	if production.StopReason != 3 {
 		t.Fatalf("expected stop reason 3, got %d", production.StopReason)
+	}
+}
+
+func TestDescribeAlarmUsesCatalogValue(t *testing.T) {
+	alarm := alarmcatalog.Describe(58)
+	if alarm.Code != "E.PRESS_UP" {
+		t.Fatalf("expected alarm code E.PRESS_UP, got %q", alarm.Code)
+	}
+	if alarm.Description != "压框没压下!" {
+		t.Fatalf("expected alarm description 压框没压下!, got %q", alarm.Description)
+	}
+	if alarm.Display() != "E.PRESS_UP - 压框没压下!" {
+		t.Fatalf("expected display text, got %q", alarm.Display())
 	}
 }

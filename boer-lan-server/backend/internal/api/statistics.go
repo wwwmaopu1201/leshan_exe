@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"boer-lan-server/internal/alarmcatalog"
 	"boer-lan-server/internal/model"
 
 	"github.com/gin-gonic/gin"
@@ -63,6 +64,34 @@ func (h *StatisticsHandler) alarmInfoAggregateExpr(alias string) string {
 		expr = fmt.Sprintf("%s as %s", expr, alias)
 	}
 	return expr
+}
+
+func normalizeAlarmDisplay(alarmCode, alarmType, description string) (string, string, string) {
+	code := strings.TrimSpace(alarmCode)
+	alarmType = strings.TrimSpace(alarmType)
+	description = strings.TrimSpace(description)
+
+	if descriptor, ok := alarmcatalog.LookupRaw(code); ok {
+		if description != "" {
+			descriptor.Description = description
+		}
+		return descriptor.Code, descriptor.Display(), descriptor.Description
+	}
+	if descriptor, ok := alarmcatalog.LookupRaw(alarmType); ok {
+		if description != "" {
+			descriptor.Description = description
+		}
+		return descriptor.Code, descriptor.Display(), descriptor.Description
+	}
+
+	info := alarmType
+	if info == "" {
+		info = description
+	}
+	if info == "" {
+		info = "报警"
+	}
+	return code, info, description
 }
 
 func (h *StatisticsHandler) productionDurationHoursExpr(recordAlias, alias string) string {
@@ -195,6 +224,25 @@ func resolveProductionDurationHours(startTime, endTime *time.Time, fallback floa
 	}
 	if fallback < 0 {
 		return 0
+	}
+	return fallback
+}
+
+func effectiveStatsDateRange(startDate, endDate string) (string, string) {
+	if strings.TrimSpace(startDate) == "" && strings.TrimSpace(endDate) == "" {
+		today := formatLocalStatsDate(time.Now())
+		return today, today
+	}
+	return startDate, endDate
+}
+
+func resolveCumulativeUpTime(usage deviceDailyRuntimeAgg, processingHours, idleHours float64) float64 {
+	if usage.Runtime > 0 {
+		return usage.Runtime
+	}
+	fallback := math.Max(processingHours, 0) + math.Max(idleHours, 0)
+	if fallback <= 0 && processingHours > 0 {
+		return processingHours
 	}
 	return fallback
 }
@@ -1333,12 +1381,7 @@ func (h *StatisticsHandler) GetProcessOverview(c *gin.Context) {
 		Select("COALESCE(SUM(pr.pieces), 0) as total_pieces, COALESCE(SUM(pr.thread_length), 0) as total_thread").
 		Scan(&summaryRow)
 
-	usageStartDate, usageEndDate := startDate, endDate
-	if strings.TrimSpace(usageStartDate) == "" && strings.TrimSpace(usageEndDate) == "" {
-		today := formatLocalStatsDate(time.Now())
-		usageStartDate = today
-		usageEndDate = today
-	}
+	usageStartDate, usageEndDate := effectiveStatsDateRange(startDate, endDate)
 
 	totalProcessing := 0.0
 	totalHours := 0.0
@@ -1390,6 +1433,7 @@ func (h *StatisticsHandler) GetProcessOverview(c *gin.Context) {
 		}
 		dateKey := row.RecordDate.Format("2006-01-02")
 		deviceDayUsage := usageByDeviceDate[makeDeviceDateKey(row.DeviceID, dateKey)]
+		cumulativeUpTime := resolveCumulativeUpTime(deviceDayUsage, runningHours, row.IdleTime)
 		efficiency := calculateUtilizationRate(deviceDayUsage.Processing, deviceDayUsage.Runtime)
 		patternCountKey := makeDevicePatternDateKey(row.DeviceID, row.PatternID, row.PatternName, dateKey)
 		patternSewCount := patternSewCountMap[patternCountKey]
@@ -1417,7 +1461,7 @@ func (h *StatisticsHandler) GetProcessOverview(c *gin.Context) {
 			"patternSewCount":    patternSewCount,
 			"alarmInfo":          alarmText,
 			"alarmTime":          alarmTime,
-			"cumulativeUpTime":   roundFloat(runningHours, 2),
+			"cumulativeUpTime":   roundFloat(cumulativeUpTime, 6),
 			"totalPieces":        row.Pieces,
 			"totalStitches":      row.Stitches,
 			"threadLength":       roundFloat(row.ThreadLength, 2),
@@ -1950,24 +1994,38 @@ func (h *StatisticsHandler) GetAlarmStats(c *gin.Context) {
 	resolvedRate = roundFloat(resolvedRate, 2)
 
 	var typeRows []struct {
+		AlarmCode string
 		AlarmType string
 		Count     int64
 	}
 	baseQuery.Session(&gorm.Session{}).
-		Select("ar.alarm_type as alarm_type, COUNT(*) as count").
-		Group("ar.alarm_type").
+		Select("ar.alarm_code as alarm_code, ar.alarm_type as alarm_type, COUNT(*) as count").
+		Group("ar.alarm_code, ar.alarm_type").
 		Order("count DESC").
 		Scan(&typeRows)
 
-	alarmTypePie := make([]gin.H, 0, len(typeRows))
+	typeCounts := make(map[string]int64)
 	for _, row := range typeRows {
-		name := row.AlarmType
-		if name == "" {
-			name = "未分类"
+		_, name, _ := normalizeAlarmDisplay(row.AlarmCode, row.AlarmType, "")
+		typeCounts[name] += row.Count
+	}
+
+	typeNames := make([]string, 0, len(typeCounts))
+	for name := range typeCounts {
+		typeNames = append(typeNames, name)
+	}
+	sort.Slice(typeNames, func(i, j int) bool {
+		if typeCounts[typeNames[i]] == typeCounts[typeNames[j]] {
+			return typeNames[i] < typeNames[j]
 		}
+		return typeCounts[typeNames[i]] > typeCounts[typeNames[j]]
+	})
+
+	alarmTypePie := make([]gin.H, 0, len(typeNames))
+	for _, name := range typeNames {
 		alarmTypePie = append(alarmTypePie, gin.H{
 			"name":  name,
-			"value": row.Count,
+			"value": typeCounts[name],
 		})
 	}
 
@@ -2023,13 +2081,7 @@ func (h *StatisticsHandler) GetAlarmStats(c *gin.Context) {
 		if employeeInfo.EmployeeName == "" {
 			employeeInfo.EmployeeName = "-"
 		}
-		alarmInfo := strings.TrimSpace(row.AlarmType)
-		if alarmInfo == "" {
-			alarmInfo = strings.TrimSpace(row.Description)
-		}
-		if alarmInfo == "" {
-			alarmInfo = "报警"
-		}
+		alarmCode, alarmInfo, description := normalizeAlarmDisplay(row.AlarmCode, row.AlarmType, row.Description)
 		list = append(list, gin.H{
 			"id":           row.ID,
 			"deviceName":   row.DeviceName,
@@ -2037,9 +2089,9 @@ func (h *StatisticsHandler) GetAlarmStats(c *gin.Context) {
 			"employeeName": employeeInfo.EmployeeName,
 			"alarmTime":    row.StartTime.Format("2006-01-02 15:04:05"),
 			"alarmInfo":    alarmInfo,
-			"alarmType":    row.AlarmType,
-			"alarmCode":    row.AlarmCode,
-			"description":  row.Description,
+			"alarmType":    alarmInfo,
+			"alarmCode":    alarmCode,
+			"description":  description,
 			"duration":     formatDuration(row.Duration),
 			"status":       formatAlarmStatus(row.Status),
 			"startTime":    row.StartTime.Format("2006-01-02 15:04:05"),
@@ -2220,6 +2272,11 @@ func (h *StatisticsHandler) exportProcessCSV(c *gin.Context) {
 
 	patternSewCountMap := h.loadPatternSewCountByDevicePatternDate(startDate, endDate, deviceId, deviceIDs)
 	alarmInfoMap := h.loadAlarmInfoByDeviceDate(startDate, endDate, deviceId, deviceIDs)
+	usageStartDate, usageEndDate := effectiveStatsDateRange(startDate, endDate)
+	usageByDeviceDate := make(map[string]deviceDailyRuntimeAgg)
+	for _, item := range h.loadDeviceDailyRuntimeAggs(usageStartDate, usageEndDate, deviceId, deviceIDs, true) {
+		usageByDeviceDate[makeDeviceDateKey(item.DeviceID, item.Date)] = item
+	}
 
 	rows := make([][]string, 0, len(rowsData))
 	for _, row := range rowsData {
@@ -2237,6 +2294,8 @@ func (h *StatisticsHandler) exportProcessCSV(c *gin.Context) {
 			avgProcessDuration = (runningHours * 60) / float64(row.Pieces)
 		}
 		dateKey := row.RecordDate.Format("2006-01-02")
+		deviceDayUsage := usageByDeviceDate[makeDeviceDateKey(row.DeviceID, dateKey)]
+		cumulativeUpTime := resolveCumulativeUpTime(deviceDayUsage, runningHours, row.IdleTime)
 		patternSewCount := patternSewCountMap[makeDevicePatternDateKey(row.DeviceID, row.PatternID, row.PatternName, dateKey)]
 		alarmInfo := alarmInfoMap[makeDeviceDateKey(row.DeviceID, dateKey)]
 		alarmText := "-"
@@ -2261,7 +2320,7 @@ func (h *StatisticsHandler) exportProcessCSV(c *gin.Context) {
 			strconv.FormatInt(patternSewCount, 10),
 			alarmText,
 			alarmTime,
-			csvFloat(runningHours+row.IdleTime, 2),
+			csvFloat(cumulativeUpTime, 6),
 		})
 	}
 
@@ -2363,20 +2422,14 @@ func (h *StatisticsHandler) exportAlarmCSV(c *gin.Context) {
 		if employeeInfo.EmployeeName == "" {
 			employeeInfo.EmployeeName = "-"
 		}
-		alarmInfo := strings.TrimSpace(row.AlarmType)
-		if alarmInfo == "" {
-			alarmInfo = strings.TrimSpace(row.Description)
-		}
-		if alarmInfo == "" {
-			alarmInfo = "报警"
-		}
+		alarmCode, alarmInfo, _ := normalizeAlarmDisplay(row.AlarmCode, row.AlarmType, row.Description)
 		rows = append(rows, []string{
 			row.DeviceName,
 			employeeInfo.EmployeeCode,
 			employeeInfo.EmployeeName,
 			row.StartTime.Format("2006-01-02 15:04:05"),
 			alarmInfo,
-			row.AlarmCode,
+			alarmCode,
 			formatDuration(row.Duration),
 			formatAlarmStatus(row.Status),
 		})
@@ -2571,7 +2624,12 @@ func (h *StatisticsHandler) buildAlarmStatsBaseQuery(startDate, endDate, deviceI
 		query = query.Where("ar.device_id = ?", deviceId)
 	}
 	if alarmType != "" {
-		query = query.Where("ar.alarm_type = ?", alarmType)
+		rawCodes := alarmcatalog.RawCodesFor(alarmType)
+		if len(rawCodes) > 0 {
+			query = query.Where("(ar.alarm_type = ? OR ar.description = ? OR ar.alarm_code IN ?)", alarmType, alarmType, rawCodes)
+		} else {
+			query = query.Where("(ar.alarm_type = ? OR ar.description = ? OR ar.alarm_code = ?)", alarmType, alarmType, alarmType)
+		}
 	}
 	return query
 }

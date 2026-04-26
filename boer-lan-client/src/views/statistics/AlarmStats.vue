@@ -199,7 +199,7 @@ export default {
         deviceFilter: defaultDeviceFilter(),
         alarmType: ''
       },
-      alarmTypeOptions: ['断线报警', '张力报警', '电机报警', '传感器报警'],
+      alarmTypeOptions: [],
       summary: {
         totalAlarms: 0,
         totalDuration: 0,
@@ -256,6 +256,7 @@ export default {
             alarmTypePie: res.data.alarmTypePie || [],
             alarmTrend: res.data.alarmTrend || []
           }
+          this.updateAlarmTypeOptions(this.chartData.alarmTypePie, rawList)
           this.$nextTick(() => {
             this.initCharts()
             this.syncTableHeight()
@@ -271,6 +272,18 @@ export default {
       const keyword = String(this.searchForm.deviceKeyword || '').trim().toLowerCase()
       if (!keyword) return list
       return list.filter(item => String(item.deviceName || '').toLowerCase().includes(keyword))
+    },
+    updateAlarmTypeOptions(pieData = [], list = []) {
+      const options = new Set(this.searchForm.alarmType ? [this.searchForm.alarmType] : [])
+      ;(pieData || []).forEach(item => {
+        const name = String(item?.name || '').trim()
+        if (name && name !== '未分类') options.add(name)
+      })
+      ;(list || []).forEach(item => {
+        const type = String(item?.alarmType || item?.alarmInfo || '').trim()
+        if (type && type !== '报警') options.add(type)
+      })
+      this.alarmTypeOptions = Array.from(options)
     },
     handleSearch() {
       this.pagination.page = 1
@@ -325,6 +338,14 @@ export default {
     formatDurationFromMinutes(minutes) {
       return formatDurationFromMinutes(minutes)
     },
+    truncateLegendName(name, maxLength = 8) {
+      const text = String(name || '')
+      if ([...text].length <= maxLength) return text
+      return `${[...text].slice(0, maxLength).join('')}...`
+    },
+    formatPieLabelName(name) {
+      return [...String(name || '')].slice(0, 3).join('')
+    },
     initCharts() {
       this.initAlarmTypePieChart()
       this.initAlarmTrendChart()
@@ -334,10 +355,7 @@ export default {
       const pieData = this.chartData.alarmTypePie.length > 0
         ? this.chartData.alarmTypePie
         : [
-            { name: '断线报警', value: 0 },
-            { name: '张力报警', value: 0 },
-            { name: '电机报警', value: 0 },
-            { name: '传感器报警', value: 0 }
+            { name: '暂无报警', value: 0 }
           ]
       chart.setOption({
         tooltip: { trigger: 'item', formatter: '{b}: {c}次 ({d}%)' },
@@ -345,12 +363,26 @@ export default {
           orient: 'vertical',
           left: 0,
           top: 'middle',
-          textStyle: { color: '#6a7f9d' }
+          width: 96,
+          itemGap: 10,
+          tooltip: {
+            show: true,
+            formatter: params => params.name
+          },
+          textStyle: {
+            color: '#6a7f9d',
+            width: 72,
+            overflow: 'truncate'
+          },
+          formatter: name => this.truncateLegendName(name)
         },
         series: [{
           type: 'pie',
           radius: ['46%', '68%'],
-          center: ['68%', '50%'],
+          center: ['72%', '50%'],
+          label: {
+            formatter: params => this.formatPieLabelName(params.name)
+          },
           data: pieData,
           color: ['#ef5a5a', '#f0b037', '#2f6df6', '#8a98ad']
         }]

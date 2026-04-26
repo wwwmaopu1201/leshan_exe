@@ -13,6 +13,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"boer-lan-server/internal/alarmcatalog"
 	"boer-lan-server/internal/model"
 
 	"golang.org/x/text/encoding/simplifiedchinese"
@@ -636,20 +637,22 @@ func (dc *DeviceConnection) handleAlarm(pkt *Packet) {
 	alarmCode := binary.BigEndian.Uint16(pkt.Data[0:2])
 
 	if alarmCode != 0 {
+		alarm := alarmcatalog.Describe(alarmCode)
 		// 报警触发
 		dc.db.Model(&model.Device{}).Where("id = ?", dc.deviceID).Update("status", "alarm")
 		dc.updateDeviceRuntime(map[string]interface{}{
 			"status":     "alarm",
-			"alarm_code": fmt.Sprintf("%d", alarmCode),
+			"alarm_code": alarm.Code,
 		})
 		dc.db.Create(&model.AlarmRecord{
-			DeviceID:  dc.deviceID,
-			AlarmCode: fmt.Sprintf("%d", alarmCode),
-			AlarmType: classifyAlarm(alarmCode),
-			Status:    "pending",
-			StartTime: time.Now(),
+			DeviceID:    dc.deviceID,
+			AlarmCode:   alarm.Code,
+			AlarmType:   alarm.Display(),
+			Description: alarm.Description,
+			Status:      "pending",
+			StartTime:   time.Now(),
 		})
-		emitTCPLog(dc.db, "warn", true, "[TCP] Device %s alarm: code=%d", dc.deviceCode, alarmCode)
+		emitTCPLog(dc.db, "warn", true, "[TCP] Device %s alarm: code=%d display=%s", dc.deviceCode, alarmCode, alarm.Display())
 	} else {
 		// 报警解除
 		dc.db.Model(&model.Device{}).Where("id = ?", dc.deviceID).Update("status", "online")
@@ -1245,19 +1248,6 @@ func parseProductionDataOldPayload(data []byte) (*productionDataOld, error) {
 		EndNeedle:   binary.BigEndian.Uint32(data[patternNameEnd+18 : patternNameEnd+22]),
 		StopReason:  binary.BigEndian.Uint16(data[patternNameEnd+22 : patternNameEnd+24]),
 	}, nil
-}
-
-func classifyAlarm(code uint16) string {
-	switch {
-	case code >= 1 && code <= 100:
-		return "断线"
-	case code >= 101 && code <= 200:
-		return "张力"
-	case code >= 201 && code <= 300:
-		return "电机"
-	default:
-		return "传感器"
-	}
 }
 
 func isConnClosed(err error) bool {
