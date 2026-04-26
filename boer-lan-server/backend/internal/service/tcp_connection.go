@@ -919,6 +919,12 @@ func normalizeProtocolText(data []byte) string {
 		return ""
 	}
 
+	if isLikelyUTF16LEText(raw) {
+		if decoded := decodeUTF16LECString(raw); decoded != "" {
+			return decoded
+		}
+	}
+
 	raw = bytes.TrimRight(raw, "\x00")
 	if len(raw) == 0 {
 		return ""
@@ -928,12 +934,6 @@ func normalizeProtocolText(data []byte) string {
 		text := strings.TrimSpace(string(raw))
 		if looksReasonableProtocolText(text) {
 			return text
-		}
-	}
-
-	if isLikelyUTF16LEText(raw) {
-		if decoded := decodeUTF16LECString(raw); decoded != "" {
-			return decoded
 		}
 	}
 
@@ -982,15 +982,31 @@ func isLikelyUTF16LEText(data []byte) bool {
 		return false
 	}
 
-	validUnits := 0
-	invalidUnits := 0
-	evenLength := len(data) - (len(data) % 2)
-	for offset := 0; offset+1 < evenLength; offset += 2 {
+	meaningfulEnd := len(data)
+	if meaningfulEnd%2 != 0 {
+		meaningfulEnd--
+	}
+	for offset := 0; offset+1 < meaningfulEnd; offset += 2 {
 		word := binary.LittleEndian.Uint16(data[offset : offset+2])
 		if word == 0x0000 || word == 0xFDFD || word == 0xFFFF {
+			meaningfulEnd = offset
 			break
 		}
+	}
+	if meaningfulEnd <= 0 {
+		return false
+	}
+	if firstNull := bytes.IndexByte(data[:meaningfulEnd], 0x00); firstNull > 1 && isPlainASCIIBytes(data[:firstNull]) {
+		return false
+	}
+	if isPlainASCIIBytes(data[:meaningfulEnd]) {
+		return false
+	}
 
+	validUnits := 0
+	invalidUnits := 0
+	for offset := 0; offset+1 < meaningfulEnd; offset += 2 {
+		word := binary.LittleEndian.Uint16(data[offset : offset+2])
 		isPrintableASCII := word >= 0x0020 && word <= 0x007E
 		isCJK := (word >= 0x3400 && word <= 0x4DBF) ||
 			(word >= 0x4E00 && word <= 0x9FFF) ||
@@ -1007,6 +1023,18 @@ func isLikelyUTF16LEText(data []byte) bool {
 	}
 
 	return validUnits > 0 && invalidUnits == 0
+}
+
+func isPlainASCIIBytes(data []byte) bool {
+	if len(data) == 0 {
+		return false
+	}
+	for _, b := range data {
+		if b < 0x20 || b > 0x7E {
+			return false
+		}
+	}
+	return true
 }
 
 func decodeGB18030Text(data []byte) string {

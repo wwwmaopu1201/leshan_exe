@@ -58,6 +58,29 @@ func TestParseProductionDataNewPayloadStopReasonBeforeUser(t *testing.T) {
 	}
 }
 
+func TestParseProductionDataNewPayloadUTF16PatternNameKeepsLastCharacter(t *testing.T) {
+	payload := buildProductionDataNewTestPayload(true)
+	copy(payload[6:50], make([]byte, 44))
+	copy(payload[6:50], encodeUTF16LE("66678"))
+
+	production, err := parseProductionDataNewPayload(payload)
+	if err != nil {
+		t.Fatalf("parse production payload: %v", err)
+	}
+	if production.PatternName != "66678" {
+		t.Fatalf("expected pattern name 66678, got %q", production.PatternName)
+	}
+}
+
+func TestNormalizeProtocolTextKeepsASCIIFixedName(t *testing.T) {
+	data := make([]byte, 44)
+	copy(data, []byte("66678"))
+
+	if got := normalizeProtocolText(data); got != "66678" {
+		t.Fatalf("expected ASCII pattern name 66678, got %q", got)
+	}
+}
+
 func TestDescribeAlarmUsesCatalogValue(t *testing.T) {
 	alarm := alarmcatalog.Describe(58)
 	if alarm.Code != "E.PRESS_UP" {
