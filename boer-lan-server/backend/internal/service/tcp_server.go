@@ -17,6 +17,7 @@ const (
 	TCPPort               = 38400
 	ConnectionIdleTimeout = 2 * time.Minute
 	OfflineCheckInterval  = 15 * time.Second
+	OfflineProbeGrace     = 15 * time.Second
 	ReconnectGracePeriod  = 5 * time.Second
 )
 
@@ -181,8 +182,16 @@ func (s *TCPServer) offlineChecker() {
 			now := time.Now()
 			for _, dc := range s.connMgr.GetAll() {
 				if now.Sub(dc.lastHeartbeat) > ConnectionIdleTimeout {
-					emitTCPLog(s.db, "warn", true, "[TCP] Device %s connection idle timeout, closing connection", dc.deviceCode)
-					dc.conn.Close()
+					if dc.shouldCloseAfterIdleProbe(now) {
+						emitTCPLog(s.db, "warn", true, "[TCP] Device %s connection idle timeout after probe, closing connection", dc.deviceCode)
+						dc.conn.Close()
+						continue
+					}
+					emitTCPLog(s.db, "warn", true, "[TCP] Device %s connection idle timeout, sending probe before close", dc.deviceCode)
+					if err := dc.sendIdleProbe(); err != nil {
+						emitTCPLog(s.db, "warn", true, "[TCP] Device %s idle probe failed, closing connection: %v", dc.deviceCode, err)
+						dc.conn.Close()
+					}
 				}
 			}
 		}

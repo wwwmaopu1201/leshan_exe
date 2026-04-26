@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -20,6 +21,13 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	patternSessionAcquireTimeout = 30 * time.Second
+	patternSessionMaxDuration    = 30 * time.Minute
+)
+
+var ErrPatternTransferBusy = errors.New("device pattern transfer busy")
+
 // DeviceConnection 管理单个设备的TCP连接
 type DeviceConnection struct {
 	conn           net.Conn
@@ -35,9 +43,11 @@ type DeviceConnection struct {
 	stateMu        sync.RWMutex
 	registered     bool
 	registerAt     time.Time
+	offlineProbeAt time.Time
 	loopStopCh     chan struct{}
 	patternMu      sync.Mutex
 	patternPacketC chan *Packet
+	patternDoneC   chan struct{}
 }
 
 // NewDeviceConnection 创建新的设备连接处理器
@@ -122,6 +132,7 @@ func (dc *DeviceConnection) Handle() {
 
 			dc.warnedNoPacket = false
 			dc.lastHeartbeat = time.Now()
+			dc.clearOfflineProbe()
 
 			emitTCPLog(
 				dc.db,
@@ -210,25 +221,60 @@ func (dc *DeviceConnection) dispatch(pkt *Packet) {
 }
 
 func (dc *DeviceConnection) beginPatternSession() (chan *Packet, func(), error) {
-	dc.patternMu.Lock()
-	defer dc.patternMu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), patternSessionAcquireTimeout)
+	defer cancel()
+	return dc.beginPatternSessionContext(ctx, true)
+}
 
-	if dc.patternPacketC != nil {
-		return nil, nil, fmt.Errorf("device %s pattern transfer busy", dc.deviceCode)
-	}
+func (dc *DeviceConnection) tryBeginPatternSession() (chan *Packet, func(), error) {
+	return dc.beginPatternSessionContext(context.Background(), false)
+}
 
-	ch := make(chan *Packet, 64)
-	dc.patternPacketC = ch
-
-	cleanup := func() {
+func (dc *DeviceConnection) beginPatternSessionContext(ctx context.Context, wait bool) (chan *Packet, func(), error) {
+	for {
 		dc.patternMu.Lock()
-		defer dc.patternMu.Unlock()
-		if dc.patternPacketC == ch {
-			dc.patternPacketC = nil
+		if dc.patternPacketC == nil {
+			ch := make(chan *Packet, 64)
+			doneCh := make(chan struct{})
+			dc.patternPacketC = ch
+			dc.patternDoneC = doneCh
+
+			var once sync.Once
+			var timer *time.Timer
+			cleanup := func() {
+				once.Do(func() {
+					if timer != nil {
+						timer.Stop()
+					}
+					dc.patternMu.Lock()
+					defer dc.patternMu.Unlock()
+					if dc.patternPacketC == ch {
+						dc.patternPacketC = nil
+						dc.patternDoneC = nil
+						close(doneCh)
+					}
+				})
+			}
+			timer = time.AfterFunc(patternSessionMaxDuration, func() {
+				emitTCPLog(dc.db, "warn", true, "[TCP] Pattern session force released after timeout: device=%s", dc.deviceCode)
+				cleanup()
+			})
+			dc.patternMu.Unlock()
+			return ch, cleanup, nil
+		}
+
+		doneCh := dc.patternDoneC
+		dc.patternMu.Unlock()
+		if !wait {
+			return nil, nil, fmt.Errorf("%w: device %s", ErrPatternTransferBusy, dc.deviceCode)
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, nil, fmt.Errorf("device %s pattern transfer wait timeout: %w", dc.deviceCode, ErrPatternTransferBusy)
+		case <-doneCh:
 		}
 	}
-
-	return ch, cleanup, nil
 }
 
 func (dc *DeviceConnection) routePatternPacket(pkt *Packet) bool {
@@ -843,6 +889,26 @@ func (dc *DeviceConnection) writePacket(pkt *Packet) error {
 		return err
 	}
 	return nil
+}
+
+func (dc *DeviceConnection) clearOfflineProbe() {
+	dc.stateMu.Lock()
+	dc.offlineProbeAt = time.Time{}
+	dc.stateMu.Unlock()
+}
+
+func (dc *DeviceConnection) shouldCloseAfterIdleProbe(now time.Time) bool {
+	dc.stateMu.Lock()
+	defer dc.stateMu.Unlock()
+	if dc.offlineProbeAt.IsZero() {
+		dc.offlineProbeAt = now
+		return false
+	}
+	return now.Sub(dc.offlineProbeAt) >= OfflineProbeGrace
+}
+
+func (dc *DeviceConnection) sendIdleProbe() error {
+	return dc.writePacket(buildProtocolCommand(PTRegister, PNRegister, nil))
 }
 
 // cleanup 连接关闭时清理

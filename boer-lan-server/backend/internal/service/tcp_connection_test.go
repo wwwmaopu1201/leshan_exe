@@ -2,6 +2,8 @@ package service
 
 import (
 	"encoding/binary"
+	"errors"
+	"net"
 	"testing"
 	"time"
 
@@ -78,6 +80,70 @@ func TestNormalizeProtocolTextKeepsASCIIFixedName(t *testing.T) {
 
 	if got := normalizeProtocolText(data); got != "66678" {
 		t.Fatalf("expected ASCII pattern name 66678, got %q", got)
+	}
+}
+
+func TestPatternSessionTryReturnsBusyAndWaitsForCleanup(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	dc := NewDeviceConnection(serverConn, nil, nil)
+	dc.deviceCode = "D-001"
+
+	_, cleanup, err := dc.beginPatternSession()
+	if err != nil {
+		t.Fatalf("begin first pattern session: %v", err)
+	}
+
+	if _, _, err := dc.tryBeginPatternSession(); !errors.Is(err, ErrPatternTransferBusy) {
+		t.Fatalf("expected busy error, got %v", err)
+	}
+
+	acquired := make(chan error, 1)
+	go func() {
+		_, cleanupSecond, err := dc.beginPatternSession()
+		if err == nil {
+			cleanupSecond()
+		}
+		acquired <- err
+	}()
+
+	select {
+	case err := <-acquired:
+		t.Fatalf("second session acquired before cleanup: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	cleanup()
+
+	select {
+	case err := <-acquired:
+		if err != nil {
+			t.Fatalf("second session should acquire after cleanup: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("second session did not acquire after cleanup")
+	}
+}
+
+func TestIdleProbeRequiresSecondCheckBeforeClose(t *testing.T) {
+	dc := &DeviceConnection{}
+	now := time.Now()
+
+	if dc.shouldCloseAfterIdleProbe(now) {
+		t.Fatal("first idle check should send probe instead of closing")
+	}
+	if dc.shouldCloseAfterIdleProbe(now.Add(OfflineProbeGrace - time.Millisecond)) {
+		t.Fatal("should not close before probe grace expires")
+	}
+	if !dc.shouldCloseAfterIdleProbe(now.Add(OfflineProbeGrace)) {
+		t.Fatal("should close after probe grace expires without activity")
+	}
+
+	dc.clearOfflineProbe()
+	if dc.shouldCloseAfterIdleProbe(now.Add(2 * OfflineProbeGrace)) {
+		t.Fatal("activity should clear pending idle probe")
 	}
 }
 

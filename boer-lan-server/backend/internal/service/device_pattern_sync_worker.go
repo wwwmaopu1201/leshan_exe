@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"log"
 	"sort"
 	"strings"
@@ -83,7 +84,7 @@ func (w *DevicePatternSyncWorker) processOnce() error {
 		if !w.transfer.IsDeviceConnected(device) {
 			continue
 		}
-		if _, err := w.transfer.RefreshDevicePatternFiles(device); err != nil {
+		if _, err := w.transfer.RefreshDevicePatternFilesIfIdle(device); err != nil {
 			if isPatternTransferBusy(err) {
 				continue
 			}
@@ -118,5 +119,5 @@ func isPatternTransferBusy(err error) bool {
 	if err == nil {
 		return false
 	}
-	return strings.Contains(strings.ToLower(err.Error()), "pattern transfer busy")
+	return errors.Is(err, ErrPatternTransferBusy) || strings.Contains(strings.ToLower(err.Error()), "pattern transfer busy")
 }

@@ -54,12 +54,26 @@ func (s *PatternTransferService) IsDeviceConnected(device model.Device) bool {
 }
 
 func (s *PatternTransferService) RefreshDevicePatternFiles(device model.Device) ([]model.DevicePatternFile, error) {
+	return s.refreshDevicePatternFiles(device, true)
+}
+
+func (s *PatternTransferService) RefreshDevicePatternFilesIfIdle(device model.Device) ([]model.DevicePatternFile, error) {
+	return s.refreshDevicePatternFiles(device, false)
+}
+
+func (s *PatternTransferService) refreshDevicePatternFiles(device model.Device, waitForSession bool) ([]model.DevicePatternFile, error) {
 	dc, err := s.getDeviceConnection(device)
 	if err != nil {
 		return nil, err
 	}
 
-	ch, cleanup, err := dc.beginPatternSession()
+	var ch chan *Packet
+	var cleanup func()
+	if waitForSession {
+		ch, cleanup, err = dc.beginPatternSession()
+	} else {
+		ch, cleanup, err = dc.tryBeginPatternSession()
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -201,10 +215,12 @@ func (s *PatternTransferService) UploadPatternFromDeviceWithOptions(
 		return nil, err
 	}
 
-	if refreshed, refreshErr := s.RefreshDevicePatternFiles(device); refreshErr == nil {
+	if refreshed, refreshErr := s.RefreshDevicePatternFilesIfIdle(device); refreshErr == nil {
 		if resolved, ok := resolveLiveDevicePatternFile(refreshed, file); ok {
 			file = resolved
 		}
+	} else if isPatternTransferBusy(refreshErr) {
+		emitTCPLog(s.db, "info", false, "[TCP] Skip refresh before upload because device is busy: device=%s id=%d", device.Code, device.ID)
 	} else {
 		emitTCPLog(s.db, "warn", true, "[TCP] Refresh device pattern list before upload failed: device=%s id=%d err=%v", device.Code, device.ID, refreshErr)
 	}
