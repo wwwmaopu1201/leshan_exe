@@ -164,6 +164,23 @@ func calculateUtilizationRate(processingHours, runtimeHours float64) float64 {
 	return rate
 }
 
+func calculateDurationTotalAndIdle(processingHours, runtimeHours, alarmHours float64) (float64, float64) {
+	processingHours = math.Max(processingHours, 0)
+	runtimeHours = math.Max(runtimeHours, 0)
+	alarmHours = math.Max(alarmHours, 0)
+
+	totalHours := runtimeHours
+	if processingHours+alarmHours > totalHours {
+		totalHours = processingHours + alarmHours
+	}
+
+	idleHours := totalHours - processingHours - alarmHours
+	if idleHours < 0 {
+		idleHours = 0
+	}
+	return totalHours, idleHours
+}
+
 type deviceDailyRuntimeAgg struct {
 	Date       string
 	DeviceID   uint
@@ -183,7 +200,14 @@ func resolveProductionDurationHours(startTime, endTime *time.Time, fallback floa
 }
 
 func (h *StatisticsHandler) loadDeviceDailyRuntimeAggs(startDate, endDate, deviceId string, deviceIDs []uint, extendTodayForOnline bool) []deviceDailyRuntimeAgg {
+	if strings.TrimSpace(startDate) == "" && strings.TrimSpace(endDate) == "" {
+		today := formatLocalStatsDate(time.Now())
+		startDate = today
+		endDate = today
+	}
+
 	dateExpr := h.localDateExpr("record_date")
+	durationExpr := h.productionDurationHoursExpr("", "")
 	query := applyDashboardDeviceFilter(h.db.Model(&model.ProductionRecord{}), deviceId, deviceIDs)
 	if strings.TrimSpace(startDate) != "" {
 		query = query.Where(fmt.Sprintf("%s >= ?", dateExpr), startDate)
@@ -199,7 +223,7 @@ func (h *StatisticsHandler) loadDeviceDailyRuntimeAggs(startDate, endDate, devic
 		IdleTime   float64
 	}
 	query.
-		Select(fmt.Sprintf("%s as date, device_id, COALESCE(SUM(running_time), 0) as processing, COALESCE(SUM(idle_time), 0) as idle_time", dateExpr)).
+		Select(fmt.Sprintf("%s as date, device_id, COALESCE(SUM(%s), 0) as processing, COALESCE(SUM(idle_time), 0) as idle_time", dateExpr, durationExpr)).
 		Group(dateExpr + ", device_id").
 		Scan(&productionRows)
 
@@ -1340,7 +1364,7 @@ func (h *StatisticsHandler) GetProcessOverview(c *gin.Context) {
 	}
 	offset := (page - 1) * pageSize
 	baseQuery.Session(&gorm.Session{}).
-		Select(fmt.Sprintf("pr.*, %s, COALESCE(e.code, '-') as employee_code, COALESCE(e.name, '-') as employee_name, COALESCE(NULLIF(pr.pattern_name, ''), p.name, '未命名花型') as pattern_name, COALESCE(NULLIF(p.stitches, 0), pr.stitches, 0) as pattern_stitches, %s", h.deviceNameExpr("pr.device_id", "device_name"), h.productionDurationHoursExpr("pr", "duration_hours"))).
+		Select(fmt.Sprintf("pr.*, %s, COALESCE(NULLIF(e.code, ''), NULLIF(pr.protocol_user_id, ''), '-') as employee_code, COALESCE(NULLIF(e.name, ''), '-') as employee_name, COALESCE(NULLIF(pr.pattern_name, ''), p.name, '未命名花型') as pattern_name, COALESCE(NULLIF(p.stitches, 0), pr.stitches, 0) as pattern_stitches, %s", h.deviceNameExpr("pr.device_id", "device_name"), h.productionDurationHoursExpr("pr", "duration_hours"))).
 		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
 		Joins("LEFT JOIN employees e ON pr.employee_id = e.id").
 		Joins("LEFT JOIN patterns p ON pr.pattern_id = p.id").
@@ -1620,15 +1644,20 @@ func (h *StatisticsHandler) GetDurationStats(c *gin.Context) {
 
 	baseProdQuery := h.buildProductionStatsBaseQuery(startDate, endDate, deviceId, deviceIDs)
 	baseAlarmQuery := h.buildAlarmStatsBaseQuery(startDate, endDate, deviceId, deviceIDs, "")
-	durationExpr := h.productionDurationHoursExpr("pr", "")
-
-	var prodSummary struct {
-		RunningTime float64
-		IdleTime    float64
+	usageStartDate, usageEndDate := startDate, endDate
+	if strings.TrimSpace(usageStartDate) == "" && strings.TrimSpace(usageEndDate) == "" {
+		today := formatLocalStatsDate(time.Now())
+		usageStartDate = today
+		usageEndDate = today
 	}
-	baseProdQuery.Session(&gorm.Session{}).
-		Select(fmt.Sprintf("COALESCE(SUM(%s), 0) as running_time, COALESCE(SUM(pr.idle_time), 0) as idle_time", durationExpr)).
-		Scan(&prodSummary)
+
+	runtimeAggs := h.loadDeviceDailyRuntimeAggs(usageStartDate, usageEndDate, deviceId, deviceIDs, true)
+	totalProcessingHours := 0.0
+	totalRuntimeHours := 0.0
+	for _, item := range runtimeAggs {
+		totalProcessingHours += item.Processing
+		totalRuntimeHours += item.Runtime
+	}
 
 	var alarmSummary struct {
 		DurationSeconds int64
@@ -1638,12 +1667,12 @@ func (h *StatisticsHandler) GetDurationStats(c *gin.Context) {
 		Scan(&alarmSummary)
 
 	alarmHours := float64(alarmSummary.DurationSeconds) / 3600.0
-	totalTime := prodSummary.RunningTime + prodSummary.IdleTime + alarmHours
+	totalTime, idleHours := calculateDurationTotalAndIdle(totalProcessingHours, totalRuntimeHours, alarmHours)
 
 	summary := gin.H{
 		"totalTime":   roundFloat(totalTime, 6),
-		"runningTime": roundFloat(prodSummary.RunningTime, 6),
-		"idleTime":    roundFloat(prodSummary.IdleTime, 6),
+		"runningTime": roundFloat(totalProcessingHours, 6),
+		"idleTime":    roundFloat(idleHours, 6),
 		"alarmTime":   roundFloat(alarmHours, 6),
 	}
 
@@ -1660,7 +1689,7 @@ func (h *StatisticsHandler) GetDurationStats(c *gin.Context) {
 	}
 	offset := (page - 1) * pageSize
 	baseProdQuery.Session(&gorm.Session{}).
-		Select(fmt.Sprintf("pr.*, %s, COALESCE(e.code, '-') as employee_code, COALESCE(e.name, '-') as employee_name, COALESCE(NULLIF(pr.pattern_name, ''), p.name, '未命名花型') as pattern_name, %s", h.deviceNameExpr("pr.device_id", "device_name"), h.productionDurationHoursExpr("pr", "duration_hours"))).
+		Select(fmt.Sprintf("pr.*, %s, COALESCE(NULLIF(e.code, ''), NULLIF(pr.protocol_user_id, ''), '-') as employee_code, COALESCE(NULLIF(e.name, ''), '-') as employee_name, COALESCE(NULLIF(pr.pattern_name, ''), p.name, '未命名花型') as pattern_name, %s", h.deviceNameExpr("pr.device_id", "device_name"), h.productionDurationHoursExpr("pr", "duration_hours"))).
 		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
 		Joins("LEFT JOIN employees e ON pr.employee_id = e.id").
 		Joins("LEFT JOIN patterns p ON pr.pattern_id = p.id").
@@ -1712,22 +1741,10 @@ func (h *StatisticsHandler) GetDurationStats(c *gin.Context) {
 	}
 
 	durationPie := []gin.H{
-		{"name": "运行时长", "value": roundFloat(prodSummary.RunningTime, 6)},
-		{"name": "空闲时长", "value": roundFloat(prodSummary.IdleTime, 6)},
+		{"name": "加工时长", "value": roundFloat(totalProcessingHours, 6)},
+		{"name": "空闲时长", "value": roundFloat(idleHours, 6)},
 		{"name": "报警时长", "value": roundFloat(alarmHours, 6)},
 	}
-
-	var prodTrendRows []struct {
-		Date        string
-		RunningTime float64
-		IdleTime    float64
-	}
-	productionDateExpr := h.localDateExpr("pr.record_date")
-	baseProdQuery.Session(&gorm.Session{}).
-		Select(fmt.Sprintf("%s as date, COALESCE(SUM(%s), 0) as running_time, COALESCE(SUM(pr.idle_time), 0) as idle_time", productionDateExpr, durationExpr)).
-		Group(productionDateExpr).
-		Order("date").
-		Scan(&prodTrendRows)
 
 	var alarmTrendRows []struct {
 		Date      string
@@ -1741,18 +1758,21 @@ func (h *StatisticsHandler) GetDurationStats(c *gin.Context) {
 		Scan(&alarmTrendRows)
 
 	type trendPoint struct {
-		Date        string
-		RunningTime float64
-		IdleTime    float64
-		AlarmTime   float64
+		Date       string
+		Processing float64
+		Runtime    float64
+		IdleTime   float64
+		AlarmTime  float64
 	}
 	trendMap := make(map[string]*trendPoint)
-	for _, row := range prodTrendRows {
-		trendMap[row.Date] = &trendPoint{
-			Date:        row.Date,
-			RunningTime: row.RunningTime,
-			IdleTime:    row.IdleTime,
+	for _, row := range runtimeAggs {
+		item, ok := trendMap[row.Date]
+		if !ok {
+			item = &trendPoint{Date: row.Date}
+			trendMap[row.Date] = item
 		}
+		item.Processing += row.Processing
+		item.Runtime += row.Runtime
 	}
 	for _, row := range alarmTrendRows {
 		item, ok := trendMap[row.Date]
@@ -1772,33 +1792,105 @@ func (h *StatisticsHandler) GetDurationStats(c *gin.Context) {
 	durationTrend := make([]gin.H, 0, len(dates))
 	for _, date := range dates {
 		row := trendMap[date]
+		total, idle := calculateDurationTotalAndIdle(row.Processing, row.Runtime, row.AlarmTime)
 		durationTrend = append(durationTrend, gin.H{
 			"date":        row.Date,
-			"runningTime": roundFloat(row.RunningTime, 6),
-			"idleTime":    roundFloat(row.IdleTime, 6),
+			"totalTime":   roundFloat(total, 6),
+			"runningTime": roundFloat(row.Processing, 6),
+			"idleTime":    roundFloat(idle, 6),
 			"alarmTime":   roundFloat(row.AlarmTime, 6),
 		})
 	}
 
-	var deviceSummaryRows []struct {
-		Name        string
-		RunningTime float64
-		IdleTime    float64
+	var alarmDeviceRows []struct {
+		DeviceID  uint
+		AlarmTime float64
 	}
-	baseProdQuery.Session(&gorm.Session{}).
-		Select(fmt.Sprintf("%s, COALESCE(SUM(%s), 0) as running_time, COALESCE(SUM(pr.idle_time), 0) as idle_time", h.deviceNameExpr("pr.device_id", "name"), durationExpr)).
-		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
-		Group("pr.device_id, d.name").
-		Order("running_time DESC").
-		Limit(10).
-		Scan(&deviceSummaryRows)
+	baseAlarmQuery.Session(&gorm.Session{}).
+		Select("ar.device_id, COALESCE(SUM(ar.duration), 0) / 3600.0 as alarm_time").
+		Group("ar.device_id").
+		Scan(&alarmDeviceRows)
 
-	deviceStats := make([]gin.H, 0, len(deviceSummaryRows))
-	for _, row := range deviceSummaryRows {
+	type deviceDurationPoint struct {
+		DeviceID   uint
+		Name       string
+		Processing float64
+		Runtime    float64
+		AlarmTime  float64
+		TotalTime  float64
+		IdleTime   float64
+	}
+	deviceMap := make(map[uint]*deviceDurationPoint)
+	for _, row := range runtimeAggs {
+		item := deviceMap[row.DeviceID]
+		if item == nil {
+			item = &deviceDurationPoint{DeviceID: row.DeviceID}
+			deviceMap[row.DeviceID] = item
+		}
+		item.Processing += row.Processing
+		item.Runtime += row.Runtime
+	}
+	for _, row := range alarmDeviceRows {
+		item := deviceMap[row.DeviceID]
+		if item == nil {
+			item = &deviceDurationPoint{DeviceID: row.DeviceID}
+			deviceMap[row.DeviceID] = item
+		}
+		item.AlarmTime += row.AlarmTime
+	}
+
+	deviceIDsForNames := make([]uint, 0, len(deviceMap))
+	for deviceID := range deviceMap {
+		if deviceID > 0 {
+			deviceIDsForNames = append(deviceIDsForNames, deviceID)
+		}
+	}
+	var deviceNameRows []struct {
+		ID   uint
+		Name string
+		Code string
+	}
+	if len(deviceIDsForNames) > 0 {
+		h.db.Model(&model.Device{}).
+			Select("id, name, code").
+			Where("id IN ?", deviceIDsForNames).
+			Find(&deviceNameRows)
+	}
+	for _, row := range deviceNameRows {
+		if item := deviceMap[row.ID]; item != nil {
+			item.Name = strings.TrimSpace(row.Name)
+			if item.Name == "" {
+				item.Name = strings.TrimSpace(row.Code)
+			}
+		}
+	}
+
+	devicePoints := make([]*deviceDurationPoint, 0, len(deviceMap))
+	for _, item := range deviceMap {
+		item.TotalTime, item.IdleTime = calculateDurationTotalAndIdle(item.Processing, item.Runtime, item.AlarmTime)
+		if strings.TrimSpace(item.Name) == "" {
+			item.Name = fmt.Sprintf("设备#%d", item.DeviceID)
+		}
+		devicePoints = append(devicePoints, item)
+	}
+	sort.Slice(devicePoints, func(i, j int) bool {
+		if devicePoints[i].TotalTime == devicePoints[j].TotalTime {
+			return devicePoints[i].DeviceID < devicePoints[j].DeviceID
+		}
+		return devicePoints[i].TotalTime > devicePoints[j].TotalTime
+	})
+
+	if len(devicePoints) > 10 {
+		devicePoints = devicePoints[:10]
+	}
+	deviceStats := make([]gin.H, 0, len(devicePoints))
+	for _, row := range devicePoints {
 		deviceStats = append(deviceStats, gin.H{
 			"name":        row.Name,
-			"runningTime": roundFloat(row.RunningTime, 6),
+			"totalTime":   roundFloat(row.TotalTime, 6),
+			"runningTime": roundFloat(row.Processing, 6),
 			"idleTime":    roundFloat(row.IdleTime, 6),
+			"alarmTime":   roundFloat(row.AlarmTime, 6),
 		})
 	}
 
@@ -2119,7 +2211,7 @@ func (h *StatisticsHandler) exportProcessCSV(c *gin.Context) {
 		DurationHours   float64
 	}
 	baseQuery.Session(&gorm.Session{}).
-		Select(fmt.Sprintf("pr.*, %s, COALESCE(e.code, '-') as employee_code, COALESCE(e.name, '-') as employee_name, COALESCE(NULLIF(pr.pattern_name, ''), p.name, '未命名花型') as pattern_name, COALESCE(NULLIF(p.stitches, 0), pr.stitches, 0) as pattern_stitches, %s", h.deviceNameExpr("pr.device_id", "device_name"), h.productionDurationHoursExpr("pr", "duration_hours"))).
+		Select(fmt.Sprintf("pr.*, %s, COALESCE(NULLIF(e.code, ''), NULLIF(pr.protocol_user_id, ''), '-') as employee_code, COALESCE(NULLIF(e.name, ''), '-') as employee_name, COALESCE(NULLIF(pr.pattern_name, ''), p.name, '未命名花型') as pattern_name, COALESCE(NULLIF(p.stitches, 0), pr.stitches, 0) as pattern_stitches, %s", h.deviceNameExpr("pr.device_id", "device_name"), h.productionDurationHoursExpr("pr", "duration_hours"))).
 		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
 		Joins("LEFT JOIN employees e ON pr.employee_id = e.id").
 		Joins("LEFT JOIN patterns p ON pr.pattern_id = p.id").
@@ -2198,7 +2290,7 @@ func (h *StatisticsHandler) exportDurationCSV(c *gin.Context) {
 		DurationHours float64
 	}
 	baseProdQuery.Session(&gorm.Session{}).
-		Select(fmt.Sprintf("pr.*, %s, COALESCE(e.code, '-') as employee_code, COALESCE(e.name, '-') as employee_name, COALESCE(NULLIF(pr.pattern_name, ''), p.name, '未命名花型') as pattern_name, %s", h.deviceNameExpr("pr.device_id", "device_name"), h.productionDurationHoursExpr("pr", "duration_hours"))).
+		Select(fmt.Sprintf("pr.*, %s, COALESCE(NULLIF(e.code, ''), NULLIF(pr.protocol_user_id, ''), '-') as employee_code, COALESCE(NULLIF(e.name, ''), '-') as employee_name, COALESCE(NULLIF(pr.pattern_name, ''), p.name, '未命名花型') as pattern_name, %s", h.deviceNameExpr("pr.device_id", "device_name"), h.productionDurationHoursExpr("pr", "duration_hours"))).
 		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
 		Joins("LEFT JOIN employees e ON pr.employee_id = e.id").
 		Joins("LEFT JOIN patterns p ON pr.pattern_id = p.id").
@@ -2416,7 +2508,7 @@ func (h *StatisticsHandler) loadEmployeeInfoByDeviceDate(startDate, endDate, dev
 	}
 	recordDateExpr := h.localDateExpr("pr.record_date")
 	baseQuery.Session(&gorm.Session{}).
-		Select("pr.device_id, " + recordDateExpr + " as record_date, COALESCE(MAX(e.code), '-') as employee_code, COALESCE(MAX(e.name), '-') as employee_name").
+		Select("pr.device_id, " + recordDateExpr + " as record_date, COALESCE(MAX(NULLIF(e.code, '')), MAX(NULLIF(pr.protocol_user_id, '')), '-') as employee_code, COALESCE(MAX(NULLIF(e.name, '')), '-') as employee_name").
 		Joins("LEFT JOIN employees e ON pr.employee_id = e.id").
 		Group("pr.device_id, " + recordDateExpr).
 		Scan(&rows)

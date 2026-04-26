@@ -94,7 +94,7 @@
             <el-card shadow="never" class="chart-card">
               <div slot="header" class="chart-card__header">
                 <div class="chart-title">时长分布</div>
-                <div class="chart-subtitle">运行、空闲、报警时长分布</div>
+                <div class="chart-subtitle">加工、空闲、报警时长分布</div>
               </div>
               <div ref="durationPieChart" class="chart-container"></div>
             </el-card>
@@ -349,7 +349,7 @@ export default {
       const pieData = this.chartData.durationPie?.length > 0
         ? this.chartData.durationPie
         : [
-            { name: '运行时长', value: this.summary.runningTime },
+            { name: '加工时长', value: this.summary.runningTime },
             { name: '空闲时长', value: this.summary.idleTime },
             { name: '报警时长', value: this.summary.alarmTime }
           ]
@@ -389,7 +389,7 @@ export default {
         },
         legend: {
           top: 0,
-          data: ['运行', '空闲', '报警'],
+          data: ['加工', '空闲', '报警'],
           textStyle: { color: '#6a7f9d' }
         },
         grid: { left: '4%', right: '4%', bottom: '4%', top: 40, containLabel: true },
@@ -410,7 +410,7 @@ export default {
         },
         series: [
           {
-            name: '运行',
+            name: '加工',
             type: 'bar',
             stack: 'total',
             data: trendData.map(item => item.runningTime ?? 0),

@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -44,14 +45,16 @@ func TestGetDeviceUsageIncludesGroupsLinesAndIdleDevices(t *testing.T) {
 	if err := db.Create(&idleDevice).Error; err != nil {
 		t.Fatalf("create idle device: %v", err)
 	}
-	startTime := time.Now().Add(-4 * time.Hour)
-	endTime := time.Now()
+	runtimeStart := time.Now().Add(-4 * time.Hour)
+	runtimeEnd := time.Now()
+	processStart := runtimeEnd.Add(-2 * time.Hour)
+	processEnd := processStart.Add(1 * time.Hour)
 	if err := db.Create(&model.ProductionRecord{
 		DeviceID:    activeDevice.ID,
 		RunningTime: 1,
 		IdleTime:    0,
-		StartTime:   &startTime,
-		EndTime:     &endTime,
+		StartTime:   &processStart,
+		EndTime:     &processEnd,
 		SourceKey:   "test-device-usage-001",
 		RecordDate:  time.Now(),
 	}).Error; err != nil {
@@ -59,10 +62,10 @@ func TestGetDeviceUsageIncludesGroupsLinesAndIdleDevices(t *testing.T) {
 	}
 	if err := db.Create(&model.DeviceRuntimeSession{
 		DeviceID:        activeDevice.ID,
-		StartedAt:       startTime,
-		LastSeenAt:      endTime,
-		EndedAt:         &endTime,
-		DurationSeconds: int64(endTime.Sub(startTime).Seconds()),
+		StartedAt:       runtimeStart,
+		LastSeenAt:      runtimeEnd,
+		EndedAt:         &runtimeEnd,
+		DurationSeconds: int64(runtimeEnd.Sub(runtimeStart).Seconds()),
 		EndReason:       "test",
 	}).Error; err != nil {
 		t.Fatalf("create runtime session: %v", err)
@@ -118,14 +121,16 @@ func TestDashboardUtilizationUsesProcessingOverRuntime(t *testing.T) {
 	if err := db.Create(&device).Error; err != nil {
 		t.Fatalf("create device: %v", err)
 	}
-	startTime := time.Now().Add(-4 * time.Hour)
-	endTime := time.Now()
+	runtimeStart := time.Now().Add(-4 * time.Hour)
+	runtimeEnd := time.Now()
+	processStart := runtimeEnd.Add(-2 * time.Hour)
+	processEnd := processStart.Add(1 * time.Hour)
 	if err := db.Create(&model.ProductionRecord{
 		DeviceID:    device.ID,
 		RunningTime: 1,
 		IdleTime:    0,
-		StartTime:   &startTime,
-		EndTime:     &endTime,
+		StartTime:   &processStart,
+		EndTime:     &processEnd,
 		SourceKey:   "test-dashboard-utilization-001",
 		RecordDate:  time.Now(),
 	}).Error; err != nil {
@@ -133,10 +138,10 @@ func TestDashboardUtilizationUsesProcessingOverRuntime(t *testing.T) {
 	}
 	if err := db.Create(&model.DeviceRuntimeSession{
 		DeviceID:        device.ID,
-		StartedAt:       startTime,
-		LastSeenAt:      endTime,
-		EndedAt:         &endTime,
-		DurationSeconds: int64(endTime.Sub(startTime).Seconds()),
+		StartedAt:       runtimeStart,
+		LastSeenAt:      runtimeEnd,
+		EndedAt:         &runtimeEnd,
+		DurationSeconds: int64(runtimeEnd.Sub(runtimeStart).Seconds()),
 		EndReason:       "test",
 	}).Error; err != nil {
 		t.Fatalf("create runtime session: %v", err)
@@ -252,4 +257,96 @@ func TestDashboardEmptyDeviceIDsScopeReturnsZeroData(t *testing.T) {
 	if body.Data.TotalPieces != 0 || body.Data.TodayPieces != 0 || body.Data.ScopeDeviceCount != 0 {
 		t.Fatalf("expected empty scope zero data, got %#v", body.Data)
 	}
+}
+
+func TestGetDurationStatsSummaryUsesRuntimeSessions(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:duration_stats_summary_test?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.User{}, &model.Device{}, &model.Employee{}, &model.Pattern{}, &model.DeviceRuntimeSession{}, &model.ProductionRecord{}, &model.AlarmRecord{}); err != nil {
+		t.Fatalf("migrate schema: %v", err)
+	}
+
+	user := model.User{Username: "admin", Password: "x", Nickname: "admin", Role: "admin"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	device := model.Device{Code: "D-006", Name: "时长设备"}
+	if err := db.Create(&device).Error; err != nil {
+		t.Fatalf("create device: %v", err)
+	}
+
+	now := time.Now()
+	runtimeStart := now.Add(-1 * time.Hour)
+	processStart := now.Add(-50 * time.Minute)
+	processEnd := now.Add(-40 * time.Minute)
+	if err := db.Create(&model.DeviceRuntimeSession{
+		DeviceID:        device.ID,
+		StartedAt:       runtimeStart,
+		LastSeenAt:      now,
+		EndedAt:         &now,
+		DurationSeconds: int64(now.Sub(runtimeStart).Seconds()),
+		EndReason:       "test",
+	}).Error; err != nil {
+		t.Fatalf("create runtime session: %v", err)
+	}
+	if err := db.Create(&model.ProductionRecord{
+		DeviceID:    device.ID,
+		Pieces:      1,
+		RunningTime: 10.0 / 60.0,
+		StartTime:   &processStart,
+		EndTime:     &processEnd,
+		SourceKey:   "test-duration-summary-001",
+		RecordDate:  now,
+	}).Error; err != nil {
+		t.Fatalf("create production record: %v", err)
+	}
+	if err := db.Create(&model.AlarmRecord{
+		DeviceID:  device.ID,
+		AlarmType: "测试报警",
+		Duration:  5 * 60,
+		Status:    "resolved",
+		StartTime: now.Add(-30 * time.Minute),
+	}).Error; err != nil {
+		t.Fatalf("create alarm record: %v", err)
+	}
+
+	handler := NewStatisticsHandler(db)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	today := formatLocalStatsDate(now)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/statistics/duration?startDate="+today+"&endDate="+today, nil)
+	c.Set("userId", user.ID)
+	c.Set("role", "admin")
+
+	handler.GetDurationStats(c)
+
+	var body struct {
+		Code int `json:"code"`
+		Data struct {
+			Summary struct {
+				TotalTime   float64 `json:"totalTime"`
+				RunningTime float64 `json:"runningTime"`
+				IdleTime    float64 `json:"idleTime"`
+				AlarmTime   float64 `json:"alarmTime"`
+			} `json:"summary"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Code != 0 {
+		t.Fatalf("expected success response, got code=%d body=%s", body.Code, recorder.Body.String())
+	}
+	assertClose := func(name string, got, want float64) {
+		t.Helper()
+		if math.Abs(got-want) > 0.00001 {
+			t.Fatalf("expected %s %.6f, got %.6f", name, want, got)
+		}
+	}
+	assertClose("total time", body.Data.Summary.TotalTime, 1)
+	assertClose("processing time", body.Data.Summary.RunningTime, 10.0/60.0)
+	assertClose("alarm time", body.Data.Summary.AlarmTime, 5.0/60.0)
+	assertClose("idle time", body.Data.Summary.IdleTime, 45.0/60.0)
 }

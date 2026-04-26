@@ -1181,9 +1181,42 @@ func parseProductionDataNewPayload(data []byte) (*productionDataNew, error) {
 		StartNeedle: binary.BigEndian.Uint32(data[57:61]),
 		EndTime:     endTime,
 		EndNeedle:   binary.BigEndian.Uint32(data[68:72]),
-		UserID:      normalizeProtocolText(data[72:80]),
-		StopReason:  binary.BigEndian.Uint16(data[80:82]),
+		UserID:      parseProductionUserID(data),
+		StopReason:  parseProductionStopReason(data),
 	}, nil
+}
+
+func parseProductionUserID(data []byte) string {
+	userBeforeStop := normalizeProtocolText(data[72:80])
+	userAfterStop := normalizeProtocolText(data[74:82])
+	if shouldUseStopBeforeUserLayout(userBeforeStop, binary.BigEndian.Uint16(data[80:82]), userAfterStop, binary.BigEndian.Uint16(data[72:74])) {
+		return userAfterStop
+	}
+	return userBeforeStop
+}
+
+func parseProductionStopReason(data []byte) uint16 {
+	userBeforeStop := normalizeProtocolText(data[72:80])
+	stopAfterUser := binary.BigEndian.Uint16(data[80:82])
+	userAfterStop := normalizeProtocolText(data[74:82])
+	stopBeforeUser := binary.BigEndian.Uint16(data[72:74])
+	if shouldUseStopBeforeUserLayout(userBeforeStop, stopAfterUser, userAfterStop, stopBeforeUser) {
+		return stopBeforeUser
+	}
+	return stopAfterUser
+}
+
+func shouldUseStopBeforeUserLayout(userBeforeStop string, stopAfterUser uint16, userAfterStop string, stopBeforeUser uint16) bool {
+	if userAfterStop == "" {
+		return false
+	}
+	if userBeforeStop == "" {
+		return true
+	}
+
+	// 协议文档存在两处尾部字段顺序描述。部分设备实际为“停止原因 + 用户ID”；
+	// 此时按旧顺序读取时，停止原因会变成用户ID末尾两个 ASCII 字符。
+	return stopAfterUser > 1000 && stopBeforeUser <= 255
 }
 
 func parseProductionDataOldPayload(data []byte) (*productionDataOld, error) {
