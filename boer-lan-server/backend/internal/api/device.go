@@ -1445,7 +1445,7 @@ func (h *DeviceHandler) MoveToGroup(c *gin.Context) {
 			if err := tx.Model(&model.Device{}).
 				Where("id = ?", deviceID).
 				Updates(map[string]interface{}{
-					"group_id":   req.GroupID,
+					"group_id":   *req.GroupID,
 					"sort_order": maxSort + index + 1,
 				}).Error; err != nil {
 				tx.Rollback()

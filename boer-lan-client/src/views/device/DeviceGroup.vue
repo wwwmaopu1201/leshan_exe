@@ -1041,10 +1041,12 @@ export default {
       try {
         const payload = {
           name,
-          remark: String(this.quickAssignForm.remark || '').trim(),
-          groupId: targetGroupId
+          remark: String(this.quickAssignForm.remark || '').trim()
         }
-        const res = await updateDevice(deviceID, payload)
+        let res = await updateDevice(deviceID, payload)
+        if (res.code === 0) {
+          res = await moveToGroup([deviceID], targetGroupId)
+        }
         if (res.code === 0) {
           this.$message.success('设备分组成功')
           this.showQuickAssignDialog = false

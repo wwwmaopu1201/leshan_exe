@@ -21,6 +21,7 @@ logs/
 *.swp
 *.swo
 *~
+.~*
 
 # OS
 .DS_Store
@@ -42,6 +43,7 @@ boer-lan-server/boer-lan-server
 # Database
 *.db
 *.sqlite
+boer-lan-server/.dev-data/
 
 # Uploads
 uploads/

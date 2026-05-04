@@ -77,7 +77,7 @@
                 {{ $t('device.moveToGroup') }}
               </el-button>
             </div>
-            <el-button icon="el-icon-refresh" circle @click="fetchData" />
+            <el-button icon="el-icon-refresh" circle @click="handleManualRefresh" />
           </div>
 
           <el-table
@@ -333,7 +333,8 @@ export default {
         employeeName: '',
         mainboardSn: '',
         remark: '',
-        groupId: null
+        groupId: null,
+        originalGroupId: null
       },
       editRules: {
         code: [{ required: true, message: '请输入设备编码', trigger: 'blur' }],
@@ -365,6 +366,7 @@ export default {
       delete rules.ip
       delete rules.initialName
       delete rules.mainboardSn
+      delete rules.model
       return rules
     },
     groupNameMap() {
@@ -505,9 +507,44 @@ export default {
       this.pagination.page = 1
       this.fetchData()
     },
-    handleTreeRefresh() {
-      this.fetchGroups()
-      this.fetchData()
+    async handleTreeRefresh(payload) {
+      if (payload) {
+        this.treeFilter = payload
+      } else {
+        await this.syncTreeSelection()
+      }
+      await this.fetchGroups()
+      await this.fetchData()
+    },
+    normalizeGroupId(value) {
+      if (value === null || value === undefined || value === '') {
+        return null
+      }
+      const groupId = Number(value)
+      return Number.isFinite(groupId) && groupId > 0 ? groupId : null
+    },
+    async syncTreeSelection() {
+      const treePanel = this.$refs.treePanel
+      if (treePanel?.refreshAndSyncSelection) {
+        const payload = await treePanel.refreshAndSyncSelection()
+        if (payload) {
+          this.treeFilter = payload
+        }
+        return
+      }
+      await treePanel?.fetchDeviceTree?.()
+    },
+    async reloadDeviceData({ refreshTypes = false } = {}) {
+      await this.fetchGroups()
+      if (refreshTypes) {
+        await this.fetchDeviceTypes()
+      }
+      await this.syncTreeSelection()
+      this.pagination.page = 1
+      await this.fetchData()
+    },
+    async handleManualRefresh() {
+      await this.reloadDeviceData()
     },
     handleSelectionChange(rows) {
       this.selectedRows = rows
@@ -598,7 +635,8 @@ export default {
         employeeName: '',
         mainboardSn: '',
         remark: '',
-        groupId: null
+        groupId: null,
+        originalGroupId: null
       }
       this.showEditDialog = true
     },
@@ -615,7 +653,8 @@ export default {
         employeeName: row.employeeName || '',
         mainboardSn: row.mainboardSn || '',
         remark: row.remark || '',
-        groupId: row.groupId || null
+        groupId: this.normalizeGroupId(row.groupId),
+        originalGroupId: this.normalizeGroupId(row.groupId)
       }
       this.showEditDialog = true
     },
@@ -673,15 +712,19 @@ export default {
           model: this.editForm.model,
           employeeCode: this.editForm.employeeCode,
           employeeName: this.editForm.employeeName,
-          remark: this.editForm.remark,
-          groupId: this.editForm.groupId
+          remark: this.editForm.remark
         }
+        const targetGroupId = this.normalizeGroupId(this.editForm.groupId)
         let res
         if (this.editForm.id) {
           res = await updateDevice(this.editForm.id, payload)
+          if (res.code === 0 && targetGroupId !== this.editForm.originalGroupId) {
+            res = await moveToGroup([Number(this.editForm.id)], targetGroupId)
+          }
         } else {
           res = await createDevice({
             ...payload,
+            groupId: targetGroupId,
             code: this.editForm.code,
             initialName: this.editForm.initialName,
             ip: this.editForm.ip,
@@ -691,9 +734,7 @@ export default {
         if (res.code === 0) {
           this.$message.success(this.$t('common.success'))
           this.showEditDialog = false
-          this.fetchGroups()
-          this.fetchDeviceTypes()
-          this.fetchData()
+          await this.reloadDeviceData({ refreshTypes: true })
         } else {
           this.$message.error(res.message || '保存失败')
         }
@@ -712,7 +753,7 @@ export default {
           const res = await deleteDevice(row.id)
           if (res.code === 0) {
             this.$message.success(res.message || this.$t('device.removedFromGroup'))
-            this.fetchData()
+            await this.reloadDeviceData()
           } else {
             this.$message.error(res.message || '移出分组失败')
           }
@@ -737,7 +778,7 @@ export default {
           const res = await batchDeleteDevices(ids)
           if (res.code === 0) {
             this.$message.success(res.message || this.$t('device.batchRemovedFromGroup'))
-            this.fetchData()
+            await this.reloadDeviceData()
           } else {
             this.$message.error(res.message || '批量移出分组失败')
           }
@@ -749,14 +790,15 @@ export default {
     },
     async handleMoveToGroup() {
       try {
-        const isUngroup = this.moveTargetGroupId === null || this.moveTargetGroupId === undefined || this.moveTargetGroupId === ''
+        const targetGroupId = this.normalizeGroupId(this.moveTargetGroupId)
+        const isUngroup = targetGroupId === null
         const deviceIds = this.selectedRows.map(row => row.id)
-        const res = await moveToGroup(deviceIds, isUngroup ? null : this.moveTargetGroupId)
+        const res = await moveToGroup(deviceIds, targetGroupId)
         if (res.code === 0) {
           this.$message.success(isUngroup ? '已移出分组' : this.$t('common.success'))
           this.showMoveDialog = false
           this.moveTargetGroupId = null
-          this.fetchData()
+          await this.reloadDeviceData()
         } else {
           this.$message.error(res.message || '移动失败')
         }

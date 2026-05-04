@@ -254,17 +254,20 @@ export default {
               this.$refs.deviceTree?.setCurrentKey(key)
             }
           })
+          return this.deviceTree
         }
       } catch (error) {
         console.error('Failed to fetch device tree:', error)
       } finally {
         this.loading = false
       }
+      return this.deviceTree
     },
-    refreshTree() {
+    async refreshTree() {
       this.hideContextMenu()
-      this.fetchDeviceTree()
-      this.$emit('refresh')
+      await this.fetchDeviceTree()
+      const payload = this.syncCurrentSelection()
+      this.$emit('refresh', payload)
     },
     attachNodeKeys(nodes) {
       return (nodes || []).map(node => {
@@ -310,9 +313,9 @@ export default {
       }
       return ids
     },
-    handleNodeClick(data) {
+    buildSelectionPayload(data) {
       if (!data) return
-      const payload = {
+      return {
         label: data.label,
         nodeType: data.type === 'device' ? 'device' : 'group',
         groupId: data.type === 'group' ? String(data.id) : String(data.groupId || data.parentId || ''),
@@ -321,6 +324,50 @@ export default {
         employeeCode: data.type === 'device' ? String(data.employeeCode || '') : '',
         employeeName: data.type === 'device' ? String(data.employeeName || '') : ''
       }
+    },
+    findNodeByKey(key) {
+      if (!key) return null
+      const stack = [...(this.deviceTree || [])]
+      while (stack.length > 0) {
+        const current = stack.shift()
+        if (!current) continue
+        if (current._nodeKey === key) {
+          return current
+        }
+        if (current.children?.length) {
+          stack.push(...current.children)
+        }
+      }
+      return null
+    },
+    syncCurrentSelection() {
+      const key = this.resolveNodeKey(this.value)
+      if (!key) {
+        return this.value || defaultValue()
+      }
+
+      const node = this.findNodeByKey(key)
+      if (!node) {
+        const payload = defaultValue()
+        this.$refs.deviceTree?.setCurrentKey(null)
+        this.$emit('input', payload)
+        return payload
+      }
+
+      const payload = this.buildSelectionPayload(node)
+      this.$nextTick(() => {
+        this.$refs.deviceTree?.setCurrentKey(key)
+      })
+      this.$emit('input', payload)
+      return payload
+    },
+    async refreshAndSyncSelection() {
+      await this.fetchDeviceTree()
+      return this.syncCurrentSelection()
+    },
+    handleNodeClick(data) {
+      const payload = this.buildSelectionPayload(data)
+      if (!payload) return
       this.$emit('input', payload)
       this.$emit('change', payload)
       this.hideContextMenu()
