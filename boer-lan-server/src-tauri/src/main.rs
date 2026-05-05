@@ -4,13 +4,15 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::env;
 use std::fs;
+use std::io::{Read, Write};
+use std::net::{SocketAddr, TcpStream};
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Child;
 #[cfg(not(debug_assertions))]
 use std::process::Command;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 
@@ -45,10 +47,15 @@ struct TrialStatus {
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
-const TRIAL_DURATION_SECONDS: u64 = 24 * 60 * 60;
+const STARTUP_API_HOST: &str = "47.92.226.92";
+const STARTUP_API_PORT: u16 = 56;
+const STARTUP_API_PATH: &str = "/api.php";
+const TRIAL_DURATION_SECONDS: u64 = 7 * 24 * 60 * 60;
 const ROLLBACK_LEEWAY_SECONDS: u64 = 10 * 60;
 const TRIAL_POLICY_VERSION: u32 = 5;
 const APP_IDENTIFIER: &str = "com.boer.lan-server";
+
+static STARTUP_API_RESULT: OnceLock<Result<(), String>> = OnceLock::new();
 
 fn normalize_version(raw: &str) -> String {
     raw.trim()
@@ -208,6 +215,107 @@ fn format_remaining_seconds(remaining_seconds: u64) -> String {
     format!("{} 分钟", ((remaining_seconds + 59) / 60).max(1))
 }
 
+fn network_error_status() -> TrialStatus {
+    TrialStatus {
+        valid: false,
+        message: "网络错误，请检查网络连接".to_string(),
+        expires_at: None,
+        remaining_seconds: 0,
+    }
+}
+
+fn decode_chunked_body(raw: &str) -> Option<String> {
+    let mut body = String::new();
+    let mut rest = raw;
+
+    loop {
+        let (size_line, after_size) = rest.split_once("\r\n")?;
+        let size_text = size_line.split(';').next()?.trim();
+        let size = usize::from_str_radix(size_text, 16).ok()?;
+        if size == 0 {
+            return Some(body);
+        }
+        if after_size.len() < size + 2 {
+            return None;
+        }
+
+        body.push_str(&after_size[..size]);
+        rest = after_size.get(size + 2..)?;
+    }
+}
+
+fn parse_startup_api_allowed(response: &str) -> Result<bool, String> {
+    let (headers, body) = response
+        .split_once("\r\n\r\n")
+        .ok_or_else(|| "invalid startup api response".to_string())?;
+    let status_line = headers.lines().next().unwrap_or_default();
+    let status_code = status_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|value| value.parse::<u16>().ok())
+        .ok_or_else(|| "invalid startup api status".to_string())?;
+
+    if !(200..300).contains(&status_code) {
+        return Err(format!("startup api returned status {status_code}"));
+    }
+
+    let decoded_body = if headers.lines().any(|line| {
+        line.to_ascii_lowercase()
+            .contains("transfer-encoding: chunked")
+    }) {
+        decode_chunked_body(body).ok_or_else(|| "invalid startup api chunked body".to_string())?
+    } else {
+        body.to_string()
+    };
+    let value = decoded_body.trim().trim_start_matches('\u{feff}');
+
+    if let Ok(parsed) = serde_json::from_str::<bool>(value) {
+        return Ok(parsed);
+    }
+
+    match value.to_ascii_lowercase().as_str() {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        _ => Err("startup api returned invalid value".to_string()),
+    }
+}
+
+fn request_startup_api_allowed() -> Result<(), String> {
+    let address = SocketAddr::from(([47, 92, 226, 92], STARTUP_API_PORT));
+    let mut stream = TcpStream::connect_timeout(&address, std::time::Duration::from_secs(5))
+        .map_err(|err| format!("failed to connect startup api: {err}"))?;
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+        .map_err(|err| format!("failed to set startup api read timeout: {err}"))?;
+    stream
+        .set_write_timeout(Some(std::time::Duration::from_secs(5)))
+        .map_err(|err| format!("failed to set startup api write timeout: {err}"))?;
+
+    let request = format!(
+        "GET {STARTUP_API_PATH} HTTP/1.1\r\nHost: {STARTUP_API_HOST}:{STARTUP_API_PORT}\r\nUser-Agent: BoerLAN-Server\r\nAccept: application/json,text/plain,*/*\r\nConnection: close\r\n\r\n"
+    );
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|err| format!("failed to write startup api request: {err}"))?;
+
+    let mut response = String::new();
+    stream
+        .read_to_string(&mut response)
+        .map_err(|err| format!("failed to read startup api response: {err}"))?;
+
+    match parse_startup_api_allowed(&response) {
+        Ok(true) => Ok(()),
+        Ok(false) => Err("startup api disabled startup".to_string()),
+        Err(err) => Err(err),
+    }
+}
+
+fn ensure_startup_api_allowed() -> Result<(), String> {
+    STARTUP_API_RESULT
+        .get_or_init(request_startup_api_allowed)
+        .clone()
+}
+
 fn trial_state_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     resolve_shared_data_dir(app).map(|dir| dir.join("server-trial-state.json"))
 }
@@ -285,6 +393,11 @@ fn write_trial_state(path: &PathBuf, state: &TrialState) -> Result<(), String> {
 }
 
 fn inspect_trial_status(app: &tauri::AppHandle) -> TrialStatus {
+    if let Err(err) = ensure_startup_api_allowed() {
+        eprintln!("Startup network validation failed: {err}");
+        return network_error_status();
+    }
+
     let state_path = match trial_state_path(app) {
         Ok(path) => path,
         Err(err) => {
