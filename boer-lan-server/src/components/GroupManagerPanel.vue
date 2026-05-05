@@ -60,7 +60,13 @@
         <li :class="{ disabled: !canMoveUp(contextMenu.node) }" @click="handleContextMenuAction('moveUp')">上移</li>
         <li :class="{ disabled: !canMoveDown(contextMenu.node) }" @click="handleContextMenuAction('moveDown')">下移</li>
         <li @click="handleContextMenuAction('edit')">重命名</li>
-        <li class="danger" @click="handleContextMenuAction('delete')">删除分组</li>
+        <li
+          class="danger"
+          :class="{ disabled: !canDeleteGroup(contextMenu.node) }"
+          @click="handleContextMenuAction('delete')"
+        >
+          删除分组
+        </li>
       </template>
       <li @click="handleContextMenuAction('refresh')">刷新</li>
     </ul>
@@ -209,6 +215,14 @@ export default {
       this.contextMenu.visible = false
       this.contextMenu.node = null
     },
+    isTotalGroupNode(group) {
+      const label = String(group?.label || group?.name || '').trim()
+      const id = String(group?.id || '')
+      return label === '总分组' || label === '全部设备' || id === 'all'
+    },
+    canDeleteGroup(group) {
+      return !!group && !this.isTotalGroupNode(group)
+    },
     handleContextMenuAction(action) {
       const group = this.contextMenu.node
       if ((action !== 'addRoot' && action !== 'refresh') && !group) {
@@ -243,6 +257,10 @@ export default {
         return
       }
       if (action === 'delete') {
+        if (!this.canDeleteGroup(group)) {
+          this.$message.warning('总分组不能删除')
+          return
+        }
         this.deleteGroup(group)
         return
       }
@@ -365,6 +383,10 @@ export default {
       await this.persistSort(siblings)
     },
     async deleteGroup(group) {
+      if (!this.canDeleteGroup(group)) {
+        this.$message.warning('总分组不能删除')
+        return
+      }
       try {
         await this.$confirm(
           '确定要删除该分组吗？删除后该分组下账号、设备、操作员将转为未分组，子分组会提升到当前层级。',

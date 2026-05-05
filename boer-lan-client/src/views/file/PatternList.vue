@@ -266,11 +266,6 @@
             <el-table-column prop="patternType" label="花型类型" width="130" />
             <el-table-column prop="stitches" label="针数" width="100" />
             <el-table-column prop="size" label="文件大小" width="100" />
-            <el-table-column prop="unitPrice" label="工价" width="110" align="right">
-              <template slot-scope="scope">
-                {{ formatPrice(scope.row.unitPrice) }}
-              </template>
-            </el-table-column>
             <el-table-column prop="orderNo" label="订单号" min-width="130" />
             <el-table-column prop="updateTime" label="更新时间" width="170" />
             <el-table-column label="操作" width="90" align="center">
@@ -1386,7 +1381,8 @@ export default {
       })
     },
     async handleUploadFromDevice() {
-      if (!this.deviceFileQuery.deviceId) {
+      const uploadDeviceId = this.resolveSelectedDeviceFileDeviceId()
+      if (!uploadDeviceId) {
         this.$message.warning('请先选择设备')
         return
       }
@@ -1399,7 +1395,7 @@ export default {
       try {
         let res = null
         try {
-          res = await this.submitUploadFromDeviceRequest('ask')
+          res = await this.submitUploadFromDeviceRequest(uploadDeviceId, 'ask')
         } catch (error) {
           const duplicates = Array.isArray(error?.response?.data?.data?.duplicates)
             ? error.response.data.data.duplicates
@@ -1412,7 +1408,7 @@ export default {
           if (!conflictDecision?.mode) {
             return
           }
-          res = await this.submitUploadFromDeviceRequest(conflictDecision.mode, conflictDecision.renameNames || {})
+          res = await this.submitUploadFromDeviceRequest(uploadDeviceId, conflictDecision.mode, conflictDecision.renameNames || {})
         }
 
         if (res.code === 0) {
@@ -1420,6 +1416,7 @@ export default {
           this.fetchData()
           this.fetchPatternTypes()
           this.fetchUploadQueue()
+          await this.refreshDeviceFilesAfterUpload(uploadDeviceId)
         }
       } catch (error) {
         console.error('Upload device files failed:', error)
@@ -1428,15 +1425,32 @@ export default {
         this.uploadingFromDevice = false
       }
     },
-    submitUploadFromDeviceRequest(conflictMode = 'ask', renameNames = {}) {
+    submitUploadFromDeviceRequest(uploadDeviceId, conflictMode = 'ask', renameNames = {}) {
       return uploadDeviceFilesToServer({
-        deviceId: this.deviceFileQuery.deviceId,
+        deviceId: uploadDeviceId,
         fileIds: this.deviceFileSelectedRows.map(item => item.id),
+        selectedFiles: this.deviceFileSelectedRows.map(item => ({
+          id: item.id,
+          patternNo: item.patternNo,
+          fileName: item.fileName
+        })),
         conflictMode,
         renameNames
       }, {
         suppressErrorMessage: true
       })
+    },
+    resolveSelectedDeviceFileDeviceId() {
+      const queryDeviceId = Number(this.deviceFileQuery.deviceId || 0)
+      return Number.isFinite(queryDeviceId) && queryDeviceId > 0 ? queryDeviceId : 0
+    },
+    async refreshDeviceFilesAfterUpload(deviceId) {
+      this.deviceFileSelectedRows = []
+      this.$refs.deviceFileTableRef?.clearSelection()
+      if (deviceId) {
+        this.deviceFileQuery.deviceId = Number(deviceId)
+      }
+      await this.fetchDeviceFileList()
     },
     async promptUploadConflictResolution(duplicates = []) {
       const renameNames = {}

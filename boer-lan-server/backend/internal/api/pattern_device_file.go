@@ -13,10 +13,17 @@ import (
 )
 
 type UploadDeviceFilesRequest struct {
-	DeviceID     uint              `json:"deviceId" binding:"required"`
-	FileIDs      []uint            `json:"fileIds" binding:"required"`
-	ConflictMode string            `json:"conflictMode"`
-	RenameNames  map[string]string `json:"renameNames"`
+	DeviceID      uint                       `json:"deviceId" binding:"required"`
+	FileIDs       []uint                     `json:"fileIds" binding:"required"`
+	SelectedFiles []UploadDeviceFileSnapshot `json:"selectedFiles"`
+	ConflictMode  string                     `json:"conflictMode"`
+	RenameNames   map[string]string          `json:"renameNames"`
+}
+
+type UploadDeviceFileSnapshot struct {
+	ID        uint   `json:"id"`
+	PatternNo uint   `json:"patternNo"`
+	FileName  string `json:"fileName"`
 }
 
 type uploadPatternConflictItem struct {
@@ -312,6 +319,17 @@ func (h *PatternHandler) UploadDeviceFilesToServer(c *gin.Context) {
 		})
 		return
 	}
+	if len(files) != len(req.FileIDs) {
+		resolvedFiles, err := h.resolveUploadDeviceFiles(req.DeviceID, req.FileIDs, req.SelectedFiles)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "查询设备文件失败",
+			})
+			return
+		}
+		files = resolvedFiles
+	}
 	if len(files) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
@@ -402,6 +420,55 @@ func (h *PatternHandler) UploadDeviceFilesToServer(c *gin.Context) {
 		},
 		"message": "success",
 	})
+}
+
+func (h *PatternHandler) resolveUploadDeviceFiles(deviceID uint, fileIDs []uint, snapshots []UploadDeviceFileSnapshot) ([]model.DevicePatternFile, error) {
+	fileIDs = normalizeGroupIDs(fileIDs)
+	files := make([]model.DevicePatternFile, 0, len(fileIDs))
+	seen := make(map[uint]struct{}, len(fileIDs))
+
+	if len(fileIDs) > 0 {
+		var byID []model.DevicePatternFile
+		if err := h.db.Where("device_id = ? AND id IN ?", deviceID, fileIDs).Find(&byID).Error; err != nil {
+			return nil, err
+		}
+		for _, file := range byID {
+			if _, ok := seen[file.ID]; ok {
+				continue
+			}
+			files = append(files, file)
+			seen[file.ID] = struct{}{}
+		}
+	}
+
+	for _, snapshot := range snapshots {
+		if len(files) >= len(fileIDs) {
+			break
+		}
+
+		var file model.DevicePatternFile
+		query := h.db.Where("device_id = ?", deviceID)
+		if snapshot.PatternNo > 0 {
+			query = query.Where("pattern_no = ?", snapshot.PatternNo)
+		} else if fileName := strings.TrimSpace(snapshot.FileName); fileName != "" {
+			query = query.Where("file_name = ?", fileName)
+		} else {
+			continue
+		}
+		if err := query.Order("updated_at DESC").First(&file).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				continue
+			}
+			return nil, err
+		}
+		if _, ok := seen[file.ID]; ok {
+			continue
+		}
+		files = append(files, file)
+		seen[file.ID] = struct{}{}
+	}
+
+	return files, nil
 }
 
 func (h *PatternHandler) findUploadPatternConflicts(deviceID uint, files []model.DevicePatternFile) ([]uploadPatternConflictItem, error) {

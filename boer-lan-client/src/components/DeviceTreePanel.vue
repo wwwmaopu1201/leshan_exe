@@ -58,7 +58,13 @@
         <li @click="handleContextMenuAction('addChild')">新增子组</li>
         <li @click="handleContextMenuAction('move')">移动分组</li>
         <li @click="handleContextMenuAction('edit')">重命名</li>
-        <li class="danger" @click="handleContextMenuAction('delete')">删除分组</li>
+        <li
+          class="danger"
+          :class="{ disabled: !canDeleteGroup(contextMenu.node) }"
+          @click="handleContextMenuAction('delete')"
+        >
+          删除分组
+        </li>
       </template>
       <li @click="handleContextMenuAction('refresh')">刷新</li>
     </ul>
@@ -381,6 +387,14 @@ export default {
     isEditableGroup(data) {
       return data?.type !== 'device' && data?.id !== undefined && !this.isUngroupedNode(data)
     },
+    isTotalGroupNode(data) {
+      const label = String(data?.label || data?.name || '').trim()
+      const id = String(data?.id || '')
+      return label === '总分组' || label === '全部设备' || id === 'all'
+    },
+    canDeleteGroup(data) {
+      return this.isEditableGroup(data) && !this.isTotalGroupNode(data)
+    },
     isUngroupedNode(data) {
       const label = String(data?.label || '')
       const id = String(data?.id || '')
@@ -439,6 +453,10 @@ export default {
         return
       }
       if (action === 'delete') {
+        if (!this.canDeleteGroup(node)) {
+          this.$message.warning('总分组不能删除')
+          return
+        }
         this.handleDeleteGroup(node)
       }
     },
@@ -541,6 +559,10 @@ export default {
       }
     },
     async handleDeleteGroup(node) {
+      if (!this.canDeleteGroup(node)) {
+        this.$message.warning('总分组不能删除')
+        return
+      }
       this.$confirm(`确定删除分组“${node.label}”吗？`, this.$t('common.warning'), {
         confirmButtonText: this.$t('common.confirm'),
         cancelButtonText: this.$t('common.cancel'),
@@ -768,6 +790,15 @@ export default {
 
     &.danger {
       color: #ef5a5a;
+    }
+
+    &.disabled {
+      color: #a8b1bf;
+      cursor: not-allowed;
+    }
+
+    &.disabled:hover {
+      background: transparent;
     }
   }
 }

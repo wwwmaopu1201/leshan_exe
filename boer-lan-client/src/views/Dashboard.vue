@@ -230,7 +230,14 @@ export default {
       return Number.isFinite(num) ? num : 0
     },
     formatPercent(value) {
-      return `${this.toNumber(value).toFixed(0)}%`
+      const num = this.toNumber(value)
+      if (num === 0) {
+        return '0%'
+      }
+      if (Math.abs(num) < 1) {
+        return `${num.toFixed(2)}%`
+      }
+      return `${num.toFixed(1).replace(/\.0$/, '')}%`
     },
     formatDuration(value) {
       return formatDurationFromHours(this.toNumber(value))
@@ -416,7 +423,7 @@ export default {
             return [title, ...rows].join('<br/>')
           }
         },
-        grid: { left: 16, right: 12, top: 24, bottom: 18, containLabel: true },
+        grid: { left: 16, right: 12, top: 24, bottom: 24, containLabel: true },
         xAxis: {
           type: 'category',
           data: this.dashboardData.runningProcessingTrend.map(d => d.date),
@@ -462,14 +469,20 @@ export default {
     initUtilizationChart() {
       const chart = this.getOrCreateChart('utilization', 'utilizationChart')
       if (!chart) return
+      const values = this.dashboardData.utilizationTrend.map(d => this.toNumber(d.value))
+      const maxValue = Math.max(...values, 0)
+      const yAxisMax = maxValue > 0 && maxValue < 10 ? Math.max(1, Math.ceil(maxValue * 1.2)) : 100
 
       chart.setOption({
         animationDuration: 500,
         tooltip: {
           trigger: 'axis',
-          formatter: '{b}<br />数据值：{c}%'
+          formatter: params => {
+            const item = Array.isArray(params) ? params[0] : params
+            return `${item?.axisValue || ''}<br />设备使用率：${this.formatPercent(item?.data || 0)}`
+          }
         },
-        grid: { left: 18, right: 12, top: 16, bottom: 18, containLabel: true },
+        grid: { left: 18, right: 12, top: 16, bottom: 16, containLabel: true },
         xAxis: {
           type: 'category',
           data: this.dashboardData.utilizationTrend.map(d => d.date),
@@ -480,16 +493,16 @@ export default {
         yAxis: {
           type: 'value',
           min: 0,
-          max: 100,
+          max: yAxisMax,
           axisTick: { show: false },
           axisLine: { show: false },
           splitLine: { lineStyle: { color: '#ecf1f6', type: 'dashed' } },
-          axisLabel: { color: '#6d7b8f', fontSize: 11, formatter: '{value}%' }
+          axisLabel: { color: '#6d7b8f', fontSize: 11, formatter: value => this.formatPercent(value) }
         },
         series: [{
           type: 'bar',
           barWidth: 26,
-          data: this.dashboardData.utilizationTrend.map(d => this.toNumber(d.value)),
+          data: values,
           itemStyle: {
             color: '#3c89f7'
           }
@@ -509,7 +522,7 @@ export default {
             return `${point.axisValue}<br />${this.selectedScope.label} 当天产量 ${point.data}`
           }
         },
-        grid: { left: 34, right: 18, top: 22, bottom: 18 },
+        grid: { left: 34, right: 18, top: 22, bottom: 22 },
         xAxis: {
           type: 'category',
           boundaryGap: false,
@@ -549,16 +562,20 @@ export default {
 
 <style lang="scss" scoped>
 .dashboard-page {
+  height: 100%;
   background: #f2f5f8;
   overflow: auto;
 }
 
 .dashboard-layout {
+  height: 100%;
   min-width: 0;
   padding: 10px;
+  box-sizing: border-box;
   display: grid;
   grid-template-columns: 272px minmax(0, 1fr);
   gap: 10px;
+  align-items: stretch;
 }
 
 .dashboard-side {
@@ -633,6 +650,7 @@ export default {
 
 .dashboard-main {
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -717,6 +735,13 @@ export default {
   ::v-deep .el-card__body {
     padding: 10px 14px 14px;
   }
+}
+
+.board-card--production {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .board-card__header {
@@ -823,11 +848,15 @@ export default {
 }
 
 .board-card--production ::v-deep .el-card__body {
-  padding-top: 6px;
+  flex: 1;
+  min-height: 0;
+  padding: 6px 14px 14px;
+  display: flex;
 }
 
 .production-chart {
-  height: 350px;
+  flex: 1;
+  min-height: 350px;
 }
 
 @media (max-width: 1440px) {

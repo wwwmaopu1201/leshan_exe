@@ -20,6 +20,7 @@ const (
 	patternTransferResponseTimeout = 10 * time.Minute
 	patternUploadStartTimeout      = 30 * time.Second
 	patternUploadIdleTimeout       = 3 * time.Second
+	patternUploadFinishTimeout     = 30 * time.Second
 	patternUploadResumeInterval    = 3 * time.Second
 )
 
@@ -253,6 +254,9 @@ func (s *PatternTransferService) UploadPatternFromDeviceWithOptions(
 		waitTimeout := patternUploadStartTimeout
 		if totalFrames > 0 {
 			waitTimeout = patternUploadIdleTimeout
+			if len(frames) >= totalFrames && !uploadFinished {
+				waitTimeout = patternUploadFinishTimeout
+			}
 		}
 		waitCtx, cancelWait := context.WithTimeout(ctx, waitTimeout)
 		pkt, err := waitPatternPacket(waitCtx, ch, func(pkt *Packet) bool {

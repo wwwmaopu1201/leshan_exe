@@ -9,13 +9,12 @@
 
     <div class="panel-layout">
       <div class="panel-side">
-        <el-card shadow="never" class="panel-shell">
+        <div class="device-tree-panel panel-shell">
           <div class="panel-header">
             <div>
-              <div class="panel-title">设备树</div>
-              <div class="panel-subtitle">按分组快速定位设备</div>
+              <div class="panel-title">设备树与分组</div>
             </div>
-            <div class="action-group">
+            <div class="panel-actions">
               <el-button type="text" size="mini" @click="loadGroupTree">刷新</el-button>
             </div>
           </div>
@@ -23,59 +22,39 @@
           <el-input
             v-model="treeKeyword"
             size="small"
-            placeholder="搜索分组"
+            placeholder="搜索设备或分组"
             prefix-icon="el-icon-search"
             clearable
           />
 
-          <div class="action-group tree-shortcuts">
-            <el-button
-              size="small"
-              :type="treeSelection.mode === 'all' ? 'primary' : 'default'"
-              plain
-              @click="setTreeScope('all')"
-            >
-              全部设备
-            </el-button>
-            <el-button
-              size="small"
-              :type="treeSelection.mode === 'ungrouped' ? 'danger' : 'default'"
-              plain
-              @click="setTreeScope('ungrouped')"
-            >
-              未分组
-            </el-button>
-          </div>
-
-          <div class="selection-strip">
-            <div style="min-width: 0;">
-              <span class="selection-strip__label">当前选择</span>
-              <span class="selection-strip__value">{{ treeScopeLabel }}</span>
-            </div>
+          <div class="selection-bar">
+            <span class="selection-label">当前选择</span>
+            <span class="selection-value">{{ treeScopeLabel }}</span>
             <el-button type="text" size="mini" @click="setTreeScope('all')">清空</el-button>
           </div>
 
-          <div class="tree-scroll" v-loading="groupTreeLoading">
+          <div class="tree-wrapper" v-loading="groupTreeLoading">
             <el-tree
               ref="groupTreeRef"
-              :data="groupTree"
-              node-key="id"
+              :data="displayGroupTree"
+              :props="{ label: 'label', children: 'children' }"
               default-expand-all
               highlight-current
+              node-key="_nodeKey"
               :filter-node-method="filterTreeNode"
-              :props="{ label: 'name', children: 'children' }"
               @node-click="handleTreeNodeClick"
               @node-contextmenu="handleTreeNodeContextMenu"
             >
               <div slot-scope="{ node, data }" class="tree-node">
-                <div class="tree-node__main">
-                  <i :class="['tree-node__icon', data.children?.length ? 'el-icon-folder-opened' : 'el-icon-folder']"></i>
-                  <span class="tree-node__label" :title="node.label">{{ node.label }}</span>
+                <div class="tree-node-main" :class="{ ungrouped: isUngroupedNode(data) }">
+                  <i :class="['tree-node-icon', getTreeNodeIcon(data)]"></i>
+                  <span class="tree-node-label" :title="node.label">{{ node.label }}</span>
+                  <span v-if="data.type === 'device'" :class="['status-dot', data.status]"></span>
                 </div>
               </div>
             </el-tree>
           </div>
-        </el-card>
+        </div>
       </div>
 
       <div class="panel-main">
@@ -298,14 +277,20 @@
       @contextmenu.prevent
     >
       <li @click="handleContextMenuAction('addRoot')">新增顶层分组</li>
-      <template v-if="contextMenu.node">
+      <template v-if="contextMenu.node && isEditableGroupNode(contextMenu.node)">
         <li @click="handleContextMenuAction('addSibling')">新增同级分组</li>
         <li @click="handleContextMenuAction('addChild')">新增子分组</li>
         <li @click="handleContextMenuAction('moveSelectedHere')">移动已选设备到当前组</li>
         <li :class="{ disabled: !canMoveUp(contextMenu.node) }" @click="handleContextMenuAction('moveUp')">上移</li>
         <li :class="{ disabled: !canMoveDown(contextMenu.node) }" @click="handleContextMenuAction('moveDown')">下移</li>
         <li @click="handleContextMenuAction('edit')">重命名</li>
-        <li class="danger" @click="handleContextMenuAction('delete')">删除分组</li>
+        <li
+          class="danger"
+          :class="{ disabled: !canDeleteGroup(contextMenu.node) }"
+          @click="handleContextMenuAction('delete')"
+        >
+          删除分组
+        </li>
       </template>
       <li @click="handleContextMenuAction('refresh')">刷新</li>
     </ul>
@@ -366,18 +351,89 @@ export default {
     groupTreeOptions() {
       return this.flattenGroupTree(this.groupTree)
     },
+    displayGroupTree() {
+      const groupedDevices = new Map()
+      const ungroupedDevices = []
+      this.devices.forEach(device => {
+        const groupId = Number(device.groupId || 0)
+        if (groupId > 0) {
+          if (!groupedDevices.has(groupId)) {
+            groupedDevices.set(groupId, [])
+          }
+          groupedDevices.get(groupId).push(device)
+          return
+        }
+        ungroupedDevices.push(device)
+      })
+
+      const toDeviceNode = device => ({
+        id: `device-${device.id || device.ID}`,
+        _nodeKey: `device-${device.id || device.ID}`,
+        type: 'device',
+        deviceId: device.id || device.ID,
+        groupId: device.groupId || null,
+        label: this.formatDeviceName(device),
+        status: device.status || 'offline'
+      })
+
+      const sortDevices = list => [...list].sort((a, b) => {
+        const sortDiff = Number(a.sortOrder || 0) - Number(b.sortOrder || 0)
+        if (sortDiff !== 0) return sortDiff
+        return String(a.code || '').localeCompare(String(b.code || ''))
+      })
+
+      const attachDeviceNodes = (nodes = []) => {
+        return nodes.map(node => {
+          const childGroups = attachDeviceNodes(node.children || [])
+          const deviceNodes = sortDevices(groupedDevices.get(Number(node.id || 0)) || []).map(toDeviceNode)
+          return {
+            ...node,
+            _nodeKey: `group-${node.id}`,
+            type: 'group',
+            label: node.name,
+            children: [...childGroups, ...deviceNodes]
+          }
+        })
+      }
+
+      const groupNodes = attachDeviceNodes(this.groupTree)
+      return [{
+        id: 'all',
+        _nodeKey: 'group-all',
+        label: '总分组',
+        type: 'group',
+        children: [
+          {
+            id: 'ungrouped',
+            _nodeKey: 'group-ungrouped',
+            label: '未分组设备',
+            type: 'group',
+            children: sortDevices(ungroupedDevices).map(toDeviceNode),
+            isVirtual: true
+          },
+          ...groupNodes
+        ],
+        isVirtual: true
+      }]
+    },
     treeScopeLabel() {
+      if (this.treeSelection.mode === 'device') {
+        return this.treeSelection.label || '单台设备'
+      }
       if (this.treeSelection.mode === 'group') {
         return this.treeSelection.label || '指定分组'
       }
       if (this.treeSelection.mode === 'ungrouped') {
         return '未分组设备'
       }
-      return '全部设备'
+      return '总分组'
     },
     filteredDevices() {
       if (this.treeSelection.mode === 'ungrouped') {
         return this.devices.filter(item => !item.groupId)
+      }
+      if (this.treeSelection.mode === 'device' && this.treeSelection.deviceId) {
+        return this.devices.filter(item => Number(item.id || item.ID) === Number(this.treeSelection.deviceId))
       }
       if (this.treeSelection.mode === 'group' && this.treeSelection.groupId) {
         const targetIds = this.collectDescendantGroupIds(Number(this.treeSelection.groupId))
@@ -401,8 +457,7 @@ export default {
         this.selectedDeviceIds = []
         this.$nextTick(() => {
           this.$refs.deviceTableRef?.clearSelection()
-          const key = this.treeSelection.mode === 'group' ? this.treeSelection.groupId : null
-          this.$refs.groupTreeRef?.setCurrentKey(key || null)
+          this.$refs.groupTreeRef?.setCurrentKey(this.resolveTreeSelectionKey())
         })
       }
     }
@@ -449,9 +504,7 @@ export default {
           this.groupTree = this.normalizeTree(Array.isArray(treeRes.data) ? treeRes.data : [])
           this.$nextTick(() => {
             this.$refs.groupTreeRef?.filter(this.treeKeyword)
-            if (this.treeSelection.mode === 'group' && this.treeSelection.groupId) {
-              this.$refs.groupTreeRef?.setCurrentKey(this.treeSelection.groupId)
-            }
+            this.$refs.groupTreeRef?.setCurrentKey(this.resolveTreeSelectionKey())
           })
         }
         if (groupsRes.code === 0) {
@@ -465,7 +518,41 @@ export default {
     },
     filterTreeNode(value, data) {
       if (!value) return true
-      return String(data?.name || '').toLowerCase().includes(value.toLowerCase())
+      return String(data?.label || data?.name || '').toLowerCase().includes(value.toLowerCase())
+    },
+    resolveTreeSelectionKey() {
+      if (this.treeSelection.mode === 'device' && this.treeSelection.deviceId) {
+        return `device-${this.treeSelection.deviceId}`
+      }
+      if (this.treeSelection.mode === 'group' && this.treeSelection.groupId) {
+        return `group-${this.treeSelection.groupId}`
+      }
+      if (this.treeSelection.mode === 'ungrouped') {
+        return 'group-ungrouped'
+      }
+      return 'group-all'
+    },
+    isEditableGroupNode(data) {
+      return data && data.type !== 'device' && !data.isVirtual && data.id !== 'all' && data.id !== 'ungrouped' && !this.isTotalGroupNode(data)
+    },
+    isTotalGroupNode(data) {
+      const label = String(data?.label || data?.name || '').trim()
+      const id = String(data?.id || '')
+      return label === '总分组' || label === '全部设备' || id === 'all'
+    },
+    canDeleteGroup(data) {
+      return this.isEditableGroupNode(data)
+    },
+    isUngroupedNode(data) {
+      const label = String(data?.label || data?.name || '')
+      const id = String(data?.id || '')
+      return label.includes('未分组') || id === 'ungrouped'
+    },
+    getTreeNodeIcon(data) {
+      if (data?.type === 'device') return 'el-icon-monitor'
+      if (data?.id === 'all') return 'el-icon-menu'
+      if (data?.id === 'ungrouped') return 'el-icon-folder'
+      return data?.children?.length ? 'el-icon-folder-opened' : 'el-icon-folder'
     },
     normalizeGroupList(groups = []) {
       return groups.map(item => ({
@@ -508,10 +595,30 @@ export default {
     },
     handleTreeNodeClick(data) {
       if (!data) return
+      if (data.id === 'all') {
+        this.setTreeScope('all')
+        this.hideContextMenu()
+        return
+      }
+      if (data.id === 'ungrouped') {
+        this.setTreeScope('ungrouped')
+        this.hideContextMenu()
+        return
+      }
+      if (data.type === 'device') {
+        this.treeSelection = {
+          mode: 'device',
+          groupId: data.groupId || null,
+          deviceId: data.deviceId,
+          label: data.label
+        }
+        this.hideContextMenu()
+        return
+      }
       this.treeSelection = {
         mode: 'group',
         groupId: data.id,
-        label: data.name
+        label: data.label || data.name
       }
       this.hideContextMenu()
     },
@@ -538,6 +645,9 @@ export default {
     handleContextMenuAction(action) {
       const group = this.contextMenu.node
       if ((action !== 'addRoot' && action !== 'refresh') && !group) {
+        return
+      }
+      if ((action !== 'addRoot' && action !== 'refresh') && !this.isEditableGroupNode(group)) {
         return
       }
       if ((action === 'moveUp' && !this.canMoveUp(group)) || (action === 'moveDown' && !this.canMoveDown(group))) {
@@ -573,6 +683,10 @@ export default {
         return
       }
       if (action === 'delete') {
+        if (!this.canDeleteGroup(group)) {
+          this.$message.warning('总分组不能删除')
+          return
+        }
         this.deleteGroup(group)
         return
       }
@@ -592,7 +706,7 @@ export default {
       this.treeSelection = {
         mode: 'all',
         groupId: null,
-        label: ''
+        label: '总分组'
       }
     },
     async loadDevices(options = {}) {
@@ -959,6 +1073,10 @@ export default {
       await this.persistSort(siblings)
     },
     async deleteGroup(group) {
+      if (!this.canDeleteGroup(group)) {
+        this.$message.warning('总分组不能删除')
+        return
+      }
       try {
         await this.$confirm(
           '确定要删除该分组吗？删除后该分组下设备将转为未分组，子分组会提升到当前层级。',
@@ -983,27 +1101,141 @@ export default {
 
 <style scoped>
 .panel-shell {
+  padding: 8px 10px;
   height: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
 
-.tree-shortcuts {
-  margin-top: 8px;
+.panel-header {
+  gap: 8px;
+  margin-bottom: 8px;
 }
 
 ::v-deep .row-ungrouped td {
   background: rgba(239, 90, 90, 0.045);
 }
 
-.tree-scroll ::v-deep .el-tree-node__content {
+.panel-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.selection-bar {
+  margin-top: 8px;
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  border-radius: 2px;
+  background: #f7f9fc;
+  border: 1px solid #e0e6ee;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.selection-label {
+  color: #9099a5;
+  font-size: 11px;
+}
+
+.selection-value {
+  flex: 1;
+  min-width: 0;
+  color: #4c5768;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tree-wrapper {
+  flex: 1;
+  min-height: 0;
+  margin-top: 6px;
+  border: 1px solid #dfe6ee;
+  border-radius: 2px;
+  padding: 6px;
+  overflow: auto;
+  background: #ffffff;
+}
+
+.tree-node {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.tree-node-main {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tree-node-main.ungrouped {
+  color: #d94a4a;
+  font-weight: 700;
+}
+
+.tree-node-icon {
+  color: #6d7e94;
+}
+
+.tree-node-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-dot {
+  flex-shrink: 0;
+  margin-left: auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.status-dot.online,
+.status-dot.idle {
+  background: #2fb46e;
+}
+
+.status-dot.working {
+  background: #2f6df6;
+}
+
+.status-dot.alarm {
+  background: #ef5a5a;
+}
+
+.status-dot.offline {
+  background: #8a98ad;
+}
+
+::v-deep .el-tree {
+  background: transparent;
+}
+
+::v-deep .el-tree-node__content {
   height: 30px;
   border-radius: 2px;
   margin-bottom: 2px;
+  padding-right: 4px;
 }
 
-.tree-scroll ::v-deep .el-tree-node.is-current > .el-tree-node__content {
+::v-deep .el-tree-node__content:hover {
+  background: #f5f8fc;
+}
+
+::v-deep .el-tree-node.is-current > .el-tree-node__content {
   background: #e8f2ff;
 }
 

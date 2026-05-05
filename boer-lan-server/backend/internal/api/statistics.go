@@ -36,6 +36,13 @@ func (h *StatisticsHandler) localDateExpr(column string) string {
 	return fmt.Sprintf("DATE(%s)", column)
 }
 
+func (h *StatisticsHandler) localDateTimeExpr(column string) string {
+	if h.isSQLite() {
+		return fmt.Sprintf("strftime('%%Y-%%m-%%d %%H:%%M:%%S', %s, 'localtime')", column)
+	}
+	return fmt.Sprintf("DATE_FORMAT(%s, '%%Y-%%m-%%d %%H:%%i:%%s')", column)
+}
+
 func formatLocalStatsDate(value time.Time) string {
 	if value.IsZero() {
 		return ""
@@ -816,11 +823,6 @@ func (h *StatisticsHandler) GetDashboardData(c *gin.Context) {
 	deviceCount := h.countDashboardScopeDevices(deviceId, deviceIDs)
 	onlineDeviceCount := h.countDashboardOnlineDevices(deviceId, deviceIDs)
 	todayAlarmCount, totalAlarmCount := h.countDashboardAlarms(deviceId, deviceIDs)
-	isAggregateScope := strings.TrimSpace(deviceId) == "" && deviceCount > 0
-	if isAggregateScope {
-		runtimeTime = todayRuntimeTime / float64(deviceCount)
-		processingTime = todayProcessingTime / float64(deviceCount)
-	}
 	utilizationRate := h.getTodayUtilizationRate(deviceId, deviceIDs, deviceCount)
 	if deviceCount > 0 {
 		avgUsedThreadLength = usedThreadLength / float64(deviceCount)
@@ -835,11 +837,7 @@ func (h *StatisticsHandler) GetDashboardData(c *gin.Context) {
 	// 近10天产量趋势
 	hourlyProduction := h.getHourlyProduction(deviceId, deviceIDs)
 	// 近7天运行/加工时长趋势 + 近7天使用率趋势
-	trendAvgDeviceCount := int64(0)
-	if isAggregateScope {
-		trendAvgDeviceCount = deviceCount
-	}
-	runningProcessingTrend, utilizationTrend := h.getRuntimeAndUtilizationTrends(deviceId, deviceIDs, trendAvgDeviceCount)
+	runningProcessingTrend, utilizationTrend := h.getRuntimeAndUtilizationTrends(deviceId, deviceIDs, 0)
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
@@ -851,9 +849,9 @@ func (h *StatisticsHandler) GetDashboardData(c *gin.Context) {
 			"usedThreadLength":       roundFloat(usedThreadLength, 2),
 			"avgUsedThreadLength":    roundFloat(avgUsedThreadLength, 2),
 			"spindleSpeed":           spindleSpeed,
-			"runningTime":            roundFloat(runtimeTime, 2),
-			"processingTime":         roundFloat(processingTime, 2),
-			"utilizationRate":        roundFloat(utilizationRate, 2),
+			"runningTime":            roundFloat(runtimeTime, 6),
+			"processingTime":         roundFloat(processingTime, 6),
+			"utilizationRate":        roundFloat(utilizationRate, 4),
 			"todayAlarmCount":        todayAlarmCount,
 			"totalAlarmCount":        totalAlarmCount,
 			"onlineDeviceCount":      onlineDeviceCount,
@@ -1056,7 +1054,7 @@ func (h *StatisticsHandler) getTodayUtilizationRate(deviceId string, deviceIDs [
 			totals.Processing += row.Processing
 			totals.Runtime += row.Runtime
 		}
-		return roundFloat(calculateUtilizationRate(totals.Processing, totals.Runtime), 2)
+		return roundFloat(calculateUtilizationRate(totals.Processing, totals.Runtime), 4)
 	}
 
 	totalUtilization := 0.0
@@ -1068,10 +1066,13 @@ func (h *StatisticsHandler) getTodayUtilizationRate(deviceId string, deviceIDs [
 	}
 
 	if deviceCount > 0 {
-		return roundFloat(totalUtilization/float64(deviceCount), 2)
+		if len(rows) > 0 {
+			return roundFloat(totalUtilization/float64(len(rows)), 4)
+		}
+		return 0
 	}
 	if len(rows) > 0 {
-		return roundFloat(totalUtilization/float64(len(rows)), 2)
+		return roundFloat(totalUtilization/float64(len(rows)), 4)
 	}
 	return 0
 }
@@ -1113,13 +1114,13 @@ func (h *StatisticsHandler) getRuntimeAndUtilizationTrends(deviceId string, devi
 			processingBase = processingBase / float64(avgDeviceCount)
 		}
 
-		running := roundFloat(runningBase, 2)
-		processing := roundFloat(processingBase, 2)
+		running := roundFloat(runningBase, 6)
+		processing := roundFloat(processingBase, 6)
 		utilization := 0.0
 		if avgDeviceCount > 0 {
-			utilization = roundFloat(item.UtilSum/float64(avgDeviceCount), 2)
+			utilization = roundFloat(item.UtilSum/float64(avgDeviceCount), 4)
 		} else if item.UtilCount > 0 {
-			utilization = roundFloat(item.UtilSum/float64(item.UtilCount), 2)
+			utilization = roundFloat(item.UtilSum/float64(item.UtilCount), 4)
 		}
 
 		runningProcessingTrend = append(runningProcessingTrend, gin.H{
@@ -1181,8 +1182,9 @@ func (h *StatisticsHandler) GetSalaryStats(c *gin.Context) {
 		TotalPieces   int64
 		EmployeeCount int64
 	}
+	salaryAmountExpr := h.salaryAmountExpr()
 	baseQuery.Session(&gorm.Session{}).
-		Select("COALESCE(SUM(sr.total_amount), 0) as total_salary, COALESCE(SUM(sr.pieces), 0) as total_pieces, COUNT(DISTINCT sr.employee_id) as employee_count").
+		Select(fmt.Sprintf("COALESCE(SUM(%s), 0) as total_salary, COALESCE(SUM(sr.pieces), 0) as total_pieces, COUNT(DISTINCT sr.employee_id) as employee_count", salaryAmountExpr)).
 		Scan(&summaryRow)
 
 	averageSalary := 0.0
@@ -1194,14 +1196,16 @@ func (h *StatisticsHandler) GetSalaryStats(c *gin.Context) {
 
 	var results []struct {
 		model.SalaryRecord
-		EmployeeName string
-		EmployeeCode string
-		DeviceName   string
+		EmployeeName  string
+		EmployeeCode  string
+		DeviceName    string
+		LiveUnitPrice float64
+		LiveSalary    float64
+		LiveTotal     float64
 	}
 	offset := (page - 1) * pageSize
 	baseQuery.Session(&gorm.Session{}).
-		Select("sr.*, COALESCE(NULLIF(sr.pattern_name, ''), p.name, '') as pattern_name, COALESCE(NULLIF(sr.order_no, ''), p.order_no, '') as order_no, e.name as employee_name, e.code as employee_code, d.name as device_name").
-		Joins("LEFT JOIN patterns p ON sr.pattern_id = p.id").
+		Select(fmt.Sprintf("sr.*, COALESCE(NULLIF(sr.pattern_name, ''), p.name, '') as pattern_name, COALESCE(NULLIF(p.order_no, ''), '') as order_no, e.name as employee_name, e.code as employee_code, d.name as device_name, %s as live_unit_price, %s as live_salary, %s as live_total", h.salaryUnitPriceExpr(), salaryAmountExpr, salaryAmountExpr)).
 		Order("sr.record_date DESC").
 		Offset(offset).
 		Limit(pageSize).
@@ -1220,10 +1224,9 @@ func (h *StatisticsHandler) GetSalaryStats(c *gin.Context) {
 			"patternName":  strings.TrimSpace(r.PatternName),
 			"orderNo":      strings.TrimSpace(r.OrderNo),
 			"totalPieces":  r.Pieces,
-			"unitPrice":    roundFloat(r.UnitPrice, 3),
-			"salary":       roundFloat(r.Salary, 2),
-			"bonus":        roundFloat(r.Bonus, 2),
-			"totalAmount":  roundFloat(r.TotalAmount, 2),
+			"unitPrice":    roundFloat(r.LiveUnitPrice, 3),
+			"salary":       roundFloat(r.LiveSalary, 2),
+			"totalAmount":  roundFloat(r.LiveTotal, 2),
 			"date":         r.RecordDate.Format("2006-01-02"),
 		})
 	}
@@ -1233,7 +1236,7 @@ func (h *StatisticsHandler) GetSalaryStats(c *gin.Context) {
 		TotalAmount  float64
 	}
 	baseQuery.Session(&gorm.Session{}).
-		Select("COALESCE(e.name, '未知员工') as employee_name, COALESCE(SUM(sr.total_amount), 0) as total_amount").
+		Select(fmt.Sprintf("COALESCE(e.name, '未知员工') as employee_name, COALESCE(SUM(%s), 0) as total_amount", salaryAmountExpr)).
 		Group("sr.employee_id, e.name").
 		Order("total_amount DESC").
 		Limit(10).
@@ -1253,7 +1256,7 @@ func (h *StatisticsHandler) GetSalaryStats(c *gin.Context) {
 	}
 	salaryDateExpr := h.localDateExpr("sr.record_date")
 	baseQuery.Session(&gorm.Session{}).
-		Select(fmt.Sprintf("%s as date, COALESCE(SUM(sr.total_amount), 0) as total_amount", salaryDateExpr)).
+		Select(fmt.Sprintf("%s as date, COALESCE(SUM(%s), 0) as total_amount", salaryDateExpr, salaryAmountExpr)).
 		Group(salaryDateExpr).
 		Order("date").
 		Scan(&trendRows)
@@ -1316,7 +1319,7 @@ func (h *StatisticsHandler) GetSalaryDetail(c *gin.Context) {
 		DurationHours   float64
 	}
 	query.Session(&gorm.Session{}).
-		Select(fmt.Sprintf("pr.*, %s, COALESCE(NULLIF(pr.pattern_name, ''), p.name, '未命名花型') as pattern_name, COALESCE(NULLIF(p.stitches, 0), pr.stitches, 0) as pattern_stitches, COALESCE(NULLIF(pr.unit_price, 0), p.unit_price, 0) as unit_price, COALESCE(NULLIF(pr.order_no, ''), p.order_no, '') as order_no, %s", h.deviceNameExpr("pr.device_id", "device_name"), h.productionDurationHoursExpr("pr", "duration_hours"))).
+		Select(fmt.Sprintf("pr.*, %s, COALESCE(NULLIF(pr.pattern_name, ''), p.name, '未命名花型') as pattern_name, COALESCE(NULLIF(p.stitches, 0), pr.stitches, 0) as pattern_stitches, %s as unit_price, COALESCE(NULLIF(pr.order_no, ''), p.order_no, '') as order_no, %s", h.deviceNameExpr("pr.device_id", "device_name"), h.productionUnitPriceExpr(), h.productionDurationHoursExpr("pr", "duration_hours"))).
 		Joins("LEFT JOIN devices d ON pr.device_id = d.id").
 		Joins("LEFT JOIN patterns p ON pr.pattern_id = p.id").
 		Order("pr.record_date DESC, pr.created_at DESC, pr.id DESC").
@@ -1438,8 +1441,8 @@ func (h *StatisticsHandler) GetProcessOverview(c *gin.Context) {
 		patternCountKey := makeDevicePatternDateKey(row.DeviceID, row.PatternID, row.PatternName, dateKey)
 		patternSewCount := patternSewCountMap[patternCountKey]
 		alarmInfo := alarmInfoMap[makeDeviceDateKey(row.DeviceID, dateKey)]
-		alarmText := "-"
-		alarmTime := "-"
+		alarmText := "无"
+		alarmTime := "无"
 		if alarmInfo.AlarmInfo != "" {
 			alarmText = alarmInfo.AlarmInfo
 		}
@@ -2153,6 +2156,8 @@ func (h *StatisticsHandler) exportSalaryCSV(c *gin.Context) {
 	mode := c.DefaultQuery("mode", "all")
 
 	baseQuery := h.buildSalaryStatsBaseQuery(startDate, endDate, employeeId, employeeKeyword, deviceId, deviceIDs)
+	salaryUnitPriceExpr := h.salaryUnitPriceExpr()
+	salaryAmountExpr := h.salaryAmountExpr()
 
 	fileNamePrefix := "salary_stats"
 	switch mode {
@@ -2164,12 +2169,11 @@ func (h *StatisticsHandler) exportSalaryCSV(c *gin.Context) {
 			UnitPrice    float64
 			TotalPieces  int64
 			Salary       float64
-			Bonus        float64
 			TotalAmount  float64
 		}
 		baseQuery.Session(&gorm.Session{}).
-			Select("e.name as employee_name, e.code as employee_code, d.name as device_name, COALESCE(sr.unit_price, 0) as unit_price, COALESCE(SUM(sr.pieces), 0) as total_pieces, COALESCE(SUM(sr.salary), 0) as salary, COALESCE(SUM(sr.bonus), 0) as bonus, COALESCE(SUM(sr.total_amount), 0) as total_amount").
-			Group("sr.employee_id, e.name, e.code, sr.device_id, d.name, sr.unit_price").
+			Select(fmt.Sprintf("e.name as employee_name, e.code as employee_code, d.name as device_name, %s as unit_price, COALESCE(SUM(sr.pieces), 0) as total_pieces, COALESCE(SUM(%s), 0) as salary, COALESCE(SUM(%s), 0) as total_amount", salaryUnitPriceExpr, salaryAmountExpr, salaryAmountExpr)).
+			Group(fmt.Sprintf("sr.employee_id, e.name, e.code, sr.device_id, d.name, %s", salaryUnitPriceExpr)).
 			Order("total_amount DESC").
 			Scan(&rowsData)
 
@@ -2182,14 +2186,13 @@ func (h *StatisticsHandler) exportSalaryCSV(c *gin.Context) {
 				strconv.FormatInt(row.TotalPieces, 10),
 				csvFloat(row.UnitPrice, 3),
 				csvFloat(row.Salary, 2),
-				csvFloat(row.Bonus, 2),
 				csvFloat(row.TotalAmount, 2),
 			})
 		}
 
 		writeCSVResponse(c,
 			fileNamePrefix+"_merged_"+time.Now().Format("20060102_150405")+".csv",
-			[]string{"员工工号", "员工姓名", "设备名称", "加工件数", "单价(元)", "工资(元)", "奖金(元)", "合计(元)"},
+			[]string{"员工工号", "员工姓名", "设备名称", "加工件数", "单价(元)", "工资(元)", "合计(元)"},
 			rows,
 		)
 		return
@@ -2200,8 +2203,7 @@ func (h *StatisticsHandler) exportSalaryCSV(c *gin.Context) {
 	}
 
 	query := baseQuery.Session(&gorm.Session{}).
-		Select("sr.*, COALESCE(NULLIF(sr.pattern_name, ''), p.name, '') as pattern_name, COALESCE(NULLIF(sr.order_no, ''), p.order_no, '') as order_no, e.name as employee_name, e.code as employee_code, d.name as device_name").
-		Joins("LEFT JOIN patterns p ON sr.pattern_id = p.id").
+		Select(fmt.Sprintf("sr.*, COALESCE(NULLIF(sr.pattern_name, ''), p.name, '') as pattern_name, COALESCE(NULLIF(p.order_no, ''), '') as order_no, e.name as employee_name, e.code as employee_code, d.name as device_name, %s as live_unit_price, %s as live_salary, %s as live_total", salaryUnitPriceExpr, salaryAmountExpr, salaryAmountExpr)).
 		Order("sr.record_date DESC")
 
 	if mode == "current" {
@@ -2214,9 +2216,12 @@ func (h *StatisticsHandler) exportSalaryCSV(c *gin.Context) {
 
 	var rowsData []struct {
 		model.SalaryRecord
-		EmployeeName string
-		EmployeeCode string
-		DeviceName   string
+		EmployeeName  string
+		EmployeeCode  string
+		DeviceName    string
+		LiveUnitPrice float64
+		LiveSalary    float64
+		LiveTotal     float64
 	}
 	query.Scan(&rowsData)
 
@@ -2229,17 +2234,16 @@ func (h *StatisticsHandler) exportSalaryCSV(c *gin.Context) {
 			row.PatternName,
 			row.OrderNo,
 			strconv.Itoa(row.Pieces),
-			csvFloat(row.UnitPrice, 3),
-			csvFloat(row.Salary, 2),
-			csvFloat(row.Bonus, 2),
-			csvFloat(row.TotalAmount, 2),
+			csvFloat(row.LiveUnitPrice, 3),
+			csvFloat(row.LiveSalary, 2),
+			csvFloat(row.LiveTotal, 2),
 			row.RecordDate.Format("2006-01-02"),
 		})
 	}
 
 	writeCSVResponse(c,
 		fileNamePrefix+"_"+time.Now().Format("20060102_150405")+".csv",
-		[]string{"员工工号", "员工姓名", "设备名称", "花型名称", "订单号", "加工件数", "单价(元)", "工资(元)", "奖金(元)", "合计(元)", "日期"},
+		[]string{"员工工号", "员工姓名", "设备名称", "花型名称", "订单号", "加工件数", "单价(元)", "工资(元)", "合计(元)", "日期"},
 		rows,
 	)
 }
@@ -2298,8 +2302,8 @@ func (h *StatisticsHandler) exportProcessCSV(c *gin.Context) {
 		cumulativeUpTime := resolveCumulativeUpTime(deviceDayUsage, runningHours, row.IdleTime)
 		patternSewCount := patternSewCountMap[makeDevicePatternDateKey(row.DeviceID, row.PatternID, row.PatternName, dateKey)]
 		alarmInfo := alarmInfoMap[makeDeviceDateKey(row.DeviceID, dateKey)]
-		alarmText := "-"
-		alarmTime := "-"
+		alarmText := "无"
+		alarmTime := "无"
 		if alarmInfo.AlarmInfo != "" {
 			alarmText = alarmInfo.AlarmInfo
 		}
@@ -2524,23 +2528,24 @@ func (h *StatisticsHandler) loadAlarmInfoByDeviceDate(startDate, endDate, device
 		DeviceID   uint
 		RecordDate string
 		AlarmInfo  string
-		AlarmTime  time.Time
+		AlarmTime  string
 	}
 	recordDateExpr := h.localDateExpr("ar.start_time")
+	alarmStartExpr := h.localDateTimeExpr("MIN(ar.start_time)")
 	baseQuery.Session(&gorm.Session{}).
-		Select(fmt.Sprintf("ar.device_id, %s as record_date, %s, MIN(ar.start_time) as alarm_time", recordDateExpr, h.alarmInfoAggregateExpr("alarm_info"))).
+		Select(fmt.Sprintf("ar.device_id, %s as record_date, %s, %s as alarm_time", recordDateExpr, h.alarmInfoAggregateExpr("alarm_info"), alarmStartExpr)).
 		Group("ar.device_id, " + recordDateExpr).
 		Scan(&rows)
 
 	result := make(map[string]alarmDailyInfo, len(rows))
 	for _, row := range rows {
-		alarmTime := "-"
-		if !row.AlarmTime.IsZero() {
-			alarmTime = row.AlarmTime.Format("2006-01-02 15:04:05")
+		alarmTime := strings.TrimSpace(row.AlarmTime)
+		if alarmTime == "" {
+			alarmTime = "无"
 		}
 		alarmInfo := row.AlarmInfo
 		if alarmInfo == "" {
-			alarmInfo = "-"
+			alarmInfo = "无"
 		}
 		result[makeDeviceDateKey(row.DeviceID, row.RecordDate)] = alarmDailyInfo{
 			AlarmInfo: alarmInfo,
@@ -2587,7 +2592,8 @@ func (h *StatisticsHandler) loadEmployeeInfoByDeviceDate(startDate, endDate, dev
 func (h *StatisticsHandler) buildSalaryStatsBaseQuery(startDate, endDate, employeeId, employeeKeyword, deviceId string, deviceIDs []uint) *gorm.DB {
 	query := h.db.Table("salary_records sr").
 		Joins("LEFT JOIN employees e ON sr.employee_id = e.id").
-		Joins("LEFT JOIN devices d ON sr.device_id = d.id")
+		Joins("LEFT JOIN devices d ON sr.device_id = d.id").
+		Joins("LEFT JOIN patterns p ON sr.pattern_id = p.id")
 	query = applyDateRangeFilter(query, h.localDateExpr("sr.record_date"), startDate, endDate)
 	if employeeId != "" {
 		query = query.Where("sr.employee_id = ?", employeeId)
@@ -2602,6 +2608,37 @@ func (h *StatisticsHandler) buildSalaryStatsBaseQuery(startDate, endDate, employ
 		query = query.Where("sr.device_id = ?", deviceId)
 	}
 	return query
+}
+
+func (h *StatisticsHandler) salaryUnitPriceExpr() string {
+	return h.livePatternUnitPriceExpr("sr", "p")
+}
+
+func (h *StatisticsHandler) salaryAmountExpr() string {
+	return fmt.Sprintf("(COALESCE(sr.pieces, 0) * %s)", h.salaryUnitPriceExpr())
+}
+
+func (h *StatisticsHandler) productionUnitPriceExpr() string {
+	return h.livePatternUnitPriceExpr("pr", "p")
+}
+
+func (h *StatisticsHandler) livePatternUnitPriceExpr(recordAlias, joinedPatternAlias string) string {
+	recordPatternName := fmt.Sprintf("TRIM(COALESCE(%s.pattern_name, ''))", recordAlias)
+	joinedUnitPrice := fmt.Sprintf("%s.unit_price", joinedPatternAlias)
+
+	matchedPatternUnitPrice := fmt.Sprintf(`(
+		SELECT p_live.unit_price
+		FROM patterns p_live
+		WHERE p_live.deleted_at IS NULL
+			AND %s <> ''
+			AND TRIM(COALESCE(p_live.name, '')) = %s
+		ORDER BY
+			p_live.updated_at DESC,
+			p_live.id DESC
+		LIMIT 1
+	)`, recordPatternName, recordPatternName)
+
+	return fmt.Sprintf("COALESCE(NULLIF(%s, 0), NULLIF(%s, 0), %s.unit_price, 0)", joinedUnitPrice, matchedPatternUnitPrice, recordAlias)
 }
 
 func (h *StatisticsHandler) buildProductionStatsBaseQuery(startDate, endDate, deviceId string, deviceIDs []uint) *gorm.DB {

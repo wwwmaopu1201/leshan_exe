@@ -292,14 +292,20 @@
       @contextmenu.prevent
     >
       <li @click="handleContextMenuAction('addRoot')">新增分组</li>
-      <template v-if="contextMenu.node && !contextMenu.node.isRoot && !contextMenu.node.isVirtual && !contextMenu.node.isDevice">
+      <template v-if="contextMenu.node && isEditableGroupNode(contextMenu.node)">
         <li @click="handleContextMenuAction('addSibling')">新增平级组</li>
         <li @click="handleContextMenuAction('addChild')">新增子组</li>
         <li @click="handleContextMenuAction('moveSelectedHere')">移动已选设备到当前组</li>
         <li @click="handleContextMenuAction('moveUp')">上移</li>
         <li @click="handleContextMenuAction('moveDown')">下移</li>
         <li @click="handleContextMenuAction('edit')">重命名</li>
-        <li class="danger" @click="handleContextMenuAction('delete')">删除分组</li>
+        <li
+          class="danger"
+          :class="{ disabled: !canDeleteGroup(contextMenu.node) }"
+          @click="handleContextMenuAction('delete')"
+        >
+          删除分组
+        </li>
       </template>
       <li @click="handleContextMenuAction('refresh')">刷新</li>
     </ul>
@@ -1163,6 +1169,17 @@ export default {
       }
       this.contextMenu.visible = false
     },
+    isTotalGroupNode(data) {
+      const label = String(data?.label || data?.name || '').trim()
+      const id = String(data?.id || '')
+      return label === '总分组' || label === '全部设备' || id === 'all'
+    },
+    isEditableGroupNode(data) {
+      return !!data && !data.isRoot && !data.isVirtual && !data.isDevice && !this.isTotalGroupNode(data)
+    },
+    canDeleteGroup(data) {
+      return this.isEditableGroupNode(data)
+    },
     handleContextMenuAction(action) {
       const data = this.contextMenu.node
       this.hideContextMenu()
@@ -1174,7 +1191,7 @@ export default {
         this.fetchAll()
         return
       }
-      if (!data || data.isRoot || data.isVirtual || data.isDevice) {
+      if (!this.isEditableGroupNode(data)) {
         return
       }
       if (action === 'addSibling') {
@@ -1202,6 +1219,10 @@ export default {
         return
       }
       if (action === 'delete') {
+        if (!this.canDeleteGroup(data)) {
+          this.$message.warning('总分组不能删除')
+          return
+        }
         this.handleDeleteGroup(data)
       }
     },
@@ -1440,6 +1461,10 @@ export default {
       }
     },
     handleDeleteGroup(data) {
+      if (!this.canDeleteGroup(data)) {
+        this.$message.warning('总分组不能删除')
+        return
+      }
       this.$confirm(`确定要删除分组"${data.label}"吗？`, '警告', {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
@@ -1657,6 +1682,15 @@ export default {
 
     &.danger {
       color: #f56c6c;
+    }
+
+    &.disabled {
+      color: #c0c4cc;
+      cursor: not-allowed;
+    }
+
+    &.disabled:hover {
+      background: transparent;
     }
   }
 }

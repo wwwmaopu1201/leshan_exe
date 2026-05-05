@@ -160,9 +160,11 @@
             border
             v-loading="loading"
             show-summary
+            :summary-method="getSalaryTableSummary"
             :height="tableHeight"
             empty-text="暂无数据"
           >
+            <el-table-column type="index" label="序号" width="60" align="center" :index="getSalaryRowIndex" />
             <el-table-column prop="employeeName" label="员工姓名" width="120" />
             <el-table-column prop="employeeCode" label="员工工号" width="110" />
             <el-table-column prop="deviceName" label="设备名称" width="130" />
@@ -188,7 +190,6 @@
                 <span class="text-primary">{{ Number(scope.row.salary || 0).toFixed(2) }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="bonus" label="奖金(元)" width="100" align="right" />
             <el-table-column prop="totalAmount" label="合计(元)" width="120" align="right">
               <template slot-scope="scope">
                 <span class="text-success">{{ Number(scope.row.totalAmount || 0).toFixed(2) }}</span>
@@ -324,7 +325,8 @@ export default {
         loading: false,
         title: '工资明细',
         rows: []
-      }
+      },
+      hasLoadedSalaryStats: false
     }
   },
   computed: {
@@ -359,14 +361,23 @@ export default {
   mounted() {
     this.fetchEmployees()
     this.fetchDevices()
-    this.fetchData()
+    this.refreshOnEnter()
     window.addEventListener('resize', this.handleResize)
+  },
+  activated() {
+    if (this.hasLoadedSalaryStats) {
+      this.refreshOnEnter()
+    }
   },
   beforeDestroy() {
     window.removeEventListener('resize', this.handleResize)
     Object.values(this.charts).forEach(chart => chart && chart.dispose())
   },
   methods: {
+    refreshOnEnter() {
+      this.pagination.page = 1
+      return this.fetchData()
+    },
     async fetchEmployees() {
       try {
         const res = await getEmployeeList({ page: 1, pageSize: 1000 })
@@ -455,14 +466,48 @@ export default {
       this.pagination.page = 1
       this.fetchData()
     },
+    buildDeviceScopeParams() {
+      const filter = this.searchForm.deviceFilter || defaultDeviceFilter()
+      const deviceIds = Array.isArray(filter.deviceIds)
+        ? filter.deviceIds
+          .map(id => Number(id))
+          .filter(id => Number.isFinite(id) && id > 0)
+        : []
+
+      if (filter.nodeType === 'device' && filter.deviceId) {
+        return {
+          deviceId: filter.deviceId,
+          deviceIds: ''
+        }
+      }
+
+      if (filter.nodeType === 'group') {
+        if (deviceIds.length === 0) {
+          return {
+            deviceId: '0',
+            deviceIds: ''
+          }
+        }
+        return {
+          deviceId: '',
+          deviceIds: deviceIds.join(',')
+        }
+      }
+
+      return {
+        deviceId: '',
+        deviceIds: ''
+      }
+    },
     buildSalaryParams(overrides = {}) {
+      const deviceScopeParams = this.buildDeviceScopeParams()
       return {
         startDate: this.searchForm.dateRange?.[0],
         endDate: this.searchForm.dateRange?.[1],
         employeeId: this.searchForm.employeeId,
         employeeKeyword: this.searchForm.employeeKeyword,
-        deviceId: this.searchForm.deviceFilter.deviceId,
-        deviceIds: this.searchForm.deviceFilter.deviceIds.join(','),
+        deviceId: deviceScopeParams.deviceId,
+        deviceIds: deviceScopeParams.deviceIds,
         fallbackLatest: 1,
         page: 1,
         pageSize: 2000,
@@ -517,6 +562,7 @@ export default {
         console.error('Failed to fetch salary stats:', error)
       } finally {
         this.loading = false
+        this.hasLoadedSalaryStats = true
       }
     },
     applyLocalFilters(list) {
@@ -530,6 +576,22 @@ export default {
         const matchedMax = salaryMax === null || salaryMax === undefined || amount <= Number(salaryMax)
         return matchedDevice && matchedMin && matchedMax
       })
+    },
+    getSalaryTableSummary({ columns, data }) {
+      const sumColumns = new Set(['totalPieces', 'salary', 'totalAmount'])
+      return columns.map((column, index) => {
+        if (index === 0) {
+          return '合计'
+        }
+        if (!sumColumns.has(column.property)) {
+          return ''
+        }
+        const total = data.reduce((sum, row) => sum + Number(row[column.property] || 0), 0)
+        return column.property === 'totalPieces' ? total : total.toFixed(2)
+      })
+    },
+    getSalaryRowIndex(index) {
+      return (this.pagination.page - 1) * this.pagination.pageSize + index + 1
     },
     handleSearch() {
       this.pagination.page = 1
@@ -562,11 +624,12 @@ export default {
       this.detailDialog.title = `${row.employeeName || '-'} ${row.date || ''} 工资明细`
       this.syncDetailDialogTableHeight()
       try {
+        const deviceScopeParams = this.buildDeviceScopeParams()
         const res = await getSalaryDetail({
           date: row.date,
           employeeId: row.employeeId || this.searchForm.employeeId,
-          deviceId: this.searchForm.deviceFilter.deviceId,
-          deviceIds: this.searchForm.deviceFilter.deviceIds.join(','),
+          deviceId: deviceScopeParams.deviceId,
+          deviceIds: deviceScopeParams.deviceIds,
           startDate: this.searchForm.dateRange?.[0],
           endDate: this.searchForm.dateRange?.[1]
         })
@@ -595,13 +658,14 @@ export default {
     },
     async handleExport(mode = 'all') {
       try {
+        const deviceScopeParams = this.buildDeviceScopeParams()
         const response = await exportStatistics('salary', {
           startDate: this.searchForm.dateRange?.[0],
           endDate: this.searchForm.dateRange?.[1],
           employeeId: this.searchForm.employeeId,
           employeeKeyword: this.searchForm.employeeKeyword,
-          deviceId: this.searchForm.deviceFilter.deviceId,
-          deviceIds: this.searchForm.deviceFilter.deviceIds.join(','),
+          deviceId: deviceScopeParams.deviceId,
+          deviceIds: deviceScopeParams.deviceIds,
           deviceKeyword: this.searchForm.deviceKeyword,
           salaryMin: this.searchForm.salaryMin,
           salaryMax: this.searchForm.salaryMax,

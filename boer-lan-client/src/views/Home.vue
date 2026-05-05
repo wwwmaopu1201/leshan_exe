@@ -686,7 +686,7 @@ export default {
       chart.setOption({
         animationDuration: 500,
         tooltip: { trigger: 'axis' },
-        grid: { left: 30, right: 20, top: 16, bottom: 18 },
+        grid: { left: 30, right: 20, top: 16, bottom: 16 },
         xAxis: {
           type: 'category',
           boundaryGap: false,
@@ -732,7 +732,7 @@ export default {
       chart.setOption({
         animationDuration: 500,
         tooltip: { trigger: 'axis' },
-        grid: { left: 36, right: 18, top: 16, bottom: 20 },
+        grid: { left: 36, right: 18, top: 16, bottom: 16 },
         xAxis: {
           type: 'category',
           data: source.map(item => item.label),
@@ -772,13 +772,16 @@ export default {
 
 <style lang="scss" scoped>
 .home-page {
+  height: 100%;
   background: #f1f3f6;
   overflow: auto;
 }
 
 .home-layout {
+  height: 100%;
   min-width: 0;
   padding: 10px;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -798,9 +801,12 @@ export default {
 }
 
 .home-bottom-grid {
+  flex: 1;
+  min-height: 350px;
   display: grid;
   grid-template-columns: 1fr 1.48fr;
   gap: 10px;
+  align-items: stretch;
 }
 
 .panel-card {
@@ -1082,7 +1088,16 @@ export default {
 }
 
 .panel-card--chart {
-  min-height: 326px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+
+  ::v-deep .el-card__body {
+    flex: 1;
+    min-height: 0;
+    padding: 10px 14px;
+    display: flex;
+  }
 }
 
 .chart-legend {
@@ -1169,14 +1184,16 @@ export default {
 
 .chart-surface {
   width: 100%;
+  flex: 1;
+  min-height: 0;
 }
 
 .chart-surface--running {
-  height: 252px;
+  min-height: 276px;
 }
 
 .chart-surface--production {
-  height: 252px;
+  min-height: 276px;
 }
 
 @media (max-width: 1440px) {

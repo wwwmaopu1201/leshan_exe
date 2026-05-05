@@ -108,6 +108,178 @@ func TestGetDeviceUsageIncludesGroupsLinesAndIdleDevices(t *testing.T) {
 	}
 }
 
+func TestGetSalaryStatsUsesCurrentPatternUnitPrice(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db, err := gorm.Open(sqlite.Open("file:salary_live_price_test?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.User{}, &model.Employee{}, &model.Device{}, &model.Pattern{}, &model.SalaryRecord{}); err != nil {
+		t.Fatalf("migrate schema: %v", err)
+	}
+
+	user := model.User{Username: "stats-user", Password: "hashed", Role: "admin"}
+	employee := model.Employee{Code: "E-001", Name: "员工一"}
+	device := model.Device{Code: "D-001", Name: "设备一"}
+	pattern := model.Pattern{Name: "花型一", UnitPrice: 2.5}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if err := db.Create(&employee).Error; err != nil {
+		t.Fatalf("create employee: %v", err)
+	}
+	if err := db.Create(&device).Error; err != nil {
+		t.Fatalf("create device: %v", err)
+	}
+	if err := db.Create(&pattern).Error; err != nil {
+		t.Fatalf("create pattern: %v", err)
+	}
+	recordDate := time.Date(2026, 5, 5, 10, 0, 0, 0, time.Local)
+	if err := db.Create(&model.SalaryRecord{
+		EmployeeID:  employee.ID,
+		DeviceID:    device.ID,
+		PatternID:   pattern.ID,
+		PatternName: pattern.Name,
+		Pieces:      10,
+		UnitPrice:   1,
+		Salary:      10,
+		Bonus:       3,
+		TotalAmount: 13,
+		RecordDate:  recordDate,
+	}).Error; err != nil {
+		t.Fatalf("create salary record: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/statistics/salary?startDate=2026-05-05&endDate=2026-05-05", nil)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+	c.Set("userId", user.ID)
+	c.Set("role", user.Role)
+
+	NewStatisticsHandler(db).GetSalaryStats(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+
+	var body struct {
+		Code int `json:"code"`
+		Data struct {
+			Summary struct {
+				TotalSalary float64 `json:"totalSalary"`
+			} `json:"summary"`
+			List []struct {
+				UnitPrice   float64 `json:"unitPrice"`
+				Salary      float64 `json:"salary"`
+				TotalAmount float64 `json:"totalAmount"`
+			} `json:"list"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Code != 0 {
+		t.Fatalf("expected code 0, got %d", body.Code)
+	}
+	if len(body.Data.List) != 1 {
+		t.Fatalf("expected one salary row, got %d", len(body.Data.List))
+	}
+	row := body.Data.List[0]
+	if row.UnitPrice != 2.5 || row.Salary != 25 || row.TotalAmount != 25 {
+		t.Fatalf("expected live price salary values, got %#v", row)
+	}
+	if body.Data.Summary.TotalSalary != 25 {
+		t.Fatalf("expected live summary total 25, got %.2f", body.Data.Summary.TotalSalary)
+	}
+}
+
+func TestGetSalaryStatsUsesCurrentPatternUnitPriceWithoutPatternID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db, err := gorm.Open(sqlite.Open("file:salary_live_price_by_name_test?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.User{}, &model.Employee{}, &model.Device{}, &model.Pattern{}, &model.SalaryRecord{}); err != nil {
+		t.Fatalf("migrate schema: %v", err)
+	}
+
+	user := model.User{Username: "stats-user", Password: "hashed", Role: "admin"}
+	employee := model.Employee{Code: "E-002", Name: "员工二"}
+	device := model.Device{Code: "D-002", Name: "设备二"}
+	pattern := model.Pattern{Name: "花型二", UnitPrice: 3.75, OrderNo: "ORDER-1"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if err := db.Create(&employee).Error; err != nil {
+		t.Fatalf("create employee: %v", err)
+	}
+	if err := db.Create(&device).Error; err != nil {
+		t.Fatalf("create device: %v", err)
+	}
+	if err := db.Create(&pattern).Error; err != nil {
+		t.Fatalf("create pattern: %v", err)
+	}
+	recordDate := time.Date(2026, 5, 5, 10, 0, 0, 0, time.Local)
+	if err := db.Create(&model.SalaryRecord{
+		EmployeeID:  employee.ID,
+		DeviceID:    device.ID,
+		PatternName: pattern.Name,
+		Pieces:      8,
+		UnitPrice:   1,
+		Salary:      8,
+		TotalAmount: 8,
+		RecordDate:  recordDate,
+	}).Error; err != nil {
+		t.Fatalf("create salary record: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/statistics/salary?startDate=2026-05-05&endDate=2026-05-05", nil)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+	c.Set("userId", user.ID)
+	c.Set("role", user.Role)
+
+	NewStatisticsHandler(db).GetSalaryStats(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+
+	var body struct {
+		Code int `json:"code"`
+		Data struct {
+			Summary struct {
+				TotalSalary float64 `json:"totalSalary"`
+			} `json:"summary"`
+			List []struct {
+				UnitPrice   float64 `json:"unitPrice"`
+				Salary      float64 `json:"salary"`
+				TotalAmount float64 `json:"totalAmount"`
+			} `json:"list"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Code != 0 {
+		t.Fatalf("expected code 0, got %d", body.Code)
+	}
+	if len(body.Data.List) != 1 {
+		t.Fatalf("expected one salary row, got %d", len(body.Data.List))
+	}
+	row := body.Data.List[0]
+	if row.UnitPrice != 3.75 || row.Salary != 30 || row.TotalAmount != 30 {
+		t.Fatalf("expected live price matched by pattern name, got %#v", row)
+	}
+	if body.Data.Summary.TotalSalary != 30 {
+		t.Fatalf("expected live summary total 30, got %.2f", body.Data.Summary.TotalSalary)
+	}
+}
+
 func TestDashboardUtilizationUsesProcessingOverRuntime(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:dashboard_utilization_test?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
@@ -164,6 +336,179 @@ func TestDashboardUtilizationUsesProcessingOverRuntime(t *testing.T) {
 	}
 	if todayUtilization["value"] != 25.0 {
 		t.Fatalf("expected today utilization trend 25%%, got %#v", todayUtilization["value"])
+	}
+}
+
+func TestDashboardDataShowsTotalProcessingTimeForAggregateScope(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:dashboard_total_processing_test?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.User{}, &model.Device{}, &model.DeviceRuntimeSession{}, &model.ProductionRecord{}, &model.AlarmRecord{}); err != nil {
+		t.Fatalf("migrate schema: %v", err)
+	}
+
+	user := model.User{Username: "dashboard-admin", Password: "x", Role: "admin"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	deviceOne := model.Device{Code: "D-007", Name: "设备七"}
+	deviceTwo := model.Device{Code: "D-008", Name: "设备八"}
+	if err := db.Create(&deviceOne).Error; err != nil {
+		t.Fatalf("create device one: %v", err)
+	}
+	if err := db.Create(&deviceTwo).Error; err != nil {
+		t.Fatalf("create device two: %v", err)
+	}
+
+	now := time.Now()
+	startOne := now.Add(-3 * time.Hour)
+	endOne := startOne.Add(1 * time.Hour)
+	startTwo := now.Add(-90 * time.Minute)
+	endTwo := startTwo.Add(30 * time.Minute)
+	if err := db.Create(&model.ProductionRecord{
+		DeviceID:    deviceOne.ID,
+		Pieces:      1,
+		RunningTime: 1,
+		StartTime:   &startOne,
+		EndTime:     &endOne,
+		SourceKey:   "test-dashboard-total-processing-001",
+		RecordDate:  now,
+	}).Error; err != nil {
+		t.Fatalf("create production record one: %v", err)
+	}
+	if err := db.Create(&model.ProductionRecord{
+		DeviceID:    deviceTwo.ID,
+		Pieces:      1,
+		RunningTime: 0.5,
+		StartTime:   &startTwo,
+		EndTime:     &endTwo,
+		SourceKey:   "test-dashboard-total-processing-002",
+		RecordDate:  now,
+	}).Error; err != nil {
+		t.Fatalf("create production record two: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/statistics/dashboard", nil)
+	c.Set("userId", user.ID)
+	c.Set("role", user.Role)
+
+	NewStatisticsHandler(db).GetDashboardData(c)
+
+	var body struct {
+		Code int `json:"code"`
+		Data struct {
+			ProcessingTime         float64 `json:"processingTime"`
+			RunningProcessingTrend []struct {
+				ProcessingTime float64 `json:"processingTime"`
+			} `json:"runningProcessingTrend"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Code != 0 {
+		t.Fatalf("expected success response, got code=%d body=%s", body.Code, recorder.Body.String())
+	}
+	if body.Data.ProcessingTime != 1.5 {
+		t.Fatalf("expected dashboard processing total 1.5h, got %#v", body.Data.ProcessingTime)
+	}
+	if len(body.Data.RunningProcessingTrend) == 0 {
+		t.Fatalf("expected running processing trend data")
+	}
+	todayTrend := body.Data.RunningProcessingTrend[len(body.Data.RunningProcessingTrend)-1]
+	if todayTrend.ProcessingTime != 1.5 {
+		t.Fatalf("expected trend processing total 1.5h, got %#v", todayTrend.ProcessingTime)
+	}
+}
+
+func TestDashboardDataPreservesSubMinuteProcessingTime(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:dashboard_sub_minute_processing_test?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.User{}, &model.Device{}, &model.DeviceRuntimeSession{}, &model.ProductionRecord{}, &model.AlarmRecord{}); err != nil {
+		t.Fatalf("migrate schema: %v", err)
+	}
+
+	user := model.User{Username: "dashboard-sub-minute-admin", Password: "x", Role: "admin"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	device := model.Device{Code: "D-009", Name: "秒级设备"}
+	if err := db.Create(&device).Error; err != nil {
+		t.Fatalf("create device: %v", err)
+	}
+
+	now := time.Now()
+	processStart := now.Add(-10 * time.Second)
+	processEnd := now
+	if err := db.Create(&model.ProductionRecord{
+		DeviceID:    device.ID,
+		Pieces:      1,
+		RunningTime: 10.0 / 3600.0,
+		StartTime:   &processStart,
+		EndTime:     &processEnd,
+		SourceKey:   "test-dashboard-sub-minute-processing-001",
+		RecordDate:  now,
+	}).Error; err != nil {
+		t.Fatalf("create production record: %v", err)
+	}
+	if err := db.Create(&model.DeviceRuntimeSession{
+		DeviceID:        device.ID,
+		StartedAt:       processStart.Add(-10 * time.Second),
+		LastSeenAt:      now,
+		EndedAt:         &now,
+		DurationSeconds: 20,
+		EndReason:       "test",
+	}).Error; err != nil {
+		t.Fatalf("create runtime session: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/statistics/dashboard", nil)
+	c.Set("userId", user.ID)
+	c.Set("role", user.Role)
+
+	NewStatisticsHandler(db).GetDashboardData(c)
+
+	var body struct {
+		Code int `json:"code"`
+		Data struct {
+			ProcessingTime   float64 `json:"processingTime"`
+			RunningTime      float64 `json:"runningTime"`
+			Utilization      float64 `json:"utilizationRate"`
+			UtilizationTrend []struct {
+				Value float64 `json:"value"`
+			} `json:"utilizationTrend"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Code != 0 {
+		t.Fatalf("expected success response, got code=%d body=%s", body.Code, recorder.Body.String())
+	}
+	assertClose := func(name string, got, want float64) {
+		t.Helper()
+		if math.Abs(got-want) > 0.000001 {
+			t.Fatalf("expected %s %.6f, got %.6f", name, want, got)
+		}
+	}
+	assertClose("processing time", body.Data.ProcessingTime, 10.0/3600.0)
+	assertClose("running time", body.Data.RunningTime, 20.0/3600.0)
+	if body.Data.Utilization <= 0 {
+		t.Fatalf("expected utilization above 0, got %.6f", body.Data.Utilization)
+	}
+	if len(body.Data.UtilizationTrend) == 0 {
+		t.Fatalf("expected utilization trend data")
+	}
+	todayUtilization := body.Data.UtilizationTrend[len(body.Data.UtilizationTrend)-1]
+	if todayUtilization.Value <= 0 {
+		t.Fatalf("expected utilization trend above 0, got %.6f", todayUtilization.Value)
 	}
 }
 
@@ -426,5 +771,98 @@ func TestGetProcessOverviewListUsesRuntimeSessionForCumulativeUpTime(t *testing.
 	want := 10.0 / 3600.0
 	if math.Abs(body.Data.List[0].CumulativeUpTime-want) > 0.00001 {
 		t.Fatalf("expected cumulative uptime %.6fh from runtime session, got %.6f", want, body.Data.List[0].CumulativeUpTime)
+	}
+}
+
+func TestGetProcessOverviewListAlarmDisplay(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:process_overview_alarm_display_test?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.User{}, &model.Device{}, &model.Employee{}, &model.Pattern{}, &model.DeviceRuntimeSession{}, &model.ProductionRecord{}, &model.AlarmRecord{}); err != nil {
+		t.Fatalf("migrate schema: %v", err)
+	}
+
+	user := model.User{Username: "admin", Password: "x", Nickname: "admin", Role: "admin"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	device := model.Device{Code: "D-008", Name: "报警显示设备"}
+	if err := db.Create(&device).Error; err != nil {
+		t.Fatalf("create device: %v", err)
+	}
+
+	now := time.Now()
+	recordDate := time.Date(now.Year(), now.Month(), now.Day(), 10, 0, 0, 0, now.Location())
+	sourceKey := "test-process-overview-alarm-display-001"
+	if err := db.Create(&model.ProductionRecord{
+		DeviceID:   device.ID,
+		Pieces:     1,
+		Stitches:   120,
+		StartTime:  &recordDate,
+		SourceKey:  sourceKey,
+		RecordDate: recordDate,
+	}).Error; err != nil {
+		t.Fatalf("create production record: %v", err)
+	}
+
+	fetch := func(t *testing.T) struct {
+		AlarmInfo string `json:"alarmInfo"`
+		AlarmTime string `json:"alarmTime"`
+	} {
+		t.Helper()
+		handler := NewStatisticsHandler(db)
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		today := formatLocalStatsDate(recordDate)
+		c.Request = httptest.NewRequest(http.MethodGet, "/api/statistics/process?startDate="+today+"&endDate="+today, nil)
+		c.Set("userId", user.ID)
+		c.Set("role", "admin")
+
+		handler.GetProcessOverview(c)
+
+		var body struct {
+			Code int `json:"code"`
+			Data struct {
+				List []struct {
+					AlarmInfo string `json:"alarmInfo"`
+					AlarmTime string `json:"alarmTime"`
+				} `json:"list"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if body.Code != 0 {
+			t.Fatalf("expected success response, got code=%d body=%s", body.Code, recorder.Body.String())
+		}
+		if len(body.Data.List) != 1 {
+			t.Fatalf("expected one process row, got %d body=%s", len(body.Data.List), recorder.Body.String())
+		}
+		return body.Data.List[0]
+	}
+
+	noAlarm := fetch(t)
+	if noAlarm.AlarmInfo != "无" || noAlarm.AlarmTime != "无" {
+		t.Fatalf("expected no alarm display 无/无, got %q/%q", noAlarm.AlarmInfo, noAlarm.AlarmTime)
+	}
+
+	alarmStart := recordDate.Add(15 * time.Minute)
+	if err := db.Create(&model.AlarmRecord{
+		DeviceID:  device.ID,
+		AlarmType: "断线报警",
+		Duration:  60,
+		Status:    "resolved",
+		StartTime: alarmStart,
+	}).Error; err != nil {
+		t.Fatalf("create alarm record: %v", err)
+	}
+
+	withAlarm := fetch(t)
+	if withAlarm.AlarmInfo != "断线报警" {
+		t.Fatalf("expected alarm info 断线报警, got %q", withAlarm.AlarmInfo)
+	}
+	if withAlarm.AlarmTime != alarmStart.Format("2006-01-02 15:04:05") {
+		t.Fatalf("expected alarm start time %q, got %q", alarmStart.Format("2006-01-02 15:04:05"), withAlarm.AlarmTime)
 	}
 }

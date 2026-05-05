@@ -1487,9 +1487,19 @@ func (h *DeviceHandler) GetDeviceGroups(c *gin.Context) {
 		groups = filtered
 	}
 
+	list := make([]gin.H, 0, len(groups))
+	for _, group := range groups {
+		list = append(list, gin.H{
+			"id":        group.ID,
+			"name":      group.Name,
+			"parentId":  group.ParentID,
+			"sortOrder": group.SortOrder,
+		})
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
-		"data":    groups,
+		"data":    list,
 		"message": "success",
 	})
 }

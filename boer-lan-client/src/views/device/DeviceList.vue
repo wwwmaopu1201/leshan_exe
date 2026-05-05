@@ -64,7 +64,7 @@
               <el-button
                 type="danger"
                 icon="el-icon-delete"
-                :disabled="!selectedRows.length"
+                :disabled="!selectedGroupedRows.length"
                 @click="handleBatchDelete"
               >
                 {{ $t('device.batchRemoveFromGroup') }}
@@ -134,7 +134,13 @@
                 <el-button type="text" size="small" @click="handleMonitor(scope.row)">
                   监控
                 </el-button>
-                <el-button type="text" size="small" class="danger-text" @click="handleDelete(scope.row)">
+                <el-button
+                  v-if="isDeviceGrouped(scope.row)"
+                  type="text"
+                  size="small"
+                  class="danger-text"
+                  @click="handleDelete(scope.row)"
+                >
                   {{ $t('device.removeFromGroup') }}
                 </el-button>
               </template>
@@ -254,8 +260,12 @@
     >
       <el-form label-width="80px">
         <el-form-item :label="$t('device.group')">
-          <el-select v-model="moveTargetGroupId" clearable placeholder="未分组">
-            <el-option label="未分组（移出分组）" :value="null" />
+          <el-select
+            v-model="moveTargetGroupId"
+            clearable
+            :placeholder="selectedGroupedRows.length ? '未分组' : '请选择分组'"
+          >
+            <el-option v-if="selectedGroupedRows.length" label="未分组（移出分组）" :value="null" />
             <el-option
               v-for="group in groupOptions"
               :key="group.id"
@@ -383,6 +393,9 @@ export default {
     pagedTableData() {
       const start = (this.pagination.page - 1) * this.pagination.pageSize
       return this.tableData.slice(start, start + this.pagination.pageSize)
+    },
+    selectedGroupedRows() {
+      return this.selectedRows.filter(row => this.isDeviceGrouped(row))
     }
   },
   mounted() {
@@ -399,7 +412,9 @@ export default {
       try {
         const res = await getDeviceGroups()
         if (res.code === 0) {
-          this.groupOptions = Array.isArray(res.data) ? res.data : []
+          this.groupOptions = (Array.isArray(res.data) ? res.data : [])
+            .map(this.normalizeGroupOption)
+            .filter(group => group.id)
         }
       } catch (error) {
         console.error('Failed to fetch groups:', error)
@@ -522,6 +537,20 @@ export default {
       }
       const groupId = Number(value)
       return Number.isFinite(groupId) && groupId > 0 ? groupId : null
+    },
+    normalizeGroupOption(group) {
+      const id = this.normalizeGroupId(group?.id ?? group?.ID)
+      const parentId = this.normalizeGroupId(group?.parentId ?? group?.ParentID)
+      return {
+        ...group,
+        id,
+        parentId,
+        name: String(group?.name ?? group?.Name ?? '').trim(),
+        sortOrder: Number(group?.sortOrder ?? group?.SortOrder ?? 0)
+      }
+    },
+    isDeviceGrouped(row) {
+      return this.normalizeGroupId(row?.groupId) !== null
     },
     async syncTreeSelection() {
       const treePanel = this.$refs.treePanel
@@ -706,21 +735,19 @@ export default {
     async handleSaveDevice() {
       try {
         await this.$refs.editFormRef.validate()
+        const targetGroupId = this.normalizeGroupId(this.editForm.groupId)
         const payload = {
           name: this.editForm.name,
           type: this.editForm.type,
           model: this.editForm.model,
           employeeCode: this.editForm.employeeCode,
           employeeName: this.editForm.employeeName,
-          remark: this.editForm.remark
+          remark: this.editForm.remark,
+          groupId: targetGroupId
         }
-        const targetGroupId = this.normalizeGroupId(this.editForm.groupId)
         let res
         if (this.editForm.id) {
           res = await updateDevice(this.editForm.id, payload)
-          if (res.code === 0 && targetGroupId !== this.editForm.originalGroupId) {
-            res = await moveToGroup([Number(this.editForm.id)], targetGroupId)
-          }
         } else {
           res = await createDevice({
             ...payload,
@@ -765,7 +792,7 @@ export default {
     },
     handleBatchDelete() {
       this.$confirm(
-        this.$t('device.confirmBatchRemoveFromGroup', { count: this.selectedRows.length }),
+        this.$t('device.confirmBatchRemoveFromGroup', { count: this.selectedGroupedRows.length }),
         this.$t('common.warning'),
         {
           confirmButtonText: this.$t('common.confirm'),
@@ -774,7 +801,11 @@ export default {
         }
       ).then(async () => {
         try {
-          const ids = this.selectedRows.map(row => row.id)
+          const ids = this.selectedGroupedRows.map(row => row.id)
+          if (!ids.length) {
+            this.$message.warning('请选择已分组设备')
+            return
+          }
           const res = await batchDeleteDevices(ids)
           if (res.code === 0) {
             this.$message.success(res.message || this.$t('device.batchRemovedFromGroup'))
@@ -792,6 +823,10 @@ export default {
       try {
         const targetGroupId = this.normalizeGroupId(this.moveTargetGroupId)
         const isUngroup = targetGroupId === null
+        if (isUngroup && !this.selectedGroupedRows.length) {
+          this.$message.warning('请选择目标分组')
+          return
+        }
         const deviceIds = this.selectedRows.map(row => row.id)
         const res = await moveToGroup(deviceIds, targetGroupId)
         if (res.code === 0) {

@@ -3,6 +3,8 @@ import Vuex from 'vuex'
 
 Vue.use(Vuex)
 
+const DEFAULT_SERVER_PORT = '8088'
+
 const DEFAULT_PERMISSIONS = {
   home: true,
   dashboard: true,
@@ -84,6 +86,15 @@ function normalizePermissions(rawPermissions) {
   return normalizedPermissions
 }
 
+function normalizeServerPort(value) {
+  const port = String(value || '').trim()
+  const portNumber = Number(port)
+  if (!/^\d+$/.test(port) || !Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535) {
+    return DEFAULT_SERVER_PORT
+  }
+  return port
+}
+
 export default new Vuex.Store({
   state: {
     // User info
@@ -93,7 +104,7 @@ export default new Vuex.Store({
     // Server connection
     serverConfig: {
       ip: localStorage.getItem('serverIp') || '',
-      port: '8088'
+      port: normalizeServerPort(localStorage.getItem('serverPort') || DEFAULT_SERVER_PORT)
     },
 
     // Device tree
@@ -162,8 +173,8 @@ export default new Vuex.Store({
 
     SET_SERVER_CONFIG(state, config) {
       const normalizedConfig = {
-        ip: config.ip,
-        port: '8088'
+        ip: String(config.ip || '').trim(),
+        port: normalizeServerPort(config.port || DEFAULT_SERVER_PORT)
       }
       state.serverConfig = normalizedConfig
       localStorage.setItem('serverIp', normalizedConfig.ip)

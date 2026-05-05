@@ -100,6 +100,15 @@
             />
           </el-form-item>
 
+          <el-form-item prop="serverPort">
+            <el-input
+              v-model="loginForm.serverPort"
+              :placeholder="$t('login.portPlaceholder')"
+              prefix-icon="el-icon-connection"
+              maxlength="5"
+            />
+          </el-form-item>
+
           <el-form-item prop="username">
             <el-input
               v-model="loginForm.username"
@@ -164,6 +173,24 @@ export default {
       callback()
     }
 
+    const validateServerPort = (rule, value, callback) => {
+      const port = String(value || '').trim()
+      if (!port) {
+        callback(new Error(this.$t('login.portRequired')))
+        return
+      }
+      if (!/^\d+$/.test(port)) {
+        callback(new Error(this.$t('login.portInvalid')))
+        return
+      }
+      const portNumber = Number(port)
+      if (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535) {
+        callback(new Error(this.$t('login.portInvalid')))
+        return
+      }
+      callback()
+    }
+
     const validateUsername = (rule, value, callback) => {
       if (!String(value || '').trim()) {
         callback(new Error(this.$t('login.usernameRequired')))
@@ -183,12 +210,14 @@ export default {
     return {
       loginForm: {
         serverIp: localStorage.getItem('serverIp') || '',
+        serverPort: localStorage.getItem('serverPort') || DEFAULT_SERVER_PORT,
         username: localStorage.getItem('rememberedUsername') || '',
         password: localStorage.getItem('rememberedPassword') || '',
         remember: !!localStorage.getItem('rememberedUsername') && !!localStorage.getItem('rememberedPassword')
       },
       loginRules: {
         serverIp: [{ validator: validateServerIp, trigger: 'blur' }],
+        serverPort: [{ validator: validateServerPort, trigger: 'blur' }],
         username: [{ validator: validateUsername, trigger: 'blur' }],
         password: [{ validator: validatePassword, trigger: 'blur' }]
       },
@@ -232,11 +261,12 @@ export default {
 
       this.loading = true
       this.loginForm.serverIp = String(this.loginForm.serverIp || '').trim()
+      this.loginForm.serverPort = String(this.loginForm.serverPort || '').trim()
       this.loginForm.username = String(this.loginForm.username || '').trim()
 
       this.updateServerConfig({
         ip: this.loginForm.serverIp,
-        port: DEFAULT_SERVER_PORT
+        port: this.loginForm.serverPort
       })
 
       try {
