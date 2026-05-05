@@ -45,9 +45,9 @@ struct TrialStatus {
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
-const TRIAL_DURATION_SECONDS: u64 = 15 * 24 * 60 * 60;
+const TRIAL_DURATION_SECONDS: u64 = 24 * 60 * 60;
 const ROLLBACK_LEEWAY_SECONDS: u64 = 10 * 60;
-const TRIAL_POLICY_VERSION: u32 = 4;
+const TRIAL_POLICY_VERSION: u32 = 5;
 const APP_IDENTIFIER: &str = "com.boer.lan-server";
 
 fn normalize_version(raw: &str) -> String {
