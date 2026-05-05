@@ -69,12 +69,15 @@ type LogSettings struct {
 }
 
 func setupLogging(settings LogSettings) *os.File {
-	// 日志文件放在程序所在目录下的 logs 文件夹
-	exePath, err := os.Executable()
-	if err != nil {
-		exePath = "."
+	logDir := strings.TrimSpace(os.Getenv("LOG_DIR"))
+	if logDir == "" {
+		// 打包版保持原逻辑：日志文件放在程序所在目录下的 logs 文件夹。
+		exePath, err := os.Executable()
+		if err != nil {
+			exePath = "."
+		}
+		logDir = filepath.Join(filepath.Dir(exePath), "logs")
 	}
-	logDir := filepath.Join(filepath.Dir(exePath), "logs")
 	os.MkdirAll(logDir, 0755)
 
 	logFile := filepath.Join(logDir, fmt.Sprintf("server_%s.log", time.Now().Format("2006-01-02")))
@@ -261,7 +264,7 @@ func main() {
 	patternTransfer := service.NewPatternTransferService(db, tcpServer.ConnectionManager())
 
 	// Setup routes
-	api.SetupRouter(r, db, config.JWT.Secret, config.JWT.Expire, config.Server.Port, patternTransfer)
+	api.SetupRouter(r, db, config.JWT.Secret, config.JWT.Expire, config.Server.Port, patternTransfer, tcpServer.ConnectionManager())
 
 	// Start background workers
 	downloadWorker := service.NewDownloadTaskWorker(db, patternTransfer)

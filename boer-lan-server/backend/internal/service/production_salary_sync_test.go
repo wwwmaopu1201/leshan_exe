@@ -3,6 +3,11 @@ package service
 import (
 	"testing"
 	"time"
+
+	"boer-lan-server/internal/model"
+
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestComputeProductionSourceKeyIgnoresProtocolUserID(t *testing.T) {
@@ -66,5 +71,38 @@ func TestComputeProductionSourceKeyChangesOnBusinessFields(t *testing.T) {
 
 	if keyA == keyB {
 		t.Fatalf("expected different source keys when business fields differ, got %q", keyA)
+	}
+}
+
+func TestResolveProductionEmployeeFallsBackToDeviceCurrentEmployeeWhenProtocolUserIDEmpty(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:production_employee_fallback?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Employee{}); err != nil {
+		t.Fatalf("migrate sqlite: %v", err)
+	}
+
+	employee := model.Employee{Code: "SR000001", Name: "张三", Phone: "13800000000"}
+	if err := db.Create(&employee).Error; err != nil {
+		t.Fatalf("create employee: %v", err)
+	}
+
+	resolved, ok, code, name, err := resolveProductionEmployee(db, model.Device{
+		EmployeeCode: employee.Code,
+		EmployeeName: employee.Name,
+	}, "")
+	if err != nil {
+		t.Fatalf("resolve production employee: %v", err)
+	}
+	if !ok || resolved.ID != employee.ID || code != employee.Code || name != employee.Name {
+		t.Fatalf("expected fallback employee %s/%s, got ok=%v id=%d code=%s name=%s",
+			employee.Code,
+			employee.Name,
+			ok,
+			resolved.ID,
+			code,
+			name,
+		)
 	}
 }

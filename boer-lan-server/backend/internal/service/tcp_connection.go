@@ -174,6 +174,10 @@ func (dc *DeviceConnection) dispatch(pkt *Packet) {
 		dc.handleTimeSync(pkt)
 	case pkt.ParamType == PTHeartbeat && pkt.ParamNo == PNHeartbeat:
 		dc.handleHeartbeat(pkt)
+	case pkt.ParamType == PTWorkUser && pkt.ParamNo == PNUpdateCurrentUserID:
+		dc.handleUpdateCurrentUserResult(pkt)
+	case pkt.ParamType == PTWorkUser && pkt.ParamNo == PNWorkStart:
+		dc.handleWorkStart(pkt)
 	case pkt.ParamType == PTSewing && pkt.ParamNo == PNSewing:
 		dc.handleSewing(pkt)
 	case pkt.ParamType == PTSewingRange && pkt.ParamNo == PNSewingRange:
@@ -438,6 +442,70 @@ func (dc *DeviceConnection) handleHeartbeat(pkt *Packet) {
 	}
 
 	dc.send(buildProtocolReply(pkt, nil))
+}
+
+func (dc *DeviceConnection) handleUpdateCurrentUserResult(pkt *Packet) {
+	dc.markRegistered("current-user-update")
+	result, ok := parseCurrentUserResult(pkt.Data)
+	if !ok {
+		emitTCPLog(dc.db, "warn", true, "[TCP] Current user update response missing result: device=%s data=%s",
+			dc.deviceCode,
+			packetDataPreview(pkt.Data, 32),
+		)
+		return
+	}
+	if result == 0 {
+		emitTCPLog(dc.db, "info", true, "[TCP] Current user update accepted: device=%s", dc.deviceCode)
+		return
+	}
+	emitTCPLog(dc.db, "warn", true, "[TCP] Current user update rejected: device=%s result=%d", dc.deviceCode, result)
+}
+
+func (dc *DeviceConnection) handleWorkStart(pkt *Packet) {
+	dc.markRegistered("work-start")
+	if dc.deviceID == 0 {
+		dc.ensurePlaceholderDevice("work-start")
+	}
+
+	employeeCode := parseWorkStartUserID(pkt.Data)
+	if employeeCode == "" {
+		emitTCPLog(dc.db, "warn", true, "[TCP] Work start rejected: empty employee code device=%s data=%s",
+			dc.deviceCode,
+			packetDataPreview(pkt.Data, 32),
+		)
+		dc.sendWorkStartAck(pkt, "", "", 1)
+		return
+	}
+
+	employee, err := findEmployeeByCode(dc.db, employeeCode)
+	switch {
+	case err == nil:
+		if dc.deviceID > 0 {
+			dc.updateDeviceRuntime(map[string]interface{}{
+				"employee_code": employee.Code,
+				"employee_name": employee.Name,
+			})
+		}
+		emitTCPLog(dc.db, "info", true, "[TCP] Work start accepted: device=%s employeeCode=%s employeeName=%s",
+			dc.deviceCode,
+			employee.Code,
+			employee.Name,
+		)
+		dc.sendWorkStartAck(pkt, employee.Code, employee.Name, 0)
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		emitTCPLog(dc.db, "warn", true, "[TCP] Work start rejected: employee code not found device=%s employeeCode=%s",
+			dc.deviceCode,
+			employeeCode,
+		)
+		dc.sendWorkStartAck(pkt, employeeCode, "", 1)
+	default:
+		emitTCPLog(dc.db, "error", true, "[TCP] Work start employee lookup failed: device=%s employeeCode=%s err=%v",
+			dc.deviceCode,
+			employeeCode,
+			err,
+		)
+		dc.sendWorkStartAck(pkt, employeeCode, "", 1)
+	}
 }
 
 // handleSewing 处理开始/停止缝制
@@ -884,11 +952,53 @@ func (dc *DeviceConnection) send(pkt *Packet) {
 
 func (dc *DeviceConnection) writePacket(pkt *Packet) error {
 	data := BuildPacket(pkt)
+	return dc.writeRawPacket(data)
+}
+
+func (dc *DeviceConnection) writeRawPacket(data []byte) error {
 	if _, err := dc.conn.Write(data); err != nil {
 		emitTCPLog(dc.db, "error", true, "[TCP] Send error to device %s: %v", dc.deviceCode, err)
 		return err
 	}
 	return nil
+}
+
+func (dc *DeviceConnection) SendCurrentUser(employeeCode, employeeName string) error {
+	return dc.writePacket(buildUpdateCurrentUserIDCommand(employeeCode, employeeName))
+}
+
+func (dc *DeviceConnection) sendWorkStartAck(request *Packet, employeeCode, employeeName string, result byte) {
+	reply := buildProtocolReply(request, encodeWorkStartAckPayload(employeeCode, employeeName, result))
+	raw := BuildPacket(reply)
+	emitTCPLog(dc.db, "info", true,
+		"[TCP] Work start ack sent: device=%s type=0x%04X no=0x%04X employeeCode=%s employeeName=%s result=%d dataLen=%d data=%s rawLen=%d raw=%s",
+		dc.deviceCode,
+		reply.ParamType,
+		reply.ParamNo,
+		employeeCode,
+		employeeName,
+		result,
+		len(reply.Data),
+		packetDataPreview(reply.Data, 32),
+		len(raw),
+		packetDataPreview(raw, 128),
+	)
+	_ = dc.writeRawPacket(raw)
+}
+
+func (dc *DeviceConnection) sendCurrentUserUpdate(employeeCode, employeeName string) {
+	pkt := buildUpdateCurrentUserIDCommand(employeeCode, employeeName)
+	emitTCPLog(dc.db, "info", true,
+		"[TCP] Current user update sent: device=%s type=0x%04X no=0x%04X employeeCode=%s employeeName=%s len=%d data=%s",
+		dc.deviceCode,
+		pkt.ParamType,
+		pkt.ParamNo,
+		employeeCode,
+		employeeName,
+		len(pkt.Data),
+		packetDataPreview(pkt.Data, 48),
+	)
+	dc.send(pkt)
 }
 
 func (dc *DeviceConnection) clearOfflineProbe() {

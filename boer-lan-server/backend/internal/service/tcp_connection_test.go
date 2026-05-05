@@ -8,6 +8,10 @@ import (
 	"time"
 
 	"boer-lan-server/internal/alarmcatalog"
+	"boer-lan-server/internal/model"
+
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 func buildProductionDataNewTestPayload(userBeforeStop bool) []byte {
@@ -83,6 +87,118 @@ func TestNormalizeProtocolTextKeepsASCIIFixedName(t *testing.T) {
 	}
 }
 
+func TestHandleWorkStartAcceptsEmployeeCodeAndUpdatesDevice(t *testing.T) {
+	db := openTCPConnectionTestDB(t, "work_start_accept")
+	employee := model.Employee{Code: "SR000001", Name: "张三", Phone: "13800000000"}
+	if err := db.Create(&employee).Error; err != nil {
+		t.Fatalf("create employee: %v", err)
+	}
+	device := model.Device{Code: "D-001", Name: "设备D-001", Type: model.DefaultDeviceType, Status: "online"}
+	if err := db.Create(&device).Error; err != nil {
+		t.Fatalf("create device: %v", err)
+	}
+
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	dc := NewDeviceConnection(serverConn, db, nil)
+	dc.deviceID = device.ID
+	dc.deviceCode = device.Code
+
+	done := make(chan struct{})
+	go func() {
+		dc.handleWorkStart(&Packet{
+			ParamType: PTWorkUser,
+			ParamNo:   PNWorkStart,
+			Data:      encodeFixedString(employee.Code, workUserIDBytes),
+		})
+		close(done)
+	}()
+
+	_ = clientConn.SetReadDeadline(time.Now().Add(time.Second))
+	reply, err := ParsePacket(clientConn)
+	if err != nil {
+		t.Fatalf("read work start reply: %v", err)
+	}
+
+	if reply.ParamType != PTWorkUser || reply.ParamNo != PNWorkStart {
+		t.Fatalf("unexpected reply command type=0x%04X no=0x%04X", reply.ParamType, reply.ParamNo)
+	}
+	if result, ok := parseCurrentUserResult(reply.Data); !ok || result != 0 {
+		t.Fatalf("expected success result 0, got result=%d ok=%v", result, ok)
+	}
+	if len(reply.Data) != workUserIDBytes+workUserNameBytes+1 {
+		t.Fatalf("expected work start ack payload length %d, got %d", workUserIDBytes+workUserNameBytes+1, len(reply.Data))
+	}
+	if code := parseWorkStartUserID(reply.Data[:workUserIDBytes]); code != employee.Code {
+		t.Fatalf("expected ack employee code %s, got %s", employee.Code, code)
+	}
+
+	<-done
+
+	var updated model.Device
+	if err := db.First(&updated, device.ID).Error; err != nil {
+		t.Fatalf("load updated device: %v", err)
+	}
+	if updated.EmployeeCode != employee.Code || updated.EmployeeName != employee.Name {
+		t.Fatalf("expected device employee %s/%s, got %s/%s",
+			employee.Code,
+			employee.Name,
+			updated.EmployeeCode,
+			updated.EmployeeName,
+		)
+	}
+}
+
+func TestHandleWorkStartRejectsUnknownEmployeeCode(t *testing.T) {
+	db := openTCPConnectionTestDB(t, "work_start_reject")
+	device := model.Device{Code: "D-001", Name: "设备D-001", Type: model.DefaultDeviceType, Status: "online"}
+	if err := db.Create(&device).Error; err != nil {
+		t.Fatalf("create device: %v", err)
+	}
+
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	dc := NewDeviceConnection(serverConn, db, nil)
+	dc.deviceID = device.ID
+	dc.deviceCode = device.Code
+
+	done := make(chan struct{})
+	go func() {
+		dc.handleWorkStart(&Packet{
+			ParamType: PTWorkUser,
+			ParamNo:   PNWorkStart,
+			Data:      encodeFixedString("UNKNOWN", workUserIDBytes),
+		})
+		close(done)
+	}()
+
+	_ = clientConn.SetReadDeadline(time.Now().Add(time.Second))
+	reply, err := ParsePacket(clientConn)
+	if err != nil {
+		t.Fatalf("read work start reply: %v", err)
+	}
+	<-done
+
+	if result, ok := parseCurrentUserResult(reply.Data); !ok || result != 1 {
+		t.Fatalf("expected failure result 1, got result=%d ok=%v", result, ok)
+	}
+	if len(reply.Data) != workUserIDBytes+workUserNameBytes+1 {
+		t.Fatalf("expected work start ack payload length %d, got %d", workUserIDBytes+workUserNameBytes+1, len(reply.Data))
+	}
+
+	var updated model.Device
+	if err := db.First(&updated, device.ID).Error; err != nil {
+		t.Fatalf("load updated device: %v", err)
+	}
+	if updated.EmployeeCode != "" || updated.EmployeeName != "" {
+		t.Fatalf("expected empty device employee, got %s/%s", updated.EmployeeCode, updated.EmployeeName)
+	}
+}
+
 func TestPatternSessionTryReturnsBusyAndWaitsForCleanup(t *testing.T) {
 	serverConn, clientConn := net.Pipe()
 	defer serverConn.Close()
@@ -125,6 +241,21 @@ func TestPatternSessionTryReturnsBusyAndWaitsForCleanup(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("second session did not acquire after cleanup")
 	}
+}
+
+func openTCPConnectionTestDB(t *testing.T, name string) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open("file:"+name+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Device{}, &model.Employee{}, &model.ServerConfig{}, &model.DebugLog{}, &model.DeviceRuntimeSession{}); err != nil {
+		t.Fatalf("migrate sqlite: %v", err)
+	}
+	if err := db.Create(&model.ServerConfig{Key: debugOutputEnabledConfigKey, Value: "false"}).Error; err != nil {
+		t.Fatalf("disable debug output: %v", err)
+	}
+	return db
 }
 
 func TestIdleProbeRequiresSecondCheckBeforeClose(t *testing.T) {

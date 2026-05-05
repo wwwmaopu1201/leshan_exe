@@ -1,0 +1,61 @@
+package service
+
+import (
+	"strings"
+
+	"boer-lan-server/internal/model"
+
+	"gorm.io/gorm"
+)
+
+const (
+	workUserIDBytes   = 11
+	workUserNameBytes = 16
+)
+
+func parseWorkStartUserID(data []byte) string {
+	if len(data) == 0 {
+		return ""
+	}
+	if len(data) > workUserIDBytes {
+		data = data[:workUserIDBytes]
+	}
+	return normalizeProtocolText(data)
+}
+
+func parseCurrentUserResult(data []byte) (byte, bool) {
+	if len(data) == 0 {
+		return 0, false
+	}
+	return data[len(data)-1], true
+}
+
+func buildUpdateCurrentUserIDCommand(employeeCode, employeeName string) *Packet {
+	return buildProtocolCommand(PTWorkUser, PNUpdateCurrentUserID, encodeCurrentUserPayload(employeeCode, employeeName))
+}
+
+func encodeWorkStartAckPayload(employeeCode, employeeName string, result byte) []byte {
+	payload := encodeCurrentUserPayload(employeeCode, employeeName)
+	payload = append(payload, result)
+	return payload
+}
+
+func encodeCurrentUserPayload(employeeCode, employeeName string) []byte {
+	payload := make([]byte, 0, workUserIDBytes+workUserNameBytes)
+	payload = append(payload, encodeFixedString(strings.TrimSpace(employeeCode), workUserIDBytes)...)
+	payload = append(payload, encodeUTF16LEFixed(strings.TrimSpace(employeeName), workUserNameBytes)...)
+	return payload
+}
+
+func findEmployeeByCode(db *gorm.DB, code string) (model.Employee, error) {
+	code = strings.TrimSpace(code)
+	if db == nil || code == "" {
+		return model.Employee{}, gorm.ErrRecordNotFound
+	}
+
+	var employee model.Employee
+	if err := db.Where("LOWER(code) = ?", strings.ToLower(code)).First(&employee).Error; err != nil {
+		return model.Employee{}, err
+	}
+	return employee, nil
+}

@@ -9,17 +9,23 @@ import (
 	"time"
 
 	"boer-lan-server/internal/model"
+	"boer-lan-server/internal/service"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 type DeviceHandler struct {
-	db *gorm.DB
+	db      *gorm.DB
+	connMgr *service.ConnectionManager
 }
 
-func NewDeviceHandler(db *gorm.DB) *DeviceHandler {
-	return &DeviceHandler{db: db}
+func NewDeviceHandler(db *gorm.DB, connMgr ...*service.ConnectionManager) *DeviceHandler {
+	handler := &DeviceHandler{db: db}
+	if len(connMgr) > 0 {
+		handler.connMgr = connMgr[0]
+	}
+	return handler
 }
 
 func normalizeDeviceType(value string) string {
@@ -1067,12 +1073,30 @@ func (h *DeviceHandler) UpdateDevice(c *gin.Context) {
 	}
 
 	_ = h.db.First(&device, device.ID).Error
+	if req.EmployeeCode != nil || req.EmployeeName != nil {
+		h.pushCurrentUserToOnlineDevice(device)
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"data":    device,
 		"message": "success",
 	})
+}
+
+func (h *DeviceHandler) pushCurrentUserToOnlineDevice(device model.Device) {
+	if h.connMgr == nil {
+		return
+	}
+	code := strings.TrimSpace(device.Code)
+	if code == "" {
+		return
+	}
+	conn := h.connMgr.Get(code)
+	if conn == nil {
+		return
+	}
+	_ = conn.SendCurrentUser(device.EmployeeCode, device.EmployeeName)
 }
 
 func (h *DeviceHandler) DeleteDevice(c *gin.Context) {

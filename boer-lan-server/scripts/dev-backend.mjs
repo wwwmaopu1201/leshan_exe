@@ -4,11 +4,14 @@ import { spawn } from 'node:child_process'
 import { resolveDefaultSharedDataDir } from './shared-data-dir.mjs'
 
 const rootDir = process.cwd()
+const workspaceDir = path.dirname(rootDir)
 const backendDir = path.join(rootDir, 'backend')
 const dataDir = resolveDefaultSharedDataDir()
 const portFile = path.join(dataDir, 'backend-port.txt')
+const logDir = path.join(workspaceDir, 'log')
 
 fs.mkdirSync(dataDir, { recursive: true })
+fs.mkdirSync(logDir, { recursive: true })
 
 const child = spawn('go', ['run', 'cmd/server/main.go'], {
   cwd: backendDir,
@@ -19,6 +22,7 @@ const child = spawn('go', ['run', 'cmd/server/main.go'], {
     BOERLAN_SKIP_TRIAL: process.env.BOERLAN_SKIP_TRIAL || 'true',
     DATA_DIR: dataDir,
     PORT_FILE: portFile,
+    LOG_DIR: logDir,
     LOG_TO_STDOUT: 'true',
     QUIET_MODE: 'false',
     GORM_LOG_LEVEL: process.env.GORM_LOG_LEVEL || 'error'

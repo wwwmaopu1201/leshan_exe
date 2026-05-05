@@ -7,12 +7,12 @@ import (
 	"gorm.io/gorm"
 )
 
-func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, serverPort int, patternTransfer *service.PatternTransferService) {
+func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, serverPort int, patternTransfer *service.PatternTransferService, connMgr *service.ConnectionManager) {
 	// API group
 	api := r.Group("/api")
 
 	// Initialize handlers
-	deviceHandler := NewDeviceHandler(db)
+	deviceHandler := NewDeviceHandler(db, connMgr)
 	groupHandler := NewGroupHandler(db)
 	userHandler := NewUserHandler(db)
 	operatorHandler := NewOperatorHandler(db)

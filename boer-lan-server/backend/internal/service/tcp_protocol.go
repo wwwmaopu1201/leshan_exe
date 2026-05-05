@@ -69,12 +69,16 @@ const (
 	PTProduction    uint16 = 0x0B2A
 	PNProduction    uint16 = 0x000C
 	PNProductionOld uint16 = 0x000B
-	PTNeedleCount   uint16 = 0x0B01
-	PNNeedleCount   uint16 = 0x001F
-	PTCurrentSpeed  uint16 = 0x1302
-	PNCurrentSpeed  uint16 = 0x107C
-	PTMaxSpeed      uint16 = 0x1301
-	PNMaxSpeed      uint16 = 0x00A3
+	// 当前用户/上工
+	PTWorkUser            uint16 = 0x0B2A
+	PNUpdateCurrentUserID uint16 = 0x00F1
+	PNWorkStart           uint16 = 0x00F2
+	PTNeedleCount         uint16 = 0x0B01
+	PNNeedleCount         uint16 = 0x001F
+	PTCurrentSpeed        uint16 = 0x1302
+	PNCurrentSpeed        uint16 = 0x107C
+	PTMaxSpeed            uint16 = 0x1301
+	PNMaxSpeed            uint16 = 0x00A3
 )
 
 // Packet 协议数据包

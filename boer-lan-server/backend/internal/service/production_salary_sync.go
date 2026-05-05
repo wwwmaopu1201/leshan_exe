@@ -315,6 +315,9 @@ func resolveProductionResolution(tx *gorm.DB, device model.Device, snapshot prod
 func resolveProductionEmployee(tx *gorm.DB, device model.Device, protocolUserID string) (model.Employee, bool, string, string, error) {
 	code := strings.TrimSpace(protocolUserID)
 	if code == "" {
+		code = strings.TrimSpace(device.EmployeeCode)
+	}
+	if code == "" {
 		return model.Employee{}, false, "", "", nil
 	}
 
