@@ -45,13 +45,13 @@ jobs:
 
       - name: Build Tauri app
         working-directory: boer-lan-server
-        run: npm run tauri:build
+        run: npm run tauri:build -- --bundles nsis
 
       - name: Upload installer artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: server-windows-installers
-          path: boer-lan-server/src-tauri/target/release/bundle
+          name: server-windows-nsis
+          path: boer-lan-server/src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error
 
       - name: Create release (tag only)
@@ -60,6 +60,5 @@ jobs:
         with:
           files: |
             boer-lan-server/src-tauri/target/release/bundle/nsis/*.exe
-            boer-lan-server/src-tauri/target/release/bundle/msi/*.msi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
