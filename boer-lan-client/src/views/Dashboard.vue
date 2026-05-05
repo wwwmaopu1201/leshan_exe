@@ -717,6 +717,8 @@ export default {
 }
 
 .dashboard-chart-row {
+  flex: 1 1 0;
+  min-height: 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
@@ -738,10 +740,24 @@ export default {
 }
 
 .board-card--production {
-  flex: 1;
+  flex: 0 0 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+.board-card--runtime,
+.board-card--utilization {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.board-card--runtime ::v-deep .el-card__body,
+.board-card--utilization ::v-deep .el-card__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
 }
 
 .board-card__header {
@@ -788,8 +804,12 @@ export default {
 
 .runtime-panel,
 .utilization-panel {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
   display: grid;
   grid-template-columns: 126px minmax(0, 1fr);
+  grid-auto-rows: minmax(240px, 1fr);
   gap: 10px;
   align-items: stretch;
 }
@@ -799,7 +819,8 @@ export default {
 }
 
 .runtime-panel__summary {
-  min-height: 188px;
+  height: 100%;
+  min-height: 0;
   padding: 0 0 8px 6px;
   display: flex;
   flex-direction: column;
@@ -813,7 +834,7 @@ export default {
 }
 
 .utilization-panel__summary {
-  padding: 54px 0 0 6px;
+  padding: 80px 0 0 6px;
 }
 
 .runtime-panel__label,
@@ -844,19 +865,23 @@ export default {
 
 .runtime-panel__chart,
 .utilization-panel__chart {
-  height: 188px;
+  align-self: stretch;
+  height: 100%;
+  min-height: 240px;
 }
 
 .board-card--production ::v-deep .el-card__body {
-  flex: 1;
+  flex: 0 0 auto;
   min-height: 0;
-  padding: 6px 14px 14px;
+  padding: 10px 14px;
   display: flex;
 }
 
 .production-chart {
-  flex: 1;
-  min-height: 350px;
+  flex: 0 0 auto;
+  width: 100%;
+  height: 280px;
+  min-height: 0;
 }
 
 @media (max-width: 1440px) {
