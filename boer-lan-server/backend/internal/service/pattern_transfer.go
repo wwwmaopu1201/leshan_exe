@@ -18,6 +18,7 @@ const (
 	transferTypeUpload             = 1
 	transferTypeDownload           = 2
 	patternTransferResponseTimeout = 10 * time.Minute
+	patternListResponseTimeout     = 20 * time.Second
 	patternUploadStartTimeout      = 30 * time.Second
 	patternUploadIdleTimeout       = 3 * time.Second
 	patternUploadFinishTimeout     = 30 * time.Second
@@ -85,7 +86,7 @@ func (s *PatternTransferService) refreshDevicePatternFiles(device model.Device, 
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), patternTransferResponseTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), patternListResponseTimeout)
 	defer cancel()
 
 	totalFrames := 0
@@ -228,6 +229,7 @@ func (s *PatternTransferService) UploadPatternFromDeviceWithOptions(
 
 	ch, cleanup, err := dc.beginPatternSession()
 	if err != nil {
+		emitTCPLog(s.db, "warn", true, "[TCP] Begin device upload session failed: device=%s id=%d patternNo=%d file=%s err=%v", device.Code, device.ID, file.PatternNo, file.FileName, err)
 		return nil, err
 	}
 	defer cleanup()

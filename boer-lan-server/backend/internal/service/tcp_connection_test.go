@@ -87,6 +87,23 @@ func TestNormalizeProtocolTextKeepsASCIIFixedName(t *testing.T) {
 	}
 }
 
+func TestEncodeWorkStartAckPayloadIncludesUserNameAndResult(t *testing.T) {
+	payload := encodeWorkStartAckPayload("SR000001", "张三", 0)
+
+	if len(payload) != workStartAckPayloadLen {
+		t.Fatalf("expected work start ack payload length %d, got %d", workStartAckPayloadLen, len(payload))
+	}
+	if code := parseWorkStartUserID(payload[:workUserIDBytes]); code != "SR000001" {
+		t.Fatalf("expected ack employee code SR000001, got %s", code)
+	}
+	if name := normalizeProtocolText(payload[workUserIDBytes : workUserIDBytes+workUserNameBytes]); name != "张三" {
+		t.Fatalf("expected ack employee name 张三, got %q", name)
+	}
+	if result := payload[len(payload)-1]; result != 0 {
+		t.Fatalf("expected success result 0, got %d", result)
+	}
+}
+
 func TestHandleWorkStartAcceptsEmployeeCodeAndUpdatesDevice(t *testing.T) {
 	db := openTCPConnectionTestDB(t, "work_start_accept")
 	employee := model.Employee{Code: "SR000001", Name: "张三", Phone: "13800000000"}
@@ -125,14 +142,34 @@ func TestHandleWorkStartAcceptsEmployeeCodeAndUpdatesDevice(t *testing.T) {
 	if reply.ParamType != PTWorkUser || reply.ParamNo != PNWorkStart {
 		t.Fatalf("unexpected reply command type=0x%04X no=0x%04X", reply.ParamType, reply.ParamNo)
 	}
+	if len(reply.Data) != workStartAckPayloadLen {
+		t.Fatalf("expected work start ack payload length %d, got %d", workStartAckPayloadLen, len(reply.Data))
+	}
 	if result, ok := parseCurrentUserResult(reply.Data); !ok || result != 0 {
 		t.Fatalf("expected success result 0, got result=%d ok=%v", result, ok)
 	}
-	if len(reply.Data) != workUserIDBytes+workUserNameBytes+1 {
-		t.Fatalf("expected work start ack payload length %d, got %d", workUserIDBytes+workUserNameBytes+1, len(reply.Data))
-	}
 	if code := parseWorkStartUserID(reply.Data[:workUserIDBytes]); code != employee.Code {
 		t.Fatalf("expected ack employee code %s, got %s", employee.Code, code)
+	}
+	if name := normalizeProtocolText(reply.Data[workUserIDBytes : workUserIDBytes+workUserNameBytes]); name != employee.Name {
+		t.Fatalf("expected ack employee name %s, got %s", employee.Name, name)
+	}
+
+	currentUserReply, err := ParsePacket(clientConn)
+	if err != nil {
+		t.Fatalf("read current user update after work start reply: %v", err)
+	}
+	if currentUserReply.ParamType != PTWorkUser || currentUserReply.ParamNo != PNUpdateCurrentUserID {
+		t.Fatalf("unexpected current user command type=0x%04X no=0x%04X", currentUserReply.ParamType, currentUserReply.ParamNo)
+	}
+	if len(currentUserReply.Data) != workCurrentUserPayloadLen {
+		t.Fatalf("expected current user payload length %d, got %d", workCurrentUserPayloadLen, len(currentUserReply.Data))
+	}
+	if code := parseWorkStartUserID(currentUserReply.Data[:workUserIDBytes]); code != employee.Code {
+		t.Fatalf("expected current user employee code %s, got %s", employee.Code, code)
+	}
+	if name := normalizeProtocolText(currentUserReply.Data[workUserIDBytes : workUserIDBytes+workUserNameBytes]); name != employee.Name {
+		t.Fatalf("expected current user employee name %s, got %s", employee.Name, name)
 	}
 
 	<-done
@@ -183,11 +220,20 @@ func TestHandleWorkStartRejectsUnknownEmployeeCode(t *testing.T) {
 	}
 	<-done
 
+	if reply.ParamType != PTWorkUser || reply.ParamNo != PNWorkStart {
+		t.Fatalf("unexpected reply command type=0x%04X no=0x%04X", reply.ParamType, reply.ParamNo)
+	}
+	if len(reply.Data) != workStartAckPayloadLen {
+		t.Fatalf("expected work start ack payload length %d, got %d", workStartAckPayloadLen, len(reply.Data))
+	}
 	if result, ok := parseCurrentUserResult(reply.Data); !ok || result != 1 {
 		t.Fatalf("expected failure result 1, got result=%d ok=%v", result, ok)
 	}
-	if len(reply.Data) != workUserIDBytes+workUserNameBytes+1 {
-		t.Fatalf("expected work start ack payload length %d, got %d", workUserIDBytes+workUserNameBytes+1, len(reply.Data))
+	if code := parseWorkStartUserID(reply.Data[:workUserIDBytes]); code != "UNKNOWN" {
+		t.Fatalf("expected ack employee code UNKNOWN, got %s", code)
+	}
+	if name := normalizeProtocolText(reply.Data[workUserIDBytes : workUserIDBytes+workUserNameBytes]); name != "" {
+		t.Fatalf("expected empty ack employee name, got %q", name)
 	}
 
 	var updated model.Device
@@ -196,6 +242,64 @@ func TestHandleWorkStartRejectsUnknownEmployeeCode(t *testing.T) {
 	}
 	if updated.EmployeeCode != "" || updated.EmployeeName != "" {
 		t.Fatalf("expected empty device employee, got %s/%s", updated.EmployeeCode, updated.EmployeeName)
+	}
+}
+
+func TestHandleRepliesToCapturedWorkStartFrame(t *testing.T) {
+	db := openTCPConnectionTestDB(t, "work_start_captured_frame")
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	capturedWorkStartFrame := []byte{
+		0x44, 0x54,
+		0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00,
+		0x0B, 0x2A,
+		0x00, 0xF2,
+		0x01, 0x01,
+		0x00, 0x00, 0x00, 0x0D,
+		0x31, 0x32, 0x33, 0x34,
+		0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00,
+		0x67, 0x38,
+	}
+	parser := NewFrameParser()
+	packets := parser.Push(capturedWorkStartFrame)
+	if len(packets) != 1 {
+		t.Fatalf("expected one parsed packet from captured frame, got %d", len(packets))
+	}
+	pkt := packets[0]
+	if pkt.ParseError != "" {
+		t.Fatalf("parse captured work start frame: %s", pkt.ParseError)
+	}
+
+	dc := NewDeviceConnection(serverConn, db, nil)
+	done := make(chan struct{})
+	go func() {
+		dc.dispatch(pkt)
+		close(done)
+	}()
+
+	_ = clientConn.SetReadDeadline(time.Now().Add(time.Second))
+	reply, err := ParsePacket(clientConn)
+	if err != nil {
+		t.Fatalf("read work start reply: %v", err)
+	}
+	<-done
+
+	if reply.ParamType != PTWorkUser || reply.ParamNo != PNWorkStart {
+		t.Fatalf("unexpected reply command type=0x%04X no=0x%04X", reply.ParamType, reply.ParamNo)
+	}
+	if len(reply.Data) != workStartAckPayloadLen {
+		t.Fatalf("expected work start ack payload length %d, got %d", workStartAckPayloadLen, len(reply.Data))
+	}
+	if code := parseWorkStartUserID(reply.Data[:workUserIDBytes]); code != "1234" {
+		t.Fatalf("expected ack employee code 1234, got %s", code)
+	}
+	if result, ok := parseCurrentUserResult(reply.Data); !ok || result != 1 {
+		t.Fatalf("expected unknown employee result 1, got result=%d ok=%v", result, ok)
 	}
 }
 

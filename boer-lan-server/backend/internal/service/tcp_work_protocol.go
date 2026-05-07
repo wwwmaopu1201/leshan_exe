@@ -9,8 +9,11 @@ import (
 )
 
 const (
-	workUserIDBytes   = 11
-	workUserNameBytes = 16
+	workUserIDBytes           = 11
+	workUserNameBytes         = 16
+	workCurrentUserPayloadLen = workUserIDBytes + workUserNameBytes
+	workStartAckResultBytes   = 1
+	workStartAckPayloadLen    = workCurrentUserPayloadLen + workStartAckResultBytes
 )
 
 func parseWorkStartUserID(data []byte) string {
@@ -34,14 +37,23 @@ func buildUpdateCurrentUserIDCommand(employeeCode, employeeName string) *Packet 
 	return buildProtocolCommand(PTWorkUser, PNUpdateCurrentUserID, encodeCurrentUserPayload(employeeCode, employeeName))
 }
 
+func buildWorkStartCurrentUserCommand(employeeCode, employeeName string) *Packet {
+	return buildProtocolCommand(PTWorkUser, PNUpdateCurrentUserID, encodeCurrentUserPayload(employeeCode, employeeName))
+}
+
+func buildWorkStartAckReply(request *Packet, employeeCode, employeeName string, result byte) *Packet {
+	return buildProtocolReply(request, encodeWorkStartAckPayload(employeeCode, employeeName, result))
+}
+
 func encodeWorkStartAckPayload(employeeCode, employeeName string, result byte) []byte {
-	payload := encodeCurrentUserPayload(employeeCode, employeeName)
+	payload := make([]byte, 0, workStartAckPayloadLen)
+	payload = append(payload, encodeCurrentUserPayload(employeeCode, employeeName)...)
 	payload = append(payload, result)
 	return payload
 }
 
 func encodeCurrentUserPayload(employeeCode, employeeName string) []byte {
-	payload := make([]byte, 0, workUserIDBytes+workUserNameBytes)
+	payload := make([]byte, 0, workCurrentUserPayloadLen)
 	payload = append(payload, encodeFixedString(strings.TrimSpace(employeeCode), workUserIDBytes)...)
 	payload = append(payload, encodeUTF16LEFixed(strings.TrimSpace(employeeName), workUserNameBytes)...)
 	return payload
