@@ -25,7 +25,8 @@ const routes = [
       { path: 'roles', name: 'Roles', component: () => import('@/views/Roles.vue') },
       { path: 'users', name: 'Users', component: () => import('@/views/Users.vue') },
       { path: 'operators', redirect: '/users' },
-      { path: 'devices', name: 'Devices', component: () => import('@/views/Devices.vue') }
+      { path: 'devices', name: 'Devices', component: () => import('@/views/Devices.vue') },
+      { path: 'login-logs', name: 'LoginLogs', component: () => import('@/views/LoginLogs.vue') }
     ]
   }
 ]

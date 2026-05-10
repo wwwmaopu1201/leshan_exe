@@ -282,7 +282,7 @@ export default {
         },
         {
           key: 'online',
-          label: '设备在线数',
+          label: '设备开机数',
           value: this.toNumber(this.homeStats.onlineDevices),
           unit: '台',
           icon: 'el-icon-monitor',
@@ -298,7 +298,7 @@ export default {
         },
         {
           key: 'onlineRate',
-          label: '设备在线率',
+          label: '设备开机率',
           value: this.formatPlainPercent(this.safePercent(this.homeStats.onlineDevices, this.homeStats.totalDevices)),
           unit: '%',
           icon: 'el-icon-data-analysis',

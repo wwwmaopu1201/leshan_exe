@@ -351,6 +351,58 @@ export default {
         }
       })
     },
+    normalizeDeviceTree(nodes = []) {
+      const isUngrouped = node => {
+        const label = String(node?.label || node?.name || '')
+        const id = String(node?.id || '')
+        return label.includes('未分组') || id === 'ungrouped'
+      }
+      const isTotal = node => {
+        const label = String(node?.label || node?.name || '').trim()
+        const id = String(node?.id || '')
+        return label === '总分组' || label === '全部设备' || id === 'all'
+      }
+      const cloneNode = node => ({
+        ...node,
+        type: node.type === 'device' ? 'device' : 'group',
+        label: isTotal(node) ? '总分组' : (node.label || node.name || ''),
+        children: (node.children || []).map(cloneNode)
+      })
+      const roots = (nodes || []).map(cloneNode)
+      const ungroupedNodes = []
+      const groupNodes = []
+
+      roots.forEach(node => {
+        if (isUngrouped(node)) {
+          ungroupedNodes.push({
+            ...node,
+            id: 'ungrouped',
+            label: '未分组设备',
+            type: 'group',
+            isVirtual: true
+          })
+          return
+        }
+        groupNodes.push(node)
+      })
+
+      return [{
+        id: 'all',
+        label: '总分组',
+        type: 'group',
+        children: [
+          ungroupedNodes[0] || {
+            id: 'ungrouped',
+            label: '未分组设备',
+            type: 'group',
+            children: [],
+            isVirtual: true
+          },
+          ...groupNodes
+        ],
+        isVirtual: true
+      }]
+    },
     filterTreeNode(value, data) {
       if (!value) return true
       return String(data.label || '').toLowerCase().includes(value.toLowerCase())
@@ -409,7 +461,7 @@ export default {
       try {
         const res = await getDeviceTree()
         if (res.code === 0) {
-          this.fullDeviceTree = this.attachTreeNodeKeys(res.data || [])
+          this.fullDeviceTree = this.attachTreeNodeKeys(this.normalizeDeviceTree(res.data || []))
           this.applyDeviceTreeFilter()
         }
       } catch (error) {
@@ -566,11 +618,9 @@ export default {
     },
     getStatusText(status) {
       const map = {
-        online: '在线',
-        offline: '离线',
-        working: '运行中',
-        idle: '空闲',
-        alarm: '报警'
+        offline: '关机',
+        working: '缝纫',
+        idle: '空闲'
       }
       return map[status] || status
     },
@@ -623,7 +673,7 @@ export default {
         return
       }
       if (this.selectedDevice.status === 'offline') {
-        this.$message.warning('离线设备不可监控')
+        this.$message.warning('关机设备不可监控')
         return
       }
 
@@ -989,7 +1039,6 @@ export default {
   font-size: 11px;
   font-weight: 600;
 
-  &.online,
   &.idle {
     background: rgba(47, 180, 110, 0.12);
     color: #2fb46e;
@@ -998,11 +1047,6 @@ export default {
   &.working {
     background: rgba(47, 109, 246, 0.12);
     color: #2f6df6;
-  }
-
-  &.alarm {
-    background: rgba(239, 90, 90, 0.12);
-    color: #ef5a5a;
   }
 }
 
@@ -1061,15 +1105,13 @@ export default {
   border-radius: 50%;
   margin-left: 6px;
 
-  &.online,
   &.idle {
     background: #67C23A;
   }
   &.offline {
     background: #909399;
   }
-  &.working,
-  &.alarm {
+  &.working {
     background: #F56C6C;
   }
 }
@@ -1107,15 +1149,13 @@ export default {
       color: #909399;
     }
 
-    &.online,
     &.idle {
       color: #67C23A;
     }
     &.offline {
       color: #909399;
     }
-    &.working,
-    &.alarm {
+    &.working {
       color: #F56C6C;
     }
 

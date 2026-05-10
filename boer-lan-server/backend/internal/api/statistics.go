@@ -395,10 +395,10 @@ func (h *StatisticsHandler) GetHomeStats(c *gin.Context) {
 		deviceBaseQuery = deviceBaseQuery.Where("id IN ?", scopedDeviceIDs)
 	}
 	deviceBaseQuery.Session(&gorm.Session{}).Count(&totalDevices)
-	deviceBaseQuery.Session(&gorm.Session{}).Where("status IN ?", []string{"online", "working", "idle"}).Count(&onlineDevices)
+	deviceBaseQuery.Session(&gorm.Session{}).Where("status IN ?", []string{"working", "idle"}).Count(&onlineDevices)
 	deviceBaseQuery.Session(&gorm.Session{}).Where("status = ?", "working").Count(&workingDevices)
 	deviceBaseQuery.Session(&gorm.Session{}).Where("status = ?", "offline").Count(&offlineDevices)
-	deviceBaseQuery.Session(&gorm.Session{}).Where("status = ?", "alarm").Count(&alarmDevices)
+	deviceBaseQuery.Session(&gorm.Session{}).Where("alarm_code <> ?", "").Count(&alarmDevices)
 
 	// 近7日设备使用效率
 	weeklyEfficiency := h.getWeeklyEfficiency(scopedDeviceIDs)
@@ -698,7 +698,7 @@ func (h *StatisticsHandler) getRunningStatusByHour(deviceIDs []uint) []gin.H {
 	}
 
 	var currentOnlineDevices int64
-	onlineQuery := h.db.Model(&model.Device{}).Where("status IN ?", []string{"online", "working", "idle"})
+	onlineQuery := h.db.Model(&model.Device{}).Where("status IN ?", []string{"working", "idle"})
 	if len(deviceIDs) > 0 {
 		onlineQuery = onlineQuery.Where("id IN ?", deviceIDs)
 	}
@@ -918,7 +918,7 @@ func (h *StatisticsHandler) countDashboardScopeDevices(deviceId string, deviceID
 
 func (h *StatisticsHandler) countDashboardOnlineDevices(deviceId string, deviceIDs []uint) int64 {
 	query := h.db.Model(&model.Device{}).
-		Where("status IN ?", []string{"online", "working", "idle"})
+		Where("status IN ?", []string{"working", "idle"})
 
 	if strings.TrimSpace(deviceId) != "" {
 		var count int64
@@ -1420,12 +1420,12 @@ func (h *StatisticsHandler) GetProcessOverview(c *gin.Context) {
 		Scan(&listRows)
 
 	patternSewCountMap := h.loadPatternSewCountByDevicePatternDate(startDate, endDate, deviceId, deviceIDs)
-	alarmInfoMap := h.loadAlarmInfoByDeviceDate(startDate, endDate, deviceId, deviceIDs)
+	alarmWindows := h.loadAlarmWindows(startDate, endDate, deviceId, deviceIDs)
 
 	list := make([]gin.H, 0, len(listRows))
 	for _, row := range listRows {
 		runningHours := resolveProductionDurationHours(row.StartTime, row.EndTime, row.DurationHours)
-		startTime, _ := deriveProductionTimeRange(row.RecordDate, row.CreatedAt, runningHours)
+		startTime, endTime := resolveProductionTimeRange(row.RecordDate, row.CreatedAt, row.StartTime, row.EndTime, runningHours)
 		sewSpeed := 0.0
 		if runningHours > 0 {
 			sewSpeed = float64(row.Stitches) / (runningHours * 60)
@@ -1440,7 +1440,7 @@ func (h *StatisticsHandler) GetProcessOverview(c *gin.Context) {
 		efficiency := calculateUtilizationRate(deviceDayUsage.Processing, deviceDayUsage.Runtime)
 		patternCountKey := makeDevicePatternDateKey(row.DeviceID, row.PatternID, row.PatternName, dateKey)
 		patternSewCount := patternSewCountMap[patternCountKey]
-		alarmInfo := alarmInfoMap[makeDeviceDateKey(row.DeviceID, dateKey)]
+		alarmInfo := resolveProductionAlarmInfo(alarmWindows, row.DeviceID, startTime, endTime)
 		alarmText := "无"
 		alarmTime := "无"
 		if alarmInfo.AlarmInfo != "" {
@@ -2275,7 +2275,7 @@ func (h *StatisticsHandler) exportProcessCSV(c *gin.Context) {
 		Scan(&rowsData)
 
 	patternSewCountMap := h.loadPatternSewCountByDevicePatternDate(startDate, endDate, deviceId, deviceIDs)
-	alarmInfoMap := h.loadAlarmInfoByDeviceDate(startDate, endDate, deviceId, deviceIDs)
+	alarmWindows := h.loadAlarmWindows(startDate, endDate, deviceId, deviceIDs)
 	usageStartDate, usageEndDate := effectiveStatsDateRange(startDate, endDate)
 	usageByDeviceDate := make(map[string]deviceDailyRuntimeAgg)
 	for _, item := range h.loadDeviceDailyRuntimeAggs(usageStartDate, usageEndDate, deviceId, deviceIDs, true) {
@@ -2285,10 +2285,7 @@ func (h *StatisticsHandler) exportProcessCSV(c *gin.Context) {
 	rows := make([][]string, 0, len(rowsData))
 	for _, row := range rowsData {
 		runningHours := resolveProductionDurationHours(row.StartTime, row.EndTime, row.DurationHours)
-		startTime, _ := deriveProductionTimeRange(row.RecordDate, row.CreatedAt, runningHours)
-		if row.StartTime != nil && !row.StartTime.IsZero() {
-			startTime = *row.StartTime
-		}
+		startTime, endTime := resolveProductionTimeRange(row.RecordDate, row.CreatedAt, row.StartTime, row.EndTime, runningHours)
 		sewSpeed := 0.0
 		if runningHours > 0 {
 			sewSpeed = float64(row.Stitches) / (runningHours * 60)
@@ -2301,7 +2298,7 @@ func (h *StatisticsHandler) exportProcessCSV(c *gin.Context) {
 		deviceDayUsage := usageByDeviceDate[makeDeviceDateKey(row.DeviceID, dateKey)]
 		cumulativeUpTime := resolveCumulativeUpTime(deviceDayUsage, runningHours, row.IdleTime)
 		patternSewCount := patternSewCountMap[makeDevicePatternDateKey(row.DeviceID, row.PatternID, row.PatternName, dateKey)]
-		alarmInfo := alarmInfoMap[makeDeviceDateKey(row.DeviceID, dateKey)]
+		alarmInfo := resolveProductionAlarmInfo(alarmWindows, row.DeviceID, startTime, endTime)
 		alarmText := "无"
 		alarmTime := "无"
 		if alarmInfo.AlarmInfo != "" {
@@ -2464,6 +2461,14 @@ type alarmDailyInfo struct {
 	AlarmTime string
 }
 
+type alarmWindowInfo struct {
+	DeviceID  uint
+	StartTime time.Time
+	EndTime   time.Time
+	AlarmInfo string
+	AlarmTime string
+}
+
 type employeeDailyInfo struct {
 	EmployeeCode string
 	EmployeeName string
@@ -2494,6 +2499,21 @@ func deriveProductionTimeRange(recordDate, createdAt time.Time, runningHours flo
 		duration = 0
 	}
 	return startTime, startTime.Add(duration)
+}
+
+func resolveProductionTimeRange(recordDate, createdAt time.Time, startTime, endTime *time.Time, runningHours float64) (time.Time, time.Time) {
+	resolvedStart, resolvedEnd := deriveProductionTimeRange(recordDate, createdAt, runningHours)
+	if startTime != nil && !startTime.IsZero() {
+		resolvedStart = *startTime
+		resolvedEnd = resolvedStart.Add(time.Duration(runningHours * float64(time.Hour)))
+	}
+	if endTime != nil && !endTime.IsZero() {
+		resolvedEnd = *endTime
+	}
+	if resolvedEnd.Before(resolvedStart) {
+		resolvedEnd = resolvedStart
+	}
+	return resolvedStart, resolvedEnd
 }
 
 func (h *StatisticsHandler) loadPatternSewCountByDevicePatternDate(startDate, endDate, deviceId string, deviceIDs []uint) map[string]int64 {
@@ -2553,6 +2573,68 @@ func (h *StatisticsHandler) loadAlarmInfoByDeviceDate(startDate, endDate, device
 		}
 	}
 	return result
+}
+
+func (h *StatisticsHandler) loadAlarmWindows(startDate, endDate, deviceId string, deviceIDs []uint) []alarmWindowInfo {
+	baseQuery := h.buildAlarmStatsBaseQuery(startDate, endDate, deviceId, deviceIDs, "")
+
+	var rows []struct {
+		DeviceID    uint
+		AlarmCode   string
+		AlarmType   string
+		Description string
+		Duration    int
+		StartTime   time.Time
+		EndTime     *time.Time
+	}
+	baseQuery.Session(&gorm.Session{}).
+		Select("ar.device_id, ar.alarm_code, ar.alarm_type, ar.description, ar.duration, ar.start_time, ar.end_time").
+		Order("ar.start_time ASC, ar.id ASC").
+		Scan(&rows)
+
+	result := make([]alarmWindowInfo, 0, len(rows))
+	for _, row := range rows {
+		if row.StartTime.IsZero() {
+			continue
+		}
+		_, alarmInfo, _ := normalizeAlarmDisplay(row.AlarmCode, row.AlarmType, row.Description)
+		alarmInfo = strings.TrimSpace(alarmInfo)
+		if alarmInfo == "" {
+			alarmInfo = "报警"
+		}
+		alarmEnd := row.StartTime
+		if row.EndTime != nil && !row.EndTime.IsZero() && row.EndTime.After(row.StartTime) {
+			alarmEnd = *row.EndTime
+		} else if row.Duration > 0 {
+			alarmEnd = row.StartTime.Add(time.Duration(row.Duration) * time.Second)
+		}
+		result = append(result, alarmWindowInfo{
+			DeviceID:  row.DeviceID,
+			StartTime: row.StartTime,
+			EndTime:   alarmEnd,
+			AlarmInfo: alarmInfo,
+			AlarmTime: row.StartTime.Format("2006-01-02 15:04:05"),
+		})
+	}
+	return result
+}
+
+func resolveProductionAlarmInfo(alarms []alarmWindowInfo, deviceID uint, startTime, endTime time.Time) alarmDailyInfo {
+	if endTime.Before(startTime) {
+		endTime = startTime
+	}
+	for _, alarm := range alarms {
+		if alarm.DeviceID != deviceID {
+			continue
+		}
+		if !alarm.StartTime.After(endTime) && !alarm.EndTime.Before(startTime) {
+			return alarmDailyInfo{
+				AlarmInfo: alarm.AlarmInfo,
+				AlarmTime: alarm.AlarmTime,
+			}
+		}
+	}
+	return alarmDailyInfo{AlarmInfo: "无", AlarmTime: "无"}
 }
 
 func (h *StatisticsHandler) loadEmployeeInfoByDeviceDate(startDate, endDate, deviceId string, deviceIDs []uint) map[string]employeeDailyInfo {

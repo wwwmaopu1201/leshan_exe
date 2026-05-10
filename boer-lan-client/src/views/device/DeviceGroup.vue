@@ -19,24 +19,37 @@
             highlight-current
             show-checkbox
             :check-strictly="true"
-            draggable
             :expand-on-click-node="false"
-            :allow-drag="allowDragGroupNode"
-            :allow-drop="allowDropGroupNode"
             @node-click="handleNodeClick"
             @check="handleTreeCheck"
             @node-contextmenu="handleNodeContextMenu"
-          @node-drop="handleGroupNodeDrop"
         >
-          <div class="tree-node flex-between" style="width: 100%" slot-scope="{ node, data }">
+          <div
+            class="tree-node flex-between"
+            style="width: 100%"
+            slot-scope="{ node, data }"
+            :class="{
+              'tree-node-device': data.isDevice,
+              'tree-node-drop-target': isManualDragDropTarget(data),
+              'tree-node-drop-hover': manualDrag.targetKey === String(data.id)
+            }"
+            :data-tree-node-key="String(data.id)"
+            @mousedown.left="handleManualDeviceMouseDown($event, data)"
+          >
             <span class="tree-node-label" @dblclick.stop="handleNodeDoubleClick(data)" :title="data.isDevice ? '双击可重命名设备' : '双击可重命名分组'">
               <i :class="getTreeNodeIcon(data)"></i>
               {{ node.label }}
-              <span v-if="!data.isDevice" class="device-count">({{ data.deviceCount || 0 }})</span>
               <span v-if="data.isDevice" :class="['node-status-dot', `status-${data.status || 'offline'}`]"></span>
             </span>
           </div>
         </el-tree>
+        <div
+          v-if="manualDrag.active && manualDrag.moved"
+          class="manual-drag-ghost"
+          :style="{ left: `${manualDrag.x + 12}px`, top: `${manualDrag.y + 12}px` }"
+        >
+          {{ manualDrag.device?.label || '移动设备' }}
+        </div>
       </el-card>
       </el-col>
 
@@ -291,21 +304,25 @@
       @click.stop
       @contextmenu.prevent
     >
-      <li @click="handleContextMenuAction('addRoot')">新增分组</li>
-      <template v-if="contextMenu.node && isEditableGroupNode(contextMenu.node)">
-        <li @click="handleContextMenuAction('addSibling')">新增平级组</li>
-        <li @click="handleContextMenuAction('addChild')">新增子组</li>
-        <li @click="handleContextMenuAction('moveSelectedHere')">移动已选设备到当前组</li>
-        <li @click="handleContextMenuAction('moveUp')">上移</li>
-        <li @click="handleContextMenuAction('moveDown')">下移</li>
-        <li @click="handleContextMenuAction('edit')">重命名</li>
-        <li
-          class="danger"
-          :class="{ disabled: !canDeleteGroup(contextMenu.node) }"
-          @click="handleContextMenuAction('delete')"
-        >
-          删除分组
-        </li>
+      <template v-if="contextMenu.node && contextMenu.node.isDevice">
+        <li class="danger" @click="handleContextMenuAction('removeDeviceFromGroup')">删除设备</li>
+        <li @click="handleContextMenuAction('renameDevice')">重命名</li>
+      </template>
+      <template v-else>
+        <li @click="handleContextMenuAction('addRoot')">新增分组</li>
+      </template>
+      <template v-if="contextMenu.node && isGroupContextNode(contextMenu.node)">
+        <template v-if="canModifyGroup(contextMenu.node)">
+          <li @click="handleContextMenuAction('addSibling')">新增同级分组</li>
+        </template>
+        <li @click="handleContextMenuAction('addChild')">新增子分组</li>
+        <li :class="{ disabled: !canMoveSelectedToGroup(contextMenu.node) }" @click="handleContextMenuAction('moveSelectedHere')">移动已选设备到当前组</li>
+        <template v-if="canModifyGroup(contextMenu.node)">
+          <li :class="{ disabled: !canMoveUp(contextMenu.node) }" @click="handleContextMenuAction('moveUp')">上移</li>
+          <li :class="{ disabled: !canMoveDown(contextMenu.node) }" @click="handleContextMenuAction('moveDown')">下移</li>
+          <li @click="handleContextMenuAction('edit')">重命名</li>
+          <li class="danger" @click="handleContextMenuAction('delete')">删除分组</li>
+        </template>
       </template>
       <li @click="handleContextMenuAction('refresh')">刷新</li>
     </ul>
@@ -341,6 +358,7 @@ export default {
       groupDevices: [],
       checkedTreeNodes: [],
       selectedDeviceIds: [],
+      draggingDeviceNode: null,
       showGroupDialog: false,
       showMoveDevicesDialog: false,
       showQuickAssignDialog: false,
@@ -368,6 +386,17 @@ export default {
         y: 0,
         node: null
       },
+      manualDrag: {
+        active: false,
+        moved: false,
+        device: null,
+        targetKey: '',
+        targetNode: null,
+        startX: 0,
+        startY: 0,
+        x: 0,
+        y: 0
+      },
       groupRules: {
         name: [{ required: true, message: '请输入分组名称', trigger: 'blur' }]
       },
@@ -381,8 +410,8 @@ export default {
     groupDialogTitle() {
       const titleMap = {
         addRoot: '新增分组',
-        addSibling: '新增平级组',
-        addChild: '新增子组',
+        addSibling: '新增同级分组',
+        addChild: '新增子分组',
         edit: '编辑分组'
       }
       return titleMap[this.groupDialogMode] || '新增分组'
@@ -412,6 +441,7 @@ export default {
     window.removeEventListener('blur', this.hideContextMenu)
     window.removeEventListener('resize', this.hideContextMenu)
     window.removeEventListener('resize', this.syncGroupDeviceTableHeight)
+    this.removeManualDragListeners()
   },
   methods: {
     async fetchAll() {
@@ -464,6 +494,8 @@ export default {
       return {
         id: `device-${device.id}`,
         deviceId: Number(device.id),
+        groupId: device.groupId || null,
+        name: device.name || device.displayName || '',
         label: this.formatDeviceName(device),
         code: device.code || '',
         status: device.status || '',
@@ -573,7 +605,7 @@ export default {
 
       this.groupTree = [{
         id: 'all',
-        label: '全部设备',
+        label: '总分组',
         parentId: null,
         parentLabel: '',
         children: [ungroupedNode, ...roots],
@@ -664,77 +696,61 @@ export default {
     },
     allowDragGroupNode(draggingNode) {
       const data = draggingNode?.data
-      if (!data) return false
-      if (data.isDevice) {
-        return true
-      }
-      if (data.isRoot || data.isVirtual || data.id === 'all' || data.id === 'ungrouped') {
-        return false
-      }
-      return true
-    },
-    isDescendantGroup(descendantId, ancestorId) {
-      const parentMap = new Map()
-      this.flatGroups.forEach(group => {
-        parentMap.set(Number(group.id), Number(group.parentId || 0))
-      })
-      let current = Number(descendantId || 0)
-      const target = Number(ancestorId || 0)
-      while (current > 0) {
-        const parentId = Number(parentMap.get(current) || 0)
-        if (parentId === target) {
-          return true
-        }
-        current = parentId
-      }
-      return false
+      return !!data?.isDevice
     },
     allowDropGroupNode(draggingNode, dropNode, type) {
       const dragging = draggingNode?.data
-      const target = dropNode?.data
-      if (!dragging || !target) {
+      if (!dragging || !dropNode?.data) {
         return false
       }
-      if (dragging.isDevice) {
-        if (type !== 'inner') {
-          return false
-        }
-        if (target.isDevice || target.id === 'all') {
-          return false
-        }
-        return true
+      if (!dragging.isDevice) {
+        return false
+      }
+      const targetGroupId = this.resolveDropTargetGroupId(dropNode, type)
+      return targetGroupId === null || targetGroupId > 0
+    },
+    resolveDropTargetGroupId(dropNode, dropType) {
+      const target = dropNode?.data
+      if (!target || target.id === 'all') {
+        return undefined
+      }
+      if (target.id === 'ungrouped') {
+        return null
       }
       if (target.isDevice) {
-        return false
+        const groupId = Number(target.groupId || 0)
+        return groupId > 0 ? groupId : null
       }
-      if (!this.allowDragGroupNode(draggingNode)) {
-        return false
+      if (!target.isVirtual && Number(target.id || 0) > 0) {
+        return Number(target.id)
       }
-      if (target.isVirtual) {
-        return type !== 'inner'
+      if (dropType !== 'inner') {
+        const parent = dropNode?.parent?.data
+        if (parent?.id === 'ungrouped') {
+          return null
+        }
+        if (parent && parent.id !== 'all' && !parent.isVirtual && Number(parent.id || 0) > 0) {
+          return Number(parent.id)
+        }
       }
-      if (target.id === 'all') {
-        return type === 'inner'
-      }
-      if (target.id === dragging.id) {
-        return false
-      }
-      if (this.isDescendantGroup(Number(target.id), Number(dragging.id))) {
-        return false
-      }
-      return true
+      return undefined
     },
-    async handleGroupNodeDrop(draggingNode, dropNode) {
+    async handleGroupNodeDrop(draggingNode, dropNode, dropType) {
       const dragging = draggingNode?.data
-      const target = dropNode?.data
-      if (!dragging || !target) {
+      if (!dragging) {
         return
       }
 
       if (dragging.isDevice) {
-        const targetGroupId = target.id === 'ungrouped' ? null : Number(target.id || 0)
-        if (target.id !== 'ungrouped' && targetGroupId <= 0) {
+        const targetGroupId = this.resolveDropTargetGroupId(dropNode, dropType)
+        if (targetGroupId === undefined || (targetGroupId !== null && targetGroupId <= 0)) {
           this.$message.warning('请选择有效的目标分组')
+          this.buildGroupTree()
+          return
+        }
+        if (Number(dragging.groupId || 0) === Number(targetGroupId || 0)) {
+          this.$message.info('设备已在目标分组')
+          this.buildGroupTree()
           return
         }
         try {
@@ -753,67 +769,185 @@ export default {
         }
         return
       }
-
-      const root = this.groupTree.find(node => node.id === 'all')
-      if (!root) {
+    },
+    handleNativeDeviceDragStart(event, data) {
+      if (!data?.isDevice) {
+        event.preventDefault()
         return
       }
-
-      const snapshotMap = new Map(
-        this.flatGroups.map(group => [Number(group.id), group])
-      )
-      const updates = []
-      const walk = (nodes, parentId) => {
-        const validNodes = (nodes || []).filter(node => !node.isVirtual && !node.isDevice && node.id !== 'all')
-        validNodes.forEach((node, index) => {
-          const original = snapshotMap.get(Number(node.id))
-          if (!original) {
-            return
-          }
-          const nextParentId = parentId || null
-          const nextSortOrder = (index + 1) * 10
-          const prevParent = Number(original.parentId || 0)
-          const currParent = Number(nextParentId || 0)
-          const prevSort = Number(original.sortOrder || 0)
-          if (prevParent !== currParent || prevSort !== nextSortOrder) {
-            updates.push({
-              id: original.id,
-              name: original.name,
-              parentId: nextParentId,
-              sortOrder: nextSortOrder
-            })
-          }
-          walk(node.children || [], node.id)
-        })
+      this.draggingDeviceNode = data
+      event.dataTransfer.effectAllowed = 'move'
+      event.dataTransfer.setData('application/x-boer-device-id', String(data.deviceId || ''))
+      event.dataTransfer.setData('text/plain', String(data.deviceId || ''))
+    },
+    handleNativeDeviceDragEnd() {
+      this.draggingDeviceNode = null
+    },
+    handleNativeDeviceDragOver(event, data) {
+      const targetGroupId = this.resolveNativeDropTargetGroupId(data)
+      if (targetGroupId === undefined) return
+      event.dataTransfer.dropEffect = 'move'
+    },
+    resolveNativeDropTargetGroupId(target) {
+      if (!target || target.id === 'all') return undefined
+      if (target.id === 'ungrouped') return null
+      if (target.isDevice) {
+        const groupId = Number(target.groupId || 0)
+        return groupId > 0 ? groupId : null
       }
-      walk(root.children || [], null)
-
-      if (!updates.length) {
+      if (!target.isVirtual && Number(target.id || 0) > 0) {
+        return Number(target.id)
+      }
+      return undefined
+    },
+    async handleNativeDeviceDrop(event, target) {
+      const dragging = this.draggingDeviceNode
+      if (!dragging?.isDevice) return
+      const deviceId = Number(dragging.deviceId || event.dataTransfer.getData('application/x-boer-device-id') || 0)
+      const targetGroupId = this.resolveNativeDropTargetGroupId(target)
+      if (!deviceId || targetGroupId === undefined) {
+        this.buildGroupTree()
         return
       }
-
-      this.draggingGroup = true
+      if (Number(dragging.groupId || 0) === Number(targetGroupId || 0)) {
+        this.$message.info('设备已在目标分组')
+        this.buildGroupTree()
+        return
+      }
       try {
-        const results = await Promise.all(
-          updates.map(item => updateDeviceGroup(item.id, {
-            name: item.name,
-            parentId: item.parentId,
-            sortOrder: item.sortOrder
-          }))
-        )
-        if (results.every(item => item.code === 0)) {
-          this.$message.success('拖动分组已生效')
-          await this.fetchAll()
-          return
+        const res = await moveToGroup([deviceId], targetGroupId)
+        if (res.code === 0) {
+          this.$message.success(targetGroupId ? '设备已移动到目标分组' : '设备已移出分组')
+          await this.fetchDevices()
+          this.buildGroupTree()
+          this.syncGroupDevices()
+        } else {
+          this.$message.error(res.message || '拖动设备失败')
         }
-        this.$message.error('部分分组保存失败，已刷新数据')
-        await this.fetchAll()
       } catch (error) {
-        console.error('Drag group failed:', error)
-        this.$message.error('拖动分组失败，已回滚')
-        await this.fetchAll()
+        console.error('Native drag device failed:', error)
+        this.$message.error('拖动设备失败')
       } finally {
-        this.draggingGroup = false
+        this.draggingDeviceNode = null
+      }
+    },
+    handleManualDeviceMouseDown(event, data) {
+      if (event.button !== 0 || !data?.isDevice) {
+        return
+      }
+      this.hideContextMenu()
+      this.manualDrag = {
+        active: true,
+        moved: false,
+        device: data,
+        targetKey: '',
+        targetNode: null,
+        startX: event.clientX,
+        startY: event.clientY,
+        x: event.clientX,
+        y: event.clientY
+      }
+      document.addEventListener('mousemove', this.handleManualDeviceMouseMove)
+      document.addEventListener('mouseup', this.handleManualDeviceMouseUp)
+    },
+    handleManualDeviceMouseMove(event) {
+      if (!this.manualDrag.active) return
+      const dx = Math.abs(event.clientX - this.manualDrag.startX)
+      const dy = Math.abs(event.clientY - this.manualDrag.startY)
+      if (!this.manualDrag.moved && dx + dy < 4) {
+        return
+      }
+      event.preventDefault()
+      if (!this.manualDrag.moved) {
+        this.manualDrag.moved = true
+        document.body.classList.add('device-manual-dragging')
+      }
+      this.manualDrag.x = event.clientX
+      this.manualDrag.y = event.clientY
+
+      const target = this.findManualDropTargetFromPoint(event.clientX, event.clientY)
+      this.manualDrag.targetNode = target
+      this.manualDrag.targetKey = target ? String(target.id) : ''
+    },
+    async handleManualDeviceMouseUp(event) {
+      if (!this.manualDrag.active) return
+      const dragState = { ...this.manualDrag }
+      this.removeManualDragListeners()
+      this.resetManualDrag()
+
+      if (!dragState.moved) {
+        return
+      }
+      event.preventDefault()
+      event.stopPropagation()
+      await this.moveDraggedDeviceToTarget(dragState.device, dragState.targetNode)
+    },
+    removeManualDragListeners() {
+      document.removeEventListener('mousemove', this.handleManualDeviceMouseMove)
+      document.removeEventListener('mouseup', this.handleManualDeviceMouseUp)
+      document.body.classList.remove('device-manual-dragging')
+    },
+    resetManualDrag() {
+      this.manualDrag = {
+        active: false,
+        moved: false,
+        device: null,
+        targetKey: '',
+        targetNode: null,
+        startX: 0,
+        startY: 0,
+        x: 0,
+        y: 0
+      }
+    },
+    findManualDropTargetFromPoint(x, y) {
+      const element = document.elementFromPoint(x, y)
+      const nodeElement = element?.closest?.('[data-tree-node-key]')
+      const key = nodeElement?.getAttribute('data-tree-node-key')
+      if (!key) return null
+      const node = this.findTreeNode(item => String(item.id) === key)
+      return this.resolveManualDropTargetGroupId(node) !== undefined ? node : null
+    },
+    isManualDragDropTarget(data) {
+      return this.manualDrag.active && this.manualDrag.moved && this.resolveManualDropTargetGroupId(data) !== undefined
+    },
+    resolveManualDropTargetGroupId(target) {
+      if (!target || target.id === 'all') return undefined
+      if (target.id === 'ungrouped') return null
+      if (target.isDevice) {
+        const groupId = Number(target.groupId || 0)
+        return groupId > 0 ? groupId : null
+      }
+      if (!target.isVirtual && Number(target.id || 0) > 0) {
+        return Number(target.id)
+      }
+      return undefined
+    },
+    async moveDraggedDeviceToTarget(device, target) {
+      const deviceId = Number(device?.deviceId || 0)
+      const targetGroupId = this.resolveManualDropTargetGroupId(target)
+      if (!deviceId || targetGroupId === undefined) {
+        this.buildGroupTree()
+        return
+      }
+      if (Number(device.groupId || 0) === Number(targetGroupId || 0)) {
+        this.$message.info('设备已在目标分组')
+        this.buildGroupTree()
+        return
+      }
+      try {
+        const res = await moveToGroup([deviceId], targetGroupId)
+        if (res.code === 0) {
+          this.$message.success(targetGroupId ? '设备已移动到目标分组' : '设备已移出分组')
+          await this.fetchDevices()
+          this.buildGroupTree()
+          this.syncGroupDevices()
+        } else {
+          this.$message.error(res.message || '拖动设备失败')
+        }
+      } catch (error) {
+        console.error('Manual drag device failed:', error)
+        this.$message.error('拖动设备失败')
       }
     },
     syncGroupDevices() {
@@ -1174,15 +1308,54 @@ export default {
       const id = String(data?.id || '')
       return label === '总分组' || label === '全部设备' || id === 'all'
     },
+    isGroupContextNode(data) {
+      return !!data && !data.isVirtual && !data.isDevice && data.id !== 'all' && data.id !== 'ungrouped'
+    },
     isEditableGroupNode(data) {
       return !!data && !data.isRoot && !data.isVirtual && !data.isDevice && !this.isTotalGroupNode(data)
     },
     canDeleteGroup(data) {
+      return this.canModifyGroup(data)
+    },
+    canModifyGroup(data) {
       return this.isEditableGroupNode(data)
+    },
+    canMoveSelectedToGroup(data) {
+      return this.isGroupContextNode(data) && Number(data?.id || 0) > 0 && this.selectedDeviceIds.length > 0
+    },
+    getGroupSiblings(data) {
+      return this.flatGroups
+        .filter(group => Number(group.parentId || 0) === Number(data?.parentId || 0))
+        .sort((a, b) => (a.sortOrder - b.sortOrder) || (a.id - b.id))
+    },
+    canMoveUp(data) {
+      if (!this.canModifyGroup(data)) return false
+      const siblings = this.getGroupSiblings(data)
+      return siblings.findIndex(group => Number(group.id) === Number(data.id)) > 0
+    },
+    canMoveDown(data) {
+      if (!this.canModifyGroup(data)) return false
+      const siblings = this.getGroupSiblings(data)
+      const index = siblings.findIndex(group => Number(group.id) === Number(data.id))
+      return index >= 0 && index < siblings.length - 1
     },
     handleContextMenuAction(action) {
       const data = this.contextMenu.node
       this.hideContextMenu()
+      if (data?.isDevice) {
+        if (action === 'removeDeviceFromGroup') {
+          this.removeDeviceFromGroup(data)
+          return
+        }
+        if (action === 'renameDevice') {
+          this.renameDevice(data)
+          return
+        }
+        if (action === 'refresh') {
+          this.fetchAll()
+        }
+        return
+      }
       if (action === 'addRoot') {
         this.handleAddGroup()
         return
@@ -1191,10 +1364,11 @@ export default {
         this.fetchAll()
         return
       }
-      if (!this.isEditableGroupNode(data)) {
+      if (!this.isGroupContextNode(data)) {
         return
       }
       if (action === 'addSibling') {
+        if (!this.canModifyGroup(data)) return
         this.handleAddSibling(data)
         return
       }
@@ -1206,11 +1380,16 @@ export default {
         this.moveSelectedDevicesToGroup(data)
         return
       }
+      if (['moveUp', 'moveDown', 'edit', 'delete'].includes(action) && !this.canModifyGroup(data)) {
+        return
+      }
       if (action === 'moveUp') {
+        if (!this.canMoveUp(data)) return
         this.handleMoveGroup(data, 'up')
         return
       }
       if (action === 'moveDown') {
+        if (!this.canMoveDown(data)) return
         this.handleMoveGroup(data, 'down')
         return
       }
@@ -1227,7 +1406,7 @@ export default {
       }
     },
     async moveSelectedDevicesToGroup(groupNode) {
-      if (!this.selectedDeviceIds.length) {
+      if (!this.canMoveSelectedToGroup(groupNode)) {
         this.$message.warning('请先在右侧列表勾选设备')
         return
       }
@@ -1309,13 +1488,32 @@ export default {
         }
       }
     },
+    async removeDeviceFromGroup(data) {
+      const deviceId = Number(data?.deviceId || 0)
+      if (!deviceId) {
+        this.$message.warning('设备参数错误')
+        return
+      }
+      try {
+        const res = await moveToGroup([deviceId], null)
+        if (res.code === 0) {
+          this.$message.success('设备已移到未分组设备')
+          await this.fetchDevices()
+          this.buildGroupTree()
+          this.syncGroupDevices()
+          return
+        }
+        this.$message.error(res.message || '删除设备失败')
+      } catch (error) {
+        console.error('Remove device from group failed:', error)
+        this.$message.error('删除设备失败')
+      }
+    },
     getStatusType(status) {
       const map = {
-        online: 'success',
         working: 'primary',
         idle: 'warning',
-        offline: 'info',
-        alarm: 'danger'
+        offline: 'info'
       }
       return map[status] || 'info'
     },
@@ -1581,6 +1779,25 @@ export default {
 }
 
 .tree-node {
+  user-select: none;
+
+  &.tree-node-device {
+    cursor: grab;
+  }
+
+  &.tree-node-device:active {
+    cursor: grabbing;
+  }
+
+  &.tree-node-drop-target {
+    border-radius: 2px;
+  }
+
+  &.tree-node-drop-hover {
+    background: rgba(47, 109, 246, 0.12);
+    box-shadow: inset 0 0 0 1px rgba(47, 109, 246, 0.38);
+  }
+
   .tree-node-label {
     cursor: pointer;
     display: inline-flex;
@@ -1593,13 +1810,11 @@ export default {
     height: 8px;
     border-radius: 50%;
 
-    &.status-online,
     &.status-idle {
       background: #67C23A;
     }
 
-    &.status-working,
-    &.status-alarm {
+    &.status-working {
       background: #F56C6C;
     }
 
@@ -1608,11 +1823,22 @@ export default {
     }
   }
 
-  .device-count {
-    color: #909399;
-    font-size: 12px;
-    margin-left: 5px;
-  }
+}
+
+.manual-drag-ghost {
+  position: fixed;
+  z-index: 3000;
+  max-width: 260px;
+  padding: 6px 10px;
+  border-radius: 3px;
+  background: rgba(31, 41, 55, 0.92);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.2;
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .danger-text {

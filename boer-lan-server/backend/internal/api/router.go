@@ -53,7 +53,7 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, se
 		protected.PUT("/auth/password", authHandler.ChangePassword)
 		protected.PUT("/auth/profile", authHandler.UpdateProfile)
 		protected.POST("/auth/avatar", authHandler.UploadAvatar)
-		protected.GET("/auth/login-logs", authHandler.GetLoginLogs)
+		protected.GET("/auth/login-logs", permAdmin, authHandler.GetLoginLogs)
 
 		// Device
 		protected.GET("/device/tree", permDeviceTreeRead, deviceHandler.GetDeviceTree)

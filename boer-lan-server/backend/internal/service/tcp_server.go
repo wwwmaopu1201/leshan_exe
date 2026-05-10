@@ -160,8 +160,8 @@ func (s *TCPServer) serve() {
 	}
 }
 
-// ResetStaleDeviceStatuses clears persisted online-like states from a previous
-// server process. Real devices will move back online as soon as they reconnect.
+// ResetStaleDeviceStatuses clears persisted powered-on states from a previous
+// server process. Real devices will move back to idle/working as soon as they reconnect.
 func (s *TCPServer) ResetStaleDeviceStatuses() error {
 	closeDeviceRuntimeSessions(s.db, 0, time.Now(), "server-reset")
 	return s.db.Model(&model.Device{}).

@@ -72,7 +72,7 @@ type Device struct {
 	MainboardSN        string    `gorm:"size:100;index" json:"mainboardSn"` // 主板编号
 	Remark             string    `gorm:"size:255" json:"remark"`            // 备注
 	IP                 string    `gorm:"size:50" json:"ip"`
-	Status             string    `gorm:"size:20;default:offline" json:"status"` // online, offline, working, idle, alarm
+	Status             string    `gorm:"size:20;default:offline" json:"status"` // idle, working, offline
 	CurrentPatternNo   uint      `gorm:"default:0" json:"currentPatternNo"`
 	CurrentPatternName string    `gorm:"size:255" json:"currentPatternName"`
 	AlarmCode          string    `gorm:"size:20" json:"alarmCode"`
@@ -256,7 +256,8 @@ type SalaryRecord struct {
 // LoginLog 登录记录
 type LoginLog struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
-	UserID    uint      `gorm:"index;not null" json:"userId"`
+	UserID    uint      `gorm:"index;default:0" json:"userId"`
+	Username  string    `gorm:"size:50;index" json:"username"`
 	IP        string    `gorm:"size:50" json:"ip"`
 	Device    string    `gorm:"size:200" json:"device"`
 	Status    string    `gorm:"size:20" json:"status"`

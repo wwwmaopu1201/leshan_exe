@@ -1,7 +1,9 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -86,28 +88,11 @@ func (h *PatternHandler) GetDevicePatternFiles(c *gin.Context) {
 		return
 	}
 
-	query := h.db.Model(&model.DevicePatternFile{}).Where("device_id = ?", device.ID)
-	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
-		query = query.Where("file_name LIKE ? OR order_no LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
-	}
-	if patternType := strings.TrimSpace(c.Query("patternType")); patternType != "" {
-		query = query.Where("pattern_type = ?", patternType)
-	}
-
-	page, pageSize := parsePagination(c)
-	offset := (page - 1) * pageSize
-
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "统计设备文件失败",
-		})
-		return
-	}
-
 	var files []model.DevicePatternFile
-	if err := query.Order("updated_at DESC").Offset(offset).Limit(pageSize).Find(&files).Error; err != nil {
+	if err := h.db.
+		Where("device_id = ?", device.ID).
+		Order("updated_at DESC").
+		Find(&files).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
 			"message": "查询设备文件失败",
@@ -115,24 +100,37 @@ func (h *PatternHandler) GetDevicePatternFiles(c *gin.Context) {
 		return
 	}
 
-	list := make([]gin.H, 0, len(files))
-	for _, item := range files {
-		list = append(list, gin.H{
-			"id":          item.ID,
-			"deviceId":    item.DeviceID,
-			"patternNo":   item.PatternNo,
-			"fileName":    item.FileName,
-			"patternType": item.PatternType,
-			"fileSize":    item.FileSize,
-			"size":        formatFileSize(item.FileSize),
-			"stitches":    item.Stitches,
-			"unitPrice":   roundTo3(item.UnitPrice),
-			"orderNo":     item.OrderNo,
-			"filePath":    item.FilePath,
-			"createTime":  item.CreatedAt.Format("2006-01-02 15:04:05"),
-			"updateTime":  item.UpdatedAt.Format("2006-01-02 15:04:05"),
+	serverPatterns, err := h.loadServerPatternMatches(device.ID, files)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "匹配服务器花型失败",
 		})
+		return
 	}
+
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	patternTypeFilter := strings.TrimSpace(c.Query("patternType"))
+	rows := make([]gin.H, 0, len(files))
+	for _, item := range files {
+		row := h.buildDevicePatternFileRow(device.ID, item, serverPatterns)
+		if !matchesDevicePatternFileFilter(row, keyword, patternTypeFilter) {
+			continue
+		}
+		rows = append(rows, row)
+	}
+
+	page, pageSize := parsePagination(c)
+	total := int64(len(rows))
+	start := (page - 1) * pageSize
+	if start > len(rows) {
+		start = len(rows)
+	}
+	end := start + pageSize
+	if end > len(rows) {
+		end = len(rows)
+	}
+	list := rows[start:end]
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
@@ -142,6 +140,136 @@ func (h *PatternHandler) GetDevicePatternFiles(c *gin.Context) {
 		},
 		"message": "success",
 	})
+}
+
+func (h *PatternHandler) buildDevicePatternFileRow(deviceID uint, item model.DevicePatternFile, serverPatterns map[string]model.Pattern) gin.H {
+	patternName := strings.TrimSpace(strings.TrimSuffix(item.FileName, filepath.Ext(item.FileName)))
+	patternType := item.PatternType
+	stitches := item.Stitches
+	unitPrice := item.UnitPrice
+	orderNo := item.OrderNo
+	fileSize := item.FileSize
+	var serverPatternID uint
+
+	if matched, ok := findMatchedServerPattern(deviceID, item, serverPatterns); ok {
+		serverPatternID = matched.ID
+		if strings.TrimSpace(matched.Name) != "" {
+			patternName = strings.TrimSpace(matched.Name)
+		}
+		patternType = matched.PatternType
+		stitches = matched.Stitches
+		unitPrice = matched.UnitPrice
+		orderNo = matched.OrderNo
+		fileSize = matched.FileSize
+	}
+
+	return gin.H{
+		"id":                   item.ID,
+		"deviceId":             item.DeviceID,
+		"patternNo":            item.PatternNo,
+		"fileName":             item.FileName,
+		"patternName":          patternName,
+		"matchedServerPattern": serverPatternID > 0,
+		"serverPatternId":      serverPatternID,
+		"patternType":          patternType,
+		"fileSize":             fileSize,
+		"size":                 formatFileSize(fileSize),
+		"stitches":             stitches,
+		"unitPrice":            roundTo3(unitPrice),
+		"orderNo":              orderNo,
+		"filePath":             item.FilePath,
+		"createTime":           item.CreatedAt.Format("2006-01-02 15:04:05"),
+		"updateTime":           item.UpdatedAt.Format("2006-01-02 15:04:05"),
+	}
+}
+
+func (h *PatternHandler) loadServerPatternMatches(deviceID uint, files []model.DevicePatternFile) (map[string]model.Pattern, error) {
+	candidateSet := make(map[string]struct{})
+	candidates := make([]string, 0, len(files)*3)
+	for _, file := range files {
+		for _, candidate := range buildDevicePatternMatchCandidates(deviceID, file) {
+			key := normalizePatternMatchKey(candidate)
+			if key == "" {
+				continue
+			}
+			if _, exists := candidateSet[key]; exists {
+				continue
+			}
+			candidateSet[key] = struct{}{}
+			candidates = append(candidates, strings.TrimSpace(candidate))
+		}
+	}
+	if len(candidates) == 0 {
+		return map[string]model.Pattern{}, nil
+	}
+
+	var patterns []model.Pattern
+	if err := h.db.Where("name IN ? OR file_name IN ?", candidates, candidates).Find(&patterns).Error; err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]model.Pattern, len(patterns)*3)
+	for _, pattern := range patterns {
+		for _, candidate := range []string{pattern.Name, pattern.FileName, strings.TrimSuffix(pattern.FileName, filepath.Ext(pattern.FileName))} {
+			key := normalizePatternMatchKey(candidate)
+			if key == "" {
+				continue
+			}
+			if _, exists := result[key]; !exists {
+				result[key] = pattern
+			}
+		}
+	}
+	return result, nil
+}
+
+func findMatchedServerPattern(deviceID uint, file model.DevicePatternFile, patterns map[string]model.Pattern) (model.Pattern, bool) {
+	for _, candidate := range buildDevicePatternMatchCandidates(deviceID, file) {
+		if pattern, ok := patterns[normalizePatternMatchKey(candidate)]; ok {
+			return pattern, true
+		}
+	}
+	return model.Pattern{}, false
+}
+
+func buildDevicePatternMatchCandidates(deviceID uint, file model.DevicePatternFile) []string {
+	fileName := strings.TrimSpace(file.FileName)
+	baseName := strings.TrimSpace(strings.TrimSuffix(fileName, filepath.Ext(fileName)))
+	return []string{
+		service.ResolveUploadedPatternName(file, deviceID),
+		fileName,
+		baseName,
+	}
+}
+
+func normalizePatternMatchKey(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func matchesDevicePatternFileFilter(row gin.H, keyword, patternType string) bool {
+	if patternType != "" && strings.TrimSpace(toString(row["patternType"])) != patternType {
+		return false
+	}
+	if keyword == "" {
+		return true
+	}
+	needle := strings.ToLower(keyword)
+	for _, field := range []string{"fileName", "patternName", "patternType", "orderNo"} {
+		if strings.Contains(strings.ToLower(toString(row[field])), needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func toString(value interface{}) string {
+	if value == nil {
+		return ""
+	}
+	if s, ok := value.(string); ok {
+		return s
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
 }
 
 func (h *PatternHandler) RefreshDevicePatternFiles(c *gin.Context) {
@@ -160,7 +288,7 @@ func (h *PatternHandler) RefreshDevicePatternFiles(c *gin.Context) {
 	if !h.transfer.IsDeviceConnected(*device) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "设备未在线连接，无法实时读取",
+			"message": "设备未开机连接，无法实时读取",
 		})
 		return
 	}
@@ -306,7 +434,7 @@ func (h *PatternHandler) UploadDeviceFilesToServer(c *gin.Context) {
 	if !h.transfer.IsDeviceConnected(device) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "设备未在线连接，无法回传文件",
+			"message": "设备未开机连接，无法回传文件",
 		})
 		return
 	}

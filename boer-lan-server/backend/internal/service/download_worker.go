@@ -112,17 +112,17 @@ func (w *DownloadTaskWorker) startWaitingTasks() error {
 				}
 				continue
 			}
-			_ = w.updateWaitingTaskMessage(task.ID, "设备未连接，等待上线")
+			_ = w.updateWaitingTaskMessage(task.ID, "设备未连接，等待开机")
 			continue
 		}
 		if device.Status == "working" {
 			if w.hasQueueSlotExpired(task, now) {
-				if err := w.failWaitingTask(task, "设备工作中，等待超过10分钟，任务失败"); err != nil {
+				if err := w.failWaitingTask(task, "设备缝纫中，等待超过10分钟，任务失败"); err != nil {
 					return err
 				}
 				continue
 			}
-			_ = w.updateWaitingTaskMessage(task.ID, "设备工作中，等待空闲")
+			_ = w.updateWaitingTaskMessage(task.ID, "设备缝纫中，等待空闲")
 			continue
 		}
 

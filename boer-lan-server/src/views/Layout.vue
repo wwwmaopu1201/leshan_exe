@@ -55,7 +55,8 @@ export default {
         { path: '/database', label: '连接数据库', icon: 'el-icon-connection' },
         { path: '/roles', label: '权限角色', icon: 'el-icon-s-check' },
         { path: '/users', label: '账号管理', icon: 'el-icon-user' },
-        { path: '/devices', label: '设备管理', icon: 'el-icon-monitor' }
+        { path: '/devices', label: '设备管理', icon: 'el-icon-monitor' },
+        { path: '/login-logs', label: '登录日志', icon: 'el-icon-document' }
       ],
       serverInfo: {
         ips: [],

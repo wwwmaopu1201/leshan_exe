@@ -474,7 +474,7 @@ func (h *SystemHandler) GetSystemStats(c *gin.Context) {
 	h.db.Model(&model.Group{}).Count(&groupCount)
 
 	var onlineDeviceCount int64
-	h.db.Model(&model.Device{}).Where("status IN ?", []string{"online", "working", "idle"}).Count(&onlineDeviceCount)
+	h.db.Model(&model.Device{}).Where("status IN ?", []string{"working", "idle"}).Count(&onlineDeviceCount)
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,

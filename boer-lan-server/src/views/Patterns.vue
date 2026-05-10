@@ -402,7 +402,7 @@
               :value="item.id"
             />
           </el-select>
-          <div class="dialog-tip">同一设备按队列顺序下发；设备工作中或离线时会等待，队首任务等待超过10分钟才判定失败。</div>
+          <div class="dialog-tip">同一设备按队列顺序下发；设备缝纫中或关机时会等待，队首任务等待超过10分钟才判定失败。</div>
         </el-form-item>
       </el-form>
       <span slot="footer" class="dialog-footer">
@@ -664,7 +664,7 @@ const defaultDeviceFileQuery = () => ({
   patternType: ''
 })
 
-const connectedDeviceStatuses = ['online', 'idle', 'working', 'alarm']
+const connectedDeviceStatuses = ['idle', 'working']
 const patternTransferHttpTimeout = 30 * 60 * 1000
 
 export default {
@@ -1319,15 +1319,14 @@ export default {
       if (!device) return 99
       if (this.isConnectedDeviceStatus(device.status)) {
         if (device.status === 'working') return 1
-        if (device.status === 'alarm') return 2
-        if (device.status === 'idle') return 3
+        if (device.status === 'idle') return 2
         return 4
       }
       return 99
     },
     formatDeviceOptionLabel(device) {
       const name = device.displayName || device.name || device.code || `设备${device.id}`
-      const status = this.isConnectedDeviceStatus(device.status) ? '在线' : '离线'
+      const status = this.isConnectedDeviceStatus(device.status) ? '开机' : '关机'
       const ip = device.ip ? ` · ${device.ip}` : ''
       return `${name} [${status}]${ip}`
     },

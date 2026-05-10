@@ -413,6 +413,7 @@ export default {
             name: '加工',
             type: 'bar',
             stack: 'total',
+            barWidth: 34,
             data: trendData.map(item => item.runningTime ?? 0),
             itemStyle: { color: '#2fb46e' }
           },
@@ -420,6 +421,7 @@ export default {
             name: '空闲',
             type: 'bar',
             stack: 'total',
+            barWidth: 34,
             data: trendData.map(item => item.idleTime ?? 0),
             itemStyle: { color: '#f0b037' }
           },
@@ -427,6 +429,7 @@ export default {
             name: '报警',
             type: 'bar',
             stack: 'total',
+            barWidth: 34,
             data: trendData.map(item => item.alarmTime ?? 0),
             itemStyle: { color: '#ef5a5a' }
           }

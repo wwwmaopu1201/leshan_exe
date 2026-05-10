@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -48,6 +49,25 @@ func encodeEffectivePermissionsJSON(db *gorm.DB, user model.User) string {
 	return string(encoded)
 }
 
+func (h *AuthHandler) recordLoginLog(c *gin.Context, userID uint, username, status string) {
+	if h == nil || h.db == nil {
+		return
+	}
+	username = strings.TrimSpace(username)
+	status = strings.TrimSpace(status)
+	if status == "" {
+		status = "失败"
+	}
+	_ = h.db.Create(&model.LoginLog{
+		UserID:    userID,
+		Username:  username,
+		IP:        c.ClientIP(),
+		Device:    c.GetHeader("User-Agent"),
+		Status:    status,
+		LoginTime: time.Now(),
+	}).Error
+}
+
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -60,6 +80,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	var user model.User
 	if err := h.db.Where("username = ?", req.Username).First(&user).Error; err != nil {
+		h.recordLoginLog(c, 0, req.Username, "失败")
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"code":    401,
 			"message": "账号或密码错误",
@@ -68,6 +89,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	if !utils.CheckPassword(req.Password, user.Password) {
+		h.recordLoginLog(c, user.ID, user.Username, "失败")
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"code":    401,
 			"message": "账号或密码错误",
@@ -75,6 +97,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 	if user.Disabled {
+		h.recordLoginLog(c, user.ID, user.Username, "失败")
 		c.JSON(http.StatusForbidden, gin.H{
 			"code":    403,
 			"message": "账号已被禁用",
@@ -96,13 +119,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	// 记录登录日志
-	h.db.Create(&model.LoginLog{
-		UserID:    user.ID,
-		IP:        c.ClientIP(),
-		Device:    c.GetHeader("User-Agent"),
-		Status:    "成功",
-		LoginTime: time.Now(),
-	})
+	h.recordLoginLog(c, user.ID, user.Username, "成功")
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
@@ -237,27 +254,79 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 }
 
 func (h *AuthHandler) GetLoginLogs(c *gin.Context) {
-	userId := c.GetUint("userId")
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 200 {
+		pageSize = 200
+	}
 
-	var logs []model.LoginLog
-	h.db.Where("user_id = ?", userId).
-		Order("login_time DESC").
-		Limit(10).
-		Find(&logs)
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	status := strings.TrimSpace(c.Query("status"))
+	startDate := strings.TrimSpace(c.Query("startDate"))
+	endDate := strings.TrimSpace(c.Query("endDate"))
+
+	query := h.db.Model(&model.LoginLog{}).
+		Joins("LEFT JOIN users ON users.id = login_logs.user_id")
+	if keyword != "" {
+		like := "%" + keyword + "%"
+		query = query.Where("(login_logs.username LIKE ? OR users.username LIKE ? OR login_logs.ip LIKE ?)", like, like, like)
+	}
+	if status != "" {
+		query = query.Where("login_logs.status = ?", status)
+	}
+	if startDate != "" {
+		query = query.Where("login_logs.login_time >= ?", startDate+" 00:00:00")
+	}
+	if endDate != "" {
+		query = query.Where("login_logs.login_time <= ?", endDate+" 23:59:59")
+	}
+
+	var total int64
+	query.Session(&gorm.Session{}).Count(&total)
+
+	var logs []struct {
+		ID        uint
+		UserID    uint
+		Username  string
+		IP        string
+		Device    string
+		Status    string
+		LoginTime time.Time
+	}
+	query.Session(&gorm.Session{}).
+		Select("login_logs.id, login_logs.user_id, COALESCE(NULLIF(login_logs.username, ''), users.username, '-') as username, login_logs.ip, login_logs.device, login_logs.status, login_logs.login_time").
+		Order("login_logs.login_time DESC, login_logs.id DESC").
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		Scan(&logs)
 
 	list := make([]gin.H, 0)
 	for _, log := range logs {
 		list = append(list, gin.H{
-			"time":   log.LoginTime.Format("2006-01-02 15:04:05"),
-			"ip":     log.IP,
-			"device": log.Device,
-			"status": log.Status,
+			"id":        log.ID,
+			"userId":    log.UserID,
+			"username":  log.Username,
+			"ip":        log.IP,
+			"device":    log.Device,
+			"status":    log.Status,
+			"loginTime": log.LoginTime.Format("2006-01-02 15:04:05"),
 		})
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"code":    0,
-		"data":    list,
+		"code": 0,
+		"data": gin.H{
+			"list":     list,
+			"total":    total,
+			"page":     page,
+			"pageSize": pageSize,
+		},
 		"message": "success",
 	})
 }

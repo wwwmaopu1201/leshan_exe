@@ -8,8 +8,8 @@
             空闲
           </span>
           <span class="side-legend__item">
-            <i class="side-legend__dot is-alarm"></i>
-            报警
+            <i class="side-legend__dot is-working"></i>
+            缝纫
           </span>
           <span class="side-legend__item">
             <i class="side-legend__dot is-offline"></i>
@@ -136,7 +136,7 @@ export default {
       deviceTree: [],
       treeScope: defaultTreeScope(),
       selectedScope: {
-        label: '全厂设备',
+        label: '总分组',
         nodeType: 'all',
         status: '',
         model: '',
@@ -206,10 +206,10 @@ export default {
         },
         {
           key: 'online',
-          title: '在线设备数',
+          title: '开机设备数',
           theme: 'is-cyan',
           metrics: [
-            { label: '在线设备总数', value: this.toNumber(this.dashboardData.onlineDeviceCount) },
+            { label: '开机设备总数', value: this.toNumber(this.dashboardData.onlineDeviceCount) },
             { label: '总设备数', value: this.toNumber(this.dashboardData.scopeDeviceCount) }
           ]
         }
@@ -297,7 +297,7 @@ export default {
     setDefaultScopeAndLoad() {
       const deviceCount = this.countDeviceNodes(this.deviceTree)
       this.selectedScope = {
-        label: '全厂设备',
+        label: '总分组',
         nodeType: 'all',
         status: '',
         model: '',
@@ -609,8 +609,8 @@ export default {
   background: #70cb37;
 }
 
-.side-legend__dot.is-alarm {
-  background: #ff3b30;
+.side-legend__dot.is-working {
+  background: #1890ff;
 }
 
 .side-legend__dot.is-offline {

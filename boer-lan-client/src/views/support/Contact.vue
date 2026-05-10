@@ -5,7 +5,7 @@
         <div class="section-title">
           <div>
             <h3>{{ $t('support.contactTitle') }}</h3>
-            <p>售前咨询、安装协助、问题反馈统一在这里处理。</p>
+            <p>{{ $t('support.contactIntro') }}</p>
           </div>
         </div>
 
@@ -14,21 +14,21 @@
             <div class="contact-icon blue"><i class="el-icon-phone"></i></div>
             <div class="contact-info">
               <div class="contact-label">{{ $t('support.customerService') }}</div>
-              <div class="contact-value">400-888-8888</div>
+              <div class="contact-value">{{ $t('support.customerServiceValue') }}</div>
             </div>
           </div>
           <div class="contact-item">
             <div class="contact-icon green"><i class="el-icon-message"></i></div>
             <div class="contact-info">
               <div class="contact-label">{{ $t('support.email') }}</div>
-              <div class="contact-value">support@boer.com</div>
+              <div class="contact-value">{{ $t('support.emailValue') }}</div>
             </div>
           </div>
           <div class="contact-item">
             <div class="contact-icon orange"><i class="el-icon-time"></i></div>
             <div class="contact-info">
               <div class="contact-label">{{ $t('support.workingHours') }}</div>
-              <div class="contact-value">周一至周五 9:00-18:00</div>
+              <div class="contact-value">{{ $t('support.workingHoursValue') }}</div>
             </div>
           </div>
           <div class="contact-item">
@@ -46,7 +46,7 @@
         <div class="section-title">
           <div>
             <h3>{{ $t('support.onlineMessage') }}</h3>
-            <p>留下联系方式和问题描述，服务人员会尽快回访。</p>
+            <p>{{ $t('support.onlineMessageIntro') }}</p>
           </div>
         </div>
 
@@ -108,6 +108,8 @@
 </template>
 
 <script>
+const MESSAGE_TARGET_EMAIL = 'chengjing@bohr123.com'
+
 export default {
   name: 'Contact',
   data() {
@@ -134,11 +136,30 @@ export default {
     async handleSubmit() {
       try {
         await this.$refs.formRef.validate()
+        const subject = encodeURIComponent(`${this.$t('support.mailSubjectPrefix')} - ${this.form.name}`)
+        const body = encodeURIComponent([
+          `${this.$t('support.mailNameLabel')}: ${this.form.name}`,
+          `${this.$t('support.mailContactLabel')}: ${this.form.contact}`,
+          `${this.$t('support.mailTypeLabel')}: ${this.getTypeLabel(this.form.type)}`,
+          '',
+          `${this.$t('support.mailDescriptionLabel')}:`,
+          this.form.description
+        ].join('\n'))
+        window.location.href = `mailto:${MESSAGE_TARGET_EMAIL}?subject=${subject}&body=${body}`
         this.$message.success(this.$t('support.formSubmitSuccess'))
         this.handleReset()
       } catch (error) {
         console.error('Validation failed:', error)
       }
+    },
+    getTypeLabel(type) {
+      const labelMap = {
+        usage: this.$t('support.typeUsage'),
+        suggestion: this.$t('support.typeSuggestion'),
+        bug: this.$t('support.typeBug'),
+        other: this.$t('support.typeOther')
+      }
+      return labelMap[type] || type || ''
     },
     handleReset() {
       this.$refs.formRef.resetFields()

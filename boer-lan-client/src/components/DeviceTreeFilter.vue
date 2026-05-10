@@ -80,7 +80,7 @@ export default {
     },
     placeholder: {
       type: String,
-      default: '全部设备'
+      default: '总分组'
     }
   },
   data() {
@@ -123,7 +123,7 @@ export default {
       try {
         const res = await getDeviceTree()
         if (res.code === 0) {
-          this.deviceTree = this.attachNodeKeys(res.data || [])
+          this.deviceTree = this.attachNodeKeys(this.normalizeDeviceTree(res.data || []))
           this.$nextTick(() => {
             this.$refs.deviceTree?.filter(this.keyword)
             const key = this.resolveNodeKey(this.value)
@@ -146,6 +146,58 @@ export default {
           children
         }
       })
+    },
+    normalizeDeviceTree(nodes = []) {
+      const isUngrouped = node => {
+        const label = String(node?.label || node?.name || '')
+        const id = String(node?.id || '')
+        return label.includes('未分组') || id === 'ungrouped'
+      }
+      const isTotal = node => {
+        const label = String(node?.label || node?.name || '').trim()
+        const id = String(node?.id || '')
+        return label === '总分组' || label === '全部设备' || id === 'all'
+      }
+      const cloneNode = node => ({
+        ...node,
+        type: node.type === 'device' ? 'device' : 'group',
+        label: isTotal(node) ? '总分组' : (node.label || node.name || ''),
+        children: (node.children || []).map(cloneNode)
+      })
+      const roots = (nodes || []).map(cloneNode)
+      const ungroupedNodes = []
+      const groupNodes = []
+
+      roots.forEach(node => {
+        if (isUngrouped(node)) {
+          ungroupedNodes.push({
+            ...node,
+            id: 'ungrouped',
+            label: '未分组设备',
+            type: 'group',
+            isVirtual: true
+          })
+          return
+        }
+        groupNodes.push(node)
+      })
+
+      return [{
+        id: 'all',
+        label: '总分组',
+        type: 'group',
+        children: [
+          ungroupedNodes[0] || {
+            id: 'ungrouped',
+            label: '未分组设备',
+            type: 'group',
+            children: [],
+            isVirtual: true
+          },
+          ...groupNodes
+        ],
+        isVirtual: true
+      }]
     },
     resolveNodeKey(value) {
       if (!value) return ''
@@ -317,20 +369,12 @@ export default {
   border-radius: 50%;
   flex-shrink: 0;
 
-  &.online {
-    background: #2fb46e;
-  }
-
   &.working {
     background: #2f6df6;
   }
 
   &.idle {
     background: #2fb46e;
-  }
-
-  &.alarm {
-    background: #ef5a5a;
   }
 
   &.offline {

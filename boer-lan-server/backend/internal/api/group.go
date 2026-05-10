@@ -34,15 +34,16 @@ func applyParentScope(query *gorm.DB, parentID *uint) *gorm.DB {
 }
 
 func (h *GroupHandler) getRootGroup() (*model.Group, error) {
-	var group model.Group
-	if err := h.db.Where("name = ?", "总分组").Order("id ASC").First(&group).Error; err != nil {
-		return nil, err
-	}
-	return &group, nil
+	return requireTotalGroup(h.db)
 }
 
 // GetGroupTree 获取分组树
 func (h *GroupHandler) GetGroupTree(c *gin.Context) {
+	if _, err := ensureGroupsUnderTotalIfExists(h.db); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	var groups []model.Group
 	if err := h.db.Select("id", "name", "parent_id", "sort_order").
 		Order("sort_order, id").
@@ -101,6 +102,11 @@ func (h *GroupHandler) GetGroupTree(c *gin.Context) {
 
 // GetGroupList 获取所有分组列表（扁平）
 func (h *GroupHandler) GetGroupList(c *gin.Context) {
+	if _, err := ensureGroupsUnderTotalIfExists(h.db); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	var groups []model.Group
 
 	if err := h.db.Preload("Parent").
@@ -264,6 +270,12 @@ func (h *GroupHandler) UpdateGroup(c *gin.Context) {
 // DeleteGroup 删除分组
 func (h *GroupHandler) DeleteGroup(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
+	rootGroup, err := ensureGroupsUnderTotalIfExists(h.db)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取分组失败"})
+		return
+	}
+
 	var groupCount int64
 	h.db.Model(&model.Group{}).Count(&groupCount)
 	if groupCount <= 1 {
@@ -274,6 +286,10 @@ func (h *GroupHandler) DeleteGroup(c *gin.Context) {
 	var group model.Group
 	if err := h.db.First(&group, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "分组不存在"})
+		return
+	}
+	if rootGroup != nil && group.ID == rootGroup.ID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "总分组不能删除"})
 		return
 	}
 

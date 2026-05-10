@@ -3,7 +3,7 @@
     <div class="page-title">分组管理</div>
     <el-card v-loading="loading">
       <div class="toolbar">
-        <el-button type="primary" @click="createGroup(null)" icon="el-icon-plus">新建顶层分组</el-button>
+        <el-button type="primary" @click="createGroup(null)" icon="el-icon-plus">新增分组</el-button>
         <el-button icon="el-icon-refresh" @click="loadGroupTree">刷新</el-button>
       </div>
       <el-tree
@@ -21,12 +21,12 @@
             </el-tag>
           </span>
           <span>
-            <el-button size="mini" @click.stop="addSibling(data)">同级</el-button>
+            <el-button size="mini" :disabled="isTotalGroup(data)" @click.stop="addSibling(data)">同级</el-button>
             <el-button size="mini" @click.stop="addChild(data)">子组</el-button>
-            <el-button size="mini" :disabled="!canMoveUp(data)" @click.stop="moveUp(data)">上移</el-button>
-            <el-button size="mini" :disabled="!canMoveDown(data)" @click.stop="moveDown(data)">下移</el-button>
-            <el-button size="mini" @click.stop="editGroup(data)" icon="el-icon-edit">重命名</el-button>
-            <el-button size="mini" type="danger" @click.stop="deleteGroup(data)" icon="el-icon-delete">删除</el-button>
+            <el-button size="mini" :disabled="isTotalGroup(data) || !canMoveUp(data)" @click.stop="moveUp(data)">上移</el-button>
+            <el-button size="mini" :disabled="isTotalGroup(data) || !canMoveDown(data)" @click.stop="moveDown(data)">下移</el-button>
+            <el-button size="mini" :disabled="isTotalGroup(data)" @click.stop="editGroup(data)" icon="el-icon-edit">重命名</el-button>
+            <el-button size="mini" type="danger" :disabled="isTotalGroup(data)" @click.stop="deleteGroup(data)" icon="el-icon-delete">删除</el-button>
           </span>
         </span>
       </el-tree>
@@ -72,7 +72,7 @@ export default {
       }
     },
     createGroup(parentId) {
-      const title = parentId ? '新增子分组' : '新建顶层分组'
+      const title = parentId ? '新增子分组' : '新增分组'
       this.$prompt('请输入分组名称', title, {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
@@ -96,12 +96,14 @@ export default {
       }).catch(() => {})
     },
     addSibling(group) {
+      if (this.isTotalGroup(group)) return
       this.createGroup(group.parentId || null)
     },
     addChild(group) {
       this.createGroup(group.id)
     },
     editGroup(group) {
+      if (this.isTotalGroup(group)) return
       this.$prompt('请输入新的分组名称', '重命名分组', {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
@@ -139,10 +141,12 @@ export default {
       return null
     },
     canMoveUp(group) {
+      if (this.isTotalGroup(group)) return false
       const context = this.findNodeContext(group.id)
       return !!context && context.index > 0
     },
     canMoveDown(group) {
+      if (this.isTotalGroup(group)) return false
       const context = this.findNodeContext(group.id)
       return !!context && context.index < context.siblings.length - 1
     },
@@ -158,6 +162,7 @@ export default {
       await this.loadGroupTree()
     },
     async moveUp(group) {
+      if (this.isTotalGroup(group)) return
       const context = this.findNodeContext(group.id)
       if (!context || context.index <= 0) return
       const { siblings, index } = context
@@ -167,6 +172,7 @@ export default {
       await this.persistSort(siblings)
     },
     async moveDown(group) {
+      if (this.isTotalGroup(group)) return
       const context = this.findNodeContext(group.id)
       if (!context || context.index >= context.siblings.length - 1) return
       const { siblings, index } = context
@@ -176,6 +182,10 @@ export default {
       await this.persistSort(siblings)
     },
     async deleteGroup(group) {
+      if (this.isTotalGroup(group)) {
+        this.$message.warning('总分组不能删除')
+        return
+      }
       try {
         await this.$confirm(
           '确定要删除该分组吗？删除后该分组下账号、设备、操作员将转为未分组，子分组将提升到当前层级。',
@@ -192,6 +202,9 @@ export default {
           console.error('删除分组失败', error)
         }
       }
+    },
+    isTotalGroup(group) {
+      return String(group?.name || group?.label || '').trim() === '总分组'
     }
   }
 }

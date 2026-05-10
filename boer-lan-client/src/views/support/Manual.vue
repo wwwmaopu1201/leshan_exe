@@ -117,12 +117,12 @@
               <div class="faq-a">A：请检查网络连接，确认服务器 IP 是否正确，客户端默认使用 8088 端口。</div>
             </div>
             <div class="faq-item">
-              <div class="faq-q">Q：设备显示离线怎么处理？</div>
+              <div class="faq-q">Q：设备显示关机怎么处理？</div>
               <div class="faq-a">A：确认设备是否开机、网线是否正常、设备地址是否配置正确。</div>
             </div>
             <div class="faq-item">
               <div class="faq-q">Q：花型下发失败怎么办？</div>
-              <div class="faq-a">A：检查设备是否在线，确认花型格式正确，并重试下发。</div>
+              <div class="faq-a">A：检查设备是否开机连接，确认花型格式正确，并重试下发。</div>
             </div>
           </section>
         </div>

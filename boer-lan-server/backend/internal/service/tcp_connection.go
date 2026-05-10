@@ -436,7 +436,7 @@ func (dc *DeviceConnection) handleHeartbeat(pkt *Packet) {
 	if dc.deviceID > 0 {
 		dc.db.Model(&model.Device{}).Where("id = ?", dc.deviceID).Updates(map[string]interface{}{
 			"last_online": dc.lastHeartbeat,
-			"status":      gorm.Expr("CASE WHEN status = 'offline' THEN 'online' ELSE status END"),
+			"status":      gorm.Expr("CASE WHEN status IN ('offline', 'online', 'alarm') THEN 'idle' ELSE status END"),
 		})
 		dc.updateDeviceRuntime(map[string]interface{}{})
 	}
@@ -527,7 +527,7 @@ func (dc *DeviceConnection) handleSewing(pkt *Packet) {
 		status = "idle"
 		emitTCPLog(dc.db, "info", true, "[TCP] Device %s stopped sewing", dc.deviceCode)
 	default:
-		status = "online"
+		status = "idle"
 	}
 
 	dc.db.Model(&model.Device{}).Where("id = ?", dc.deviceID).Update("status", status)
@@ -753,9 +753,7 @@ func (dc *DeviceConnection) handleAlarm(pkt *Packet) {
 	if alarmCode != 0 {
 		alarm := alarmcatalog.Describe(alarmCode)
 		// 报警触发
-		dc.db.Model(&model.Device{}).Where("id = ?", dc.deviceID).Update("status", "alarm")
 		dc.updateDeviceRuntime(map[string]interface{}{
-			"status":     "alarm",
 			"alarm_code": alarm.Code,
 		})
 		dc.db.Create(&model.AlarmRecord{
@@ -769,9 +767,7 @@ func (dc *DeviceConnection) handleAlarm(pkt *Packet) {
 		emitTCPLog(dc.db, "warn", true, "[TCP] Device %s alarm: code=%d display=%s", dc.deviceCode, alarmCode, alarm.Display())
 	} else {
 		// 报警解除
-		dc.db.Model(&model.Device{}).Where("id = ?", dc.deviceID).Update("status", "online")
 		dc.updateDeviceRuntime(map[string]interface{}{
-			"status":     "online",
 			"alarm_code": "",
 		})
 		// 关闭未解决的报警

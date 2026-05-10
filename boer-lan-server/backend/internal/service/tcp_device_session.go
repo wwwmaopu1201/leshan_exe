@@ -163,7 +163,7 @@ func (dc *DeviceConnection) upsertDeviceRecord(code, name, deviceType, modelName
 			IdentifiedBy: dc.resolveIdentifiedBy(code, mainboardSN),
 			MainboardSN:  mainboardSN,
 			IP:           ip,
-			Status:       "online",
+			Status:       "idle",
 			LastOnline:   now,
 		}
 		if err := dc.db.Create(&device).Error; err != nil {
@@ -174,7 +174,7 @@ func (dc *DeviceConnection) upsertDeviceRecord(code, name, deviceType, modelName
 	default:
 		updates := map[string]interface{}{
 			"ip":            ip,
-			"status":        "online",
+			"status":        "idle",
 			"last_online":   now,
 			"identified_by": dc.resolveIdentifiedBy(code, mainboardSN),
 		}

@@ -45,7 +45,17 @@
               @node-click="handleTreeNodeClick"
               @node-contextmenu="handleTreeNodeContextMenu"
             >
-              <div slot-scope="{ node, data }" class="tree-node">
+              <div
+                slot-scope="{ node, data }"
+                class="tree-node"
+                :class="{
+                  'tree-node-device': data.type === 'device',
+                  'tree-node-drop-target': isManualDragDropTarget(data),
+                  'tree-node-drop-hover': manualDrag.targetKey === data._nodeKey
+                }"
+                :data-tree-node-key="data._nodeKey"
+                @mousedown.left="handleManualDeviceMouseDown($event, data)"
+              >
                 <div class="tree-node-main" :class="{ ungrouped: isUngroupedNode(data) }">
                   <i :class="['tree-node-icon', getTreeNodeIcon(data)]"></i>
                   <span class="tree-node-label" :title="node.label">{{ node.label }}</span>
@@ -53,6 +63,13 @@
                 </div>
               </div>
             </el-tree>
+            <div
+              v-if="manualDrag.active && manualDrag.moved"
+              class="manual-drag-ghost"
+              :style="{ left: `${manualDrag.x + 12}px`, top: `${manualDrag.y + 12}px` }"
+            >
+              {{ manualDrag.device?.label || '移动设备' }}
+            </div>
           </div>
         </div>
       </div>
@@ -70,11 +87,9 @@
             </el-form-item>
             <el-form-item label="状态">
               <el-select v-model="searchForm.status" clearable placeholder="全部状态">
-                <el-option label="在线" value="online" />
-                <el-option label="离线" value="offline" />
-                <el-option label="缝纫中" value="working" />
                 <el-option label="空闲" value="idle" />
-                <el-option label="报警" value="alarm" />
+                <el-option label="缝纫" value="working" />
+                <el-option label="关机" value="offline" />
               </el-select>
             </el-form-item>
             <el-form-item label="添加时间">
@@ -142,7 +157,7 @@
             <el-table-column prop="employeeName" label="员工姓名" width="110" />
             <el-table-column prop="code" label="设备编号" min-width="130" />
             <el-table-column prop="type" label="设备类型" width="110" />
-            <el-table-column prop="model" label="机型" width="110" />
+            <!-- <el-table-column prop="model" label="机型" width="110" /> -->
             <el-table-column prop="mainboardSn" label="主板编号" min-width="140" />
             <el-table-column prop="identifiedBy" label="识别方式" width="110">
               <template slot-scope="{ row }">
@@ -207,15 +222,55 @@
     <el-dialog
       title="编辑设备"
       :visible.sync="editDialogVisible"
-      width="520px"
+      width="620px"
     >
-      <el-form ref="editFormRef" :model="editForm" :rules="editRules" label-width="90px">
+      <el-form ref="editFormRef" :model="editForm" :rules="currentEditRules" label-width="110px">
+        <el-form-item label="设备编号" prop="code">
+          <el-input v-model="editForm.code" disabled />
+        </el-form-item>
         <el-form-item label="设备名称" prop="name">
           <el-input v-model.trim="editForm.name" />
         </el-form-item>
-        <el-form-item label="设备分组">
-          <el-select v-model="editForm.groupId" clearable style="width: 100%;">
-            <el-option label="未分组" :value="null" />
+        <el-form-item label="初始名称" prop="initialName">
+          <el-input v-model="editForm.initialName" disabled />
+        </el-form-item>
+        <el-form-item label="设备类型" prop="type">
+          <div class="device-type-control">
+            <el-select v-model="editForm.type" filterable placeholder="请选择设备类型">
+              <el-option
+                v-for="type in deviceTypeOptions"
+                :key="type"
+                :label="type"
+                :value="type"
+              />
+            </el-select>
+            <el-button icon="el-icon-plus" @click="openDeviceTypeDialog">添加类型</el-button>
+          </div>
+        </el-form-item>
+        <!-- <el-form-item label="设备型号" prop="model">
+          <el-select v-model="editForm.model">
+            <el-option label="BM-2000" value="BM-2000" />
+            <el-option label="BM-3000" value="BM-3000" />
+            <el-option label="BM-5000" value="BM-5000" />
+          </el-select>
+        </el-form-item> -->
+        <el-form-item label="IP地址" prop="ip">
+          <el-input v-model="editForm.ip" disabled placeholder="192.168.1.xxx" />
+        </el-form-item>
+        <el-form-item label="员工工号" prop="employeeCode">
+          <el-input v-model="editForm.employeeCode" />
+        </el-form-item>
+        <el-form-item label="员工姓名" prop="employeeName">
+          <el-input v-model="editForm.employeeName" />
+        </el-form-item>
+        <el-form-item label="主板编号" prop="mainboardSn">
+          <el-input v-model="editForm.mainboardSn" disabled />
+        </el-form-item>
+        <el-form-item label="备注" prop="remark">
+          <el-input v-model="editForm.remark" type="textarea" :rows="3" />
+        </el-form-item>
+        <el-form-item label="设备分组" prop="groupId">
+          <el-select v-model="editForm.groupId" clearable placeholder="未分组" style="width: 100%;">
             <el-option
               v-for="item in groupTreeOptions"
               :key="item.id"
@@ -229,13 +284,31 @@
             </el-option>
           </el-select>
         </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model.trim="editForm.remark" type="textarea" :rows="2" />
-        </el-form-item>
       </el-form>
       <span slot="footer" class="dialog-footer">
         <el-button @click="editDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="saveDevice">保存</el-button>
+      </span>
+    </el-dialog>
+
+    <el-dialog
+      title="新增设备类型"
+      :visible.sync="showDeviceTypeDialog"
+      width="420px"
+      @closed="resetDeviceTypeForm"
+    >
+      <el-form label-width="90px">
+        <el-form-item label="类型名称">
+          <el-input
+            v-model.trim="deviceTypeForm.value"
+            placeholder="请输入设备类型"
+            @keyup.enter.native="handleCreateDeviceType"
+          />
+        </el-form-item>
+      </el-form>
+      <span slot="footer" class="dialog-footer">
+        <el-button @click="showDeviceTypeDialog = false">取消</el-button>
+        <el-button type="primary" :loading="creatingDeviceType" @click="handleCreateDeviceType">确定</el-button>
       </span>
     </el-dialog>
 
@@ -276,21 +349,25 @@
       @click.stop
       @contextmenu.prevent
     >
-      <li @click="handleContextMenuAction('addRoot')">新增顶层分组</li>
-      <template v-if="contextMenu.node && isEditableGroupNode(contextMenu.node)">
-        <li @click="handleContextMenuAction('addSibling')">新增同级分组</li>
+      <template v-if="contextMenu.node && contextMenu.node.type === 'device'">
+        <li class="danger" @click="handleContextMenuAction('removeDeviceFromGroup')">删除设备</li>
+        <li @click="handleContextMenuAction('renameDevice')">重命名</li>
+      </template>
+      <template v-else>
+        <li @click="handleContextMenuAction('addRoot')">新增分组</li>
+      </template>
+      <template v-if="contextMenu.node && isGroupContextNode(contextMenu.node)">
+        <template v-if="canModifyGroup(contextMenu.node)">
+          <li @click="handleContextMenuAction('addSibling')">新增同级分组</li>
+        </template>
         <li @click="handleContextMenuAction('addChild')">新增子分组</li>
-        <li @click="handleContextMenuAction('moveSelectedHere')">移动已选设备到当前组</li>
-        <li :class="{ disabled: !canMoveUp(contextMenu.node) }" @click="handleContextMenuAction('moveUp')">上移</li>
-        <li :class="{ disabled: !canMoveDown(contextMenu.node) }" @click="handleContextMenuAction('moveDown')">下移</li>
-        <li @click="handleContextMenuAction('edit')">重命名</li>
-        <li
-          class="danger"
-          :class="{ disabled: !canDeleteGroup(contextMenu.node) }"
-          @click="handleContextMenuAction('delete')"
-        >
-          删除分组
-        </li>
+        <li :class="{ disabled: !canMoveSelectedToGroup(contextMenu.node) }" @click="handleContextMenuAction('moveSelectedHere')">移动已选设备到当前组</li>
+        <template v-if="canModifyGroup(contextMenu.node)">
+          <li :class="{ disabled: !canMoveUp(contextMenu.node) }" @click="handleContextMenuAction('moveUp')">上移</li>
+          <li :class="{ disabled: !canMoveDown(contextMenu.node) }" @click="handleContextMenuAction('moveDown')">下移</li>
+          <li @click="handleContextMenuAction('edit')">重命名</li>
+          <li class="danger" @click="handleContextMenuAction('delete')">删除分组</li>
+        </template>
       </template>
       <li @click="handleContextMenuAction('refresh')">刷新</li>
     </ul>
@@ -298,6 +375,8 @@
 </template>
 
 <script>
+const DEFAULT_DEVICE_TYPE = '电控类型'
+
 export default {
   name: 'Devices',
   data() {
@@ -317,11 +396,29 @@ export default {
       moveDialogVisible: false,
       moveTargetGroupId: null,
       editDialogVisible: false,
+      showDeviceTypeDialog: false,
+      creatingDeviceType: false,
+      deviceTypeOptions: [DEFAULT_DEVICE_TYPE],
+      deviceTypeForm: {
+        value: ''
+      },
       contextMenu: {
         visible: false,
         x: 0,
         y: 0,
         node: null
+      },
+      draggingDeviceNode: null,
+      manualDrag: {
+        active: false,
+        moved: false,
+        device: null,
+        targetKey: '',
+        targetNode: null,
+        startX: 0,
+        startY: 0,
+        x: 0,
+        y: 0
       },
       treeSelection: {
         mode: 'all',
@@ -335,16 +432,28 @@ export default {
       },
       editForm: {
         id: null,
+        code: '',
         name: '',
+        initialName: '',
+        type: DEFAULT_DEVICE_TYPE,
+        model: '',
+        ip: '',
+        employeeCode: '',
+        employeeName: '',
+        mainboardSn: '',
         groupId: null,
         remark: ''
       },
       editRules: {
-        name: [{ required: true, message: '请输入设备名称', trigger: 'blur' }]
+        name: [{ required: true, message: '请输入设备名称', trigger: 'blur' }],
+        type: [{ required: true, message: '请选择设备类型', trigger: 'change' }]
       }
     }
   },
   computed: {
+    currentEditRules() {
+      return this.editRules
+    },
     groupNameMap() {
       return new Map((this.groups || []).map(group => [Number(group.id), group.name]))
     },
@@ -372,6 +481,7 @@ export default {
         type: 'device',
         deviceId: device.id || device.ID,
         groupId: device.groupId || null,
+        name: device.name || device.displayName || '',
         label: this.formatDeviceName(device),
         status: device.status || 'offline'
       })
@@ -473,6 +583,7 @@ export default {
   beforeDestroy() {
     document.removeEventListener('click', this.hideContextMenu)
     window.removeEventListener('blur', this.hideContextMenu)
+    this.removeManualDragListeners()
     if (this.refreshTimer) {
       clearInterval(this.refreshTimer)
       this.refreshTimer = null
@@ -480,7 +591,20 @@ export default {
   },
   methods: {
     async initPage() {
-      await Promise.all([this.loadGroupTree(), this.loadDevices()])
+      await Promise.all([this.loadGroupTree(), this.loadDevices(), this.loadDeviceTypes()])
+    },
+    async loadDeviceTypes() {
+      try {
+        const res = await this.$axios.get('/device/types')
+        if (res.code === 0 && Array.isArray(res.data)) {
+          const values = res.data
+            .map(item => (typeof item === 'string' ? item : item?.value))
+            .filter(Boolean)
+          this.deviceTypeOptions = values.length ? values : [DEFAULT_DEVICE_TYPE]
+        }
+      } catch (error) {
+        console.error('加载设备类型失败', error)
+      }
     },
     normalizeTree(nodes = []) {
       return nodes
@@ -535,13 +659,288 @@ export default {
     isEditableGroupNode(data) {
       return data && data.type !== 'device' && !data.isVirtual && data.id !== 'all' && data.id !== 'ungrouped' && !this.isTotalGroupNode(data)
     },
+    isGroupContextNode(data) {
+      return data && data.type !== 'device' && !data.isVirtual && data.id !== 'all' && data.id !== 'ungrouped'
+    },
     isTotalGroupNode(data) {
       const label = String(data?.label || data?.name || '').trim()
       const id = String(data?.id || '')
       return label === '总分组' || label === '全部设备' || id === 'all'
     },
     canDeleteGroup(data) {
+      return this.canModifyGroup(data)
+    },
+    canModifyGroup(data) {
       return this.isEditableGroupNode(data)
+    },
+    canMoveSelectedToGroup(data) {
+      return this.isGroupContextNode(data) && Number(data?.id || 0) > 0 && this.selectedDeviceIds.length > 0
+    },
+    allowTreeDrag(node) {
+      return node?.data?.type === 'device'
+    },
+    allowTreeDrop(draggingNode, dropNode, type) {
+      const dragging = draggingNode?.data
+      if (!dragging) {
+        return false
+      }
+      if (dragging.type !== 'device') {
+        return false
+      }
+      const targetGroupId = this.resolveDropTargetGroupId(dropNode, type)
+      return targetGroupId === null || targetGroupId > 0
+    },
+    resolveDropTargetGroupId(dropNode, dropType) {
+      const target = dropNode?.data
+      if (!target) {
+        return undefined
+      }
+      if (this.isUngroupedNode(target)) {
+        return null
+      }
+      if (target.type === 'device') {
+        const groupId = Number(target.groupId || 0)
+        return groupId > 0 ? groupId : null
+      }
+      if (this.isGroupContextNode(target) && Number(target.id || 0) > 0) {
+        return Number(target.id)
+      }
+      if (dropType !== 'inner') {
+        const parent = dropNode?.parent?.data
+        if (this.isUngroupedNode(parent)) {
+          return null
+        }
+        if (this.isGroupContextNode(parent) && Number(parent.id || 0) > 0) {
+          return Number(parent.id)
+        }
+      }
+      return undefined
+    },
+    async handleTreeNodeDrop(draggingNode, dropNode, dropType) {
+      const dragging = draggingNode?.data
+      if (!dragging || dragging.type !== 'device') {
+        return
+      }
+      const deviceId = Number(dragging.deviceId || 0)
+      const targetGroupId = this.resolveDropTargetGroupId(dropNode, dropType)
+      if (!deviceId || targetGroupId === undefined || (targetGroupId !== null && !targetGroupId)) {
+        await Promise.all([this.loadDevices(), this.loadGroupTree()])
+        return
+      }
+      if (Number(dragging.groupId || 0) === Number(targetGroupId || 0)) {
+        this.$message.info('设备已在目标分组')
+        await Promise.all([this.loadDevices(), this.loadGroupTree()])
+        return
+      }
+      try {
+        const res = await this.$axios.post('/device/move', {
+          deviceIds: [deviceId],
+          groupId: targetGroupId
+        })
+        if (res.code === 0) {
+          this.$message.success(targetGroupId ? '设备已移动到目标分组' : '设备已移出分组')
+          await Promise.all([this.loadDevices(), this.loadGroupTree()])
+        } else {
+          this.$message.error(res.message || '拖动设备失败')
+        }
+      } catch (error) {
+        console.error('拖动设备失败', error)
+        this.$message.error('拖动设备失败')
+      }
+    },
+    handleNativeDeviceDragStart(event, data) {
+      if (data?.type !== 'device') {
+        event.preventDefault()
+        return
+      }
+      this.draggingDeviceNode = data
+      event.dataTransfer.effectAllowed = 'move'
+      event.dataTransfer.setData('application/x-boer-device-id', String(data.deviceId || ''))
+      event.dataTransfer.setData('text/plain', String(data.deviceId || ''))
+    },
+    handleNativeDeviceDragEnd() {
+      this.draggingDeviceNode = null
+    },
+    handleNativeDeviceDragOver(event, data) {
+      const targetGroupId = this.resolveNativeDropTargetGroupId(data)
+      if (targetGroupId === undefined) return
+      event.dataTransfer.dropEffect = 'move'
+    },
+    resolveNativeDropTargetGroupId(target) {
+      if (!target) return undefined
+      if (this.isUngroupedNode(target)) return null
+      if (target.type === 'device') {
+        const groupId = Number(target.groupId || 0)
+        return groupId > 0 ? groupId : null
+      }
+      if (this.isGroupContextNode(target) && Number(target.id || 0) > 0) {
+        return Number(target.id)
+      }
+      return undefined
+    },
+    async handleNativeDeviceDrop(event, target) {
+      const dragging = this.draggingDeviceNode
+      if (!dragging || dragging.type !== 'device') return
+      const deviceId = Number(dragging.deviceId || event.dataTransfer.getData('application/x-boer-device-id') || 0)
+      const targetGroupId = this.resolveNativeDropTargetGroupId(target)
+      if (!deviceId || targetGroupId === undefined) {
+        await Promise.all([this.loadDevices(), this.loadGroupTree()])
+        return
+      }
+      if (Number(dragging.groupId || 0) === Number(targetGroupId || 0)) {
+        this.$message.info('设备已在目标分组')
+        await Promise.all([this.loadDevices(), this.loadGroupTree()])
+        return
+      }
+      try {
+        const res = await this.$axios.post('/device/move', {
+          deviceIds: [deviceId],
+          groupId: targetGroupId
+        })
+        if (res.code === 0) {
+          this.$message.success(targetGroupId ? '设备已移动到目标分组' : '设备已移出分组')
+          await Promise.all([this.loadDevices(), this.loadGroupTree()])
+        } else {
+          this.$message.error(res.message || '拖动设备失败')
+        }
+      } catch (error) {
+        console.error('拖动设备失败', error)
+        this.$message.error('拖动设备失败')
+      } finally {
+        this.draggingDeviceNode = null
+      }
+    },
+    handleManualDeviceMouseDown(event, data) {
+      if (event.button !== 0 || data?.type !== 'device') {
+        return
+      }
+      this.hideContextMenu()
+      this.manualDrag = {
+        active: true,
+        moved: false,
+        device: data,
+        targetKey: '',
+        targetNode: null,
+        startX: event.clientX,
+        startY: event.clientY,
+        x: event.clientX,
+        y: event.clientY
+      }
+      document.addEventListener('mousemove', this.handleManualDeviceMouseMove)
+      document.addEventListener('mouseup', this.handleManualDeviceMouseUp)
+    },
+    handleManualDeviceMouseMove(event) {
+      if (!this.manualDrag.active) return
+      const dx = Math.abs(event.clientX - this.manualDrag.startX)
+      const dy = Math.abs(event.clientY - this.manualDrag.startY)
+      if (!this.manualDrag.moved && dx + dy < 4) {
+        return
+      }
+      event.preventDefault()
+      if (!this.manualDrag.moved) {
+        this.manualDrag.moved = true
+        document.body.classList.add('device-manual-dragging')
+      }
+      this.manualDrag.x = event.clientX
+      this.manualDrag.y = event.clientY
+
+      const target = this.findManualDropTargetFromPoint(event.clientX, event.clientY)
+      this.manualDrag.targetNode = target
+      this.manualDrag.targetKey = target?._nodeKey || ''
+    },
+    async handleManualDeviceMouseUp(event) {
+      if (!this.manualDrag.active) return
+      const dragState = { ...this.manualDrag }
+      this.removeManualDragListeners()
+      this.resetManualDrag()
+
+      if (!dragState.moved) {
+        return
+      }
+      event.preventDefault()
+      event.stopPropagation()
+      await this.moveDraggedDeviceToTarget(dragState.device, dragState.targetNode)
+    },
+    removeManualDragListeners() {
+      document.removeEventListener('mousemove', this.handleManualDeviceMouseMove)
+      document.removeEventListener('mouseup', this.handleManualDeviceMouseUp)
+      document.body.classList.remove('device-manual-dragging')
+    },
+    resetManualDrag() {
+      this.manualDrag = {
+        active: false,
+        moved: false,
+        device: null,
+        targetKey: '',
+        targetNode: null,
+        startX: 0,
+        startY: 0,
+        x: 0,
+        y: 0
+      }
+    },
+    findManualDropTargetFromPoint(x, y) {
+      const element = document.elementFromPoint(x, y)
+      const nodeElement = element?.closest?.('[data-tree-node-key]')
+      const key = nodeElement?.getAttribute('data-tree-node-key')
+      if (!key) return null
+      const node = this.findDisplayTreeNodeByKey(key)
+      return this.resolveManualDropTargetGroupId(node) !== undefined ? node : null
+    },
+    findDisplayTreeNodeByKey(key, nodes = this.displayGroupTree) {
+      const stack = [...(nodes || [])]
+      while (stack.length) {
+        const current = stack.shift()
+        if (!current) continue
+        if (current._nodeKey === key) return current
+        if (current.children?.length) {
+          stack.push(...current.children)
+        }
+      }
+      return null
+    },
+    isManualDragDropTarget(data) {
+      return this.manualDrag.active && this.manualDrag.moved && this.resolveManualDropTargetGroupId(data) !== undefined
+    },
+    resolveManualDropTargetGroupId(target) {
+      if (!target) return undefined
+      if (this.isUngroupedNode(target)) return null
+      if (target.type === 'device') {
+        const groupId = Number(target.groupId || 0)
+        return groupId > 0 ? groupId : null
+      }
+      if (this.isGroupContextNode(target) && Number(target.id || 0) > 0) {
+        return Number(target.id)
+      }
+      return undefined
+    },
+    async moveDraggedDeviceToTarget(device, target) {
+      const deviceId = Number(device?.deviceId || 0)
+      const targetGroupId = this.resolveManualDropTargetGroupId(target)
+      if (!deviceId || targetGroupId === undefined) {
+        await Promise.all([this.loadDevices(), this.loadGroupTree()])
+        return
+      }
+      if (Number(device.groupId || 0) === Number(targetGroupId || 0)) {
+        this.$message.info('设备已在目标分组')
+        await Promise.all([this.loadDevices(), this.loadGroupTree()])
+        return
+      }
+      try {
+        const res = await this.$axios.post('/device/move', {
+          deviceIds: [deviceId],
+          groupId: targetGroupId
+        })
+        if (res.code === 0) {
+          this.$message.success(targetGroupId ? '设备已移动到目标分组' : '设备已移出分组')
+          await Promise.all([this.loadDevices(), this.loadGroupTree()])
+        } else {
+          this.$message.error(res.message || '拖动设备失败')
+        }
+      } catch (error) {
+        console.error('拖动设备失败', error)
+        this.$message.error('拖动设备失败')
+      }
     },
     isUngroupedNode(data) {
       const label = String(data?.label || data?.name || '')
@@ -643,11 +1042,31 @@ export default {
       this.contextMenu.node = null
     },
     handleContextMenuAction(action) {
-      const group = this.contextMenu.node
+      const node = this.contextMenu.node
+      if (node?.type === 'device') {
+        this.hideContextMenu()
+        if (action === 'removeDeviceFromGroup') {
+          this.removeDeviceFromGroup(node)
+          return
+        }
+        if (action === 'renameDevice') {
+          this.renameDevice(node)
+          return
+        }
+        if (action === 'refresh') {
+          Promise.all([this.loadDevices(), this.loadGroupTree()])
+        }
+        return
+      }
+
+      const group = node
       if ((action !== 'addRoot' && action !== 'refresh') && !group) {
         return
       }
-      if ((action !== 'addRoot' && action !== 'refresh') && !this.isEditableGroupNode(group)) {
+      if ((action !== 'addRoot' && action !== 'refresh') && !this.isGroupContextNode(group)) {
+        return
+      }
+      if (['addSibling', 'moveUp', 'moveDown', 'edit', 'delete'].includes(action) && !this.canModifyGroup(group)) {
         return
       }
       if ((action === 'moveUp' && !this.canMoveUp(group)) || (action === 'moveDown' && !this.canMoveDown(group))) {
@@ -659,6 +1078,7 @@ export default {
         return
       }
       if (action === 'addSibling') {
+        if (!this.canModifyGroup(group)) return
         this.addSibling(group)
         return
       }
@@ -671,10 +1091,12 @@ export default {
         return
       }
       if (action === 'moveUp') {
+        if (!this.canMoveUp(group)) return
         this.moveUp(group)
         return
       }
       if (action === 'moveDown') {
+        if (!this.canMoveDown(group)) return
         this.moveDown(group)
         return
       }
@@ -692,6 +1114,66 @@ export default {
       }
       if (action === 'refresh') {
         this.loadGroupTree()
+      }
+    },
+    getDeviceRowByNode(node) {
+      const deviceId = Number(node?.deviceId || 0)
+      if (!deviceId) return null
+      return this.devices.find(item => Number(item.id || item.ID) === deviceId) || null
+    },
+    getDevicePromptName(node) {
+      const row = this.getDeviceRowByNode(node)
+      return String(row?.name || row?.displayName || node?.label || '').trim()
+    },
+    async removeDeviceFromGroup(node) {
+      const deviceId = Number(node?.deviceId || 0)
+      if (!deviceId) {
+        this.$message.warning('设备参数错误')
+        return
+      }
+      try {
+        const res = await this.$axios.post('/device/move', {
+          deviceIds: [deviceId],
+          groupId: null
+        })
+        if (res.code === 0) {
+          this.$message.success('设备已移到未分组设备')
+          await Promise.all([this.loadDevices(), this.loadGroupTree()])
+        } else {
+          this.$message.error(res.message || '删除设备失败')
+        }
+      } catch (error) {
+        console.error('删除设备失败', error)
+        this.$message.error('删除设备失败')
+      }
+    },
+    async renameDevice(node) {
+      const deviceId = Number(node?.deviceId || 0)
+      if (!deviceId) {
+        this.$message.warning('设备参数错误')
+        return
+      }
+      try {
+        const { value } = await this.$prompt('请输入设备名称', '重命名设备', {
+          confirmButtonText: '确定',
+          cancelButtonText: '取消',
+          inputValue: this.getDevicePromptName(node),
+          inputValidator: value => String(value || '').trim().length > 0,
+          inputErrorMessage: '设备名称不能为空'
+        })
+        const name = String(value || '').trim()
+        const res = await this.$axios.put(`/device/${deviceId}`, { name })
+        if (res.code === 0) {
+          this.$message.success('设备名称已更新')
+          await Promise.all([this.loadDevices(), this.loadGroupTree()])
+        } else {
+          this.$message.error(res.message || '重命名设备失败')
+        }
+      } catch (error) {
+        if (error !== 'cancel') {
+          console.error('重命名设备失败', error)
+          this.$message.error('重命名设备失败')
+        }
       }
     },
     setTreeScope(mode) {
@@ -791,15 +1273,11 @@ export default {
       this.moveDialogVisible = true
     },
     async moveSelectedDevicesToGroup(group) {
-      const targetGroupId = Number(group?.id || 0)
-      if (targetGroupId <= 0) {
-        this.$message.warning('目标分组无效')
-        return
-      }
-      if (!this.selectedDeviceIds.length) {
+      if (!this.canMoveSelectedToGroup(group)) {
         this.$message.warning('请先勾选设备')
         return
       }
+      const targetGroupId = Number(group?.id || 0)
       this.moving = true
       try {
         const res = await this.$axios.post('/device/move', {
@@ -842,9 +1320,49 @@ export default {
       this.editDialogVisible = true
       this.editForm = {
         id: row.id || row.ID,
+        code: row.code || '',
         name: row.name || '',
+        initialName: row.initialName || '',
+        type: row.type || DEFAULT_DEVICE_TYPE,
+        model: row.model || '',
+        ip: row.ip || '',
+        employeeCode: row.employeeCode || '',
+        employeeName: row.employeeName || '',
+        mainboardSn: row.mainboardSn || '',
         groupId: row.groupId ?? null,
         remark: row.remark || ''
+      }
+    },
+    openDeviceTypeDialog() {
+      this.deviceTypeForm.value = ''
+      this.showDeviceTypeDialog = true
+    },
+    resetDeviceTypeForm() {
+      this.creatingDeviceType = false
+      this.deviceTypeForm.value = ''
+    },
+    async handleCreateDeviceType() {
+      const value = String(this.deviceTypeForm.value || '').trim()
+      if (!value) {
+        this.$message.warning('设备类型不能为空')
+        return
+      }
+      this.creatingDeviceType = true
+      try {
+        const res = await this.$axios.post('/device/type-summary', { value })
+        if (res.code === 0) {
+          this.$message.success('设备类型已新增')
+          this.showDeviceTypeDialog = false
+          await this.loadDeviceTypes()
+          this.editForm.type = res.data?.value || value
+        } else {
+          this.$message.error(res.message || '设备类型新增失败')
+        }
+      } catch (error) {
+        console.error('新增设备类型失败', error)
+        this.$message.error('设备类型新增失败')
+      } finally {
+        this.creatingDeviceType = false
       }
     },
     async saveDevice() {
@@ -857,6 +1375,9 @@ export default {
         this.saving = true
         const res = await this.$axios.put(`/device/${this.editForm.id}`, {
           name: this.editForm.name.trim(),
+          type: this.editForm.type,
+          employeeCode: this.editForm.employeeCode,
+          employeeName: this.editForm.employeeName,
           groupId: this.editForm.groupId,
           remark: this.editForm.remark.trim()
         })
@@ -873,11 +1394,9 @@ export default {
     },
     getStatusTone(status) {
       const map = {
-        online: 'success',
         offline: 'info',
         working: 'primary',
-        idle: 'warning',
-        alarm: 'danger'
+        idle: 'warning'
       }
       return map[status] || 'info'
     },
@@ -898,11 +1417,9 @@ export default {
     },
     getStatusLabel(status) {
       const map = {
-        online: '在线',
-        offline: '离线',
-        working: '缝纫中',
-        idle: '空闲',
-        alarm: '报警'
+        offline: '关机',
+        working: '缝纫',
+        idle: '空闲'
       }
       return map[status] || status || '-'
     },
@@ -969,7 +1486,7 @@ export default {
       }
     },
     createGroup(parentId) {
-      const title = parentId ? '新增子分组' : '新建顶层分组'
+      const title = parentId ? '新增子分组' : '新增分组'
       this.$prompt('请输入分组名称', title, {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
@@ -1124,6 +1641,21 @@ export default {
   gap: 4px;
 }
 
+.device-type-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.device-type-control .el-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.device-type-control .el-button {
+  flex: 0 0 auto;
+}
+
 .selection-bar {
   margin-top: 8px;
   margin-bottom: 8px;
@@ -1168,6 +1700,40 @@ export default {
   display: flex;
   align-items: center;
   overflow: hidden;
+  user-select: none;
+}
+
+.tree-node-device {
+  cursor: grab;
+}
+
+.tree-node-device:active {
+  cursor: grabbing;
+}
+
+.tree-node-drop-target {
+  border-radius: 2px;
+}
+
+.tree-node-drop-hover {
+  background: rgba(47, 109, 246, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(47, 109, 246, 0.38);
+}
+
+.manual-drag-ghost {
+  position: fixed;
+  z-index: 3000;
+  max-width: 260px;
+  padding: 6px 10px;
+  border-radius: 3px;
+  background: rgba(31, 41, 55, 0.92);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.2;
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tree-node-main {
@@ -1203,17 +1769,12 @@ export default {
   border-radius: 50%;
 }
 
-.status-dot.online,
 .status-dot.idle {
   background: #2fb46e;
 }
 
 .status-dot.working {
   background: #2f6df6;
-}
-
-.status-dot.alarm {
-  background: #ef5a5a;
 }
 
 .status-dot.offline {

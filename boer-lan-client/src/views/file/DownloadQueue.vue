@@ -63,7 +63,7 @@
         <div class="queue-note">
           <div class="queue-note-main">
             <i class="el-icon-info"></i>
-            <span>同一设备按队列顺序下发；设备工作中或离线时会等待，队首任务等待超过10分钟才判定失败。</span>
+            <span>同一设备按队列顺序下发；设备缝纫中或关机时会等待，队首任务等待超过10分钟才判定失败。</span>
           </div>
           <span class="queue-note-time">最后刷新 {{ lastUpdatedAt || '-' }}</span>
         </div>

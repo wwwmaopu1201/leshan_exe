@@ -53,20 +53,16 @@
       @click.stop
       @contextmenu.prevent
     >
-      <li @click="handleContextMenuAction('addRoot')">新增顶层分组</li>
+      <li @click="handleContextMenuAction('addRoot')">新增分组</li>
       <template v-if="contextMenu.node">
-        <li @click="handleContextMenuAction('addSibling')">新增同级分组</li>
         <li @click="handleContextMenuAction('addChild')">新增子分组</li>
-        <li :class="{ disabled: !canMoveUp(contextMenu.node) }" @click="handleContextMenuAction('moveUp')">上移</li>
-        <li :class="{ disabled: !canMoveDown(contextMenu.node) }" @click="handleContextMenuAction('moveDown')">下移</li>
-        <li @click="handleContextMenuAction('edit')">重命名</li>
-        <li
-          class="danger"
-          :class="{ disabled: !canDeleteGroup(contextMenu.node) }"
-          @click="handleContextMenuAction('delete')"
-        >
-          删除分组
-        </li>
+        <template v-if="canModifyGroup(contextMenu.node)">
+          <li @click="handleContextMenuAction('addSibling')">新增同级分组</li>
+          <li :class="{ disabled: !canMoveUp(contextMenu.node) }" @click="handleContextMenuAction('moveUp')">上移</li>
+          <li :class="{ disabled: !canMoveDown(contextMenu.node) }" @click="handleContextMenuAction('moveDown')">下移</li>
+          <li @click="handleContextMenuAction('edit')">重命名</li>
+          <li class="danger" @click="handleContextMenuAction('delete')">删除分组</li>
+        </template>
       </template>
       <li @click="handleContextMenuAction('refresh')">刷新</li>
     </ul>
@@ -221,11 +217,17 @@ export default {
       return label === '总分组' || label === '全部设备' || id === 'all'
     },
     canDeleteGroup(group) {
+      return this.canModifyGroup(group)
+    },
+    canModifyGroup(group) {
       return !!group && !this.isTotalGroupNode(group)
     },
     handleContextMenuAction(action) {
       const group = this.contextMenu.node
       if ((action !== 'addRoot' && action !== 'refresh') && !group) {
+        return
+      }
+      if (['addSibling', 'moveUp', 'moveDown', 'edit', 'delete'].includes(action) && !this.canModifyGroup(group)) {
         return
       }
       if ((action === 'moveUp' && !this.canMoveUp(group)) || (action === 'moveDown' && !this.canMoveDown(group))) {
@@ -279,7 +281,7 @@ export default {
       this.$emit('change', payload)
     },
     createGroup(parentId) {
-      const title = parentId ? '新增子分组' : '新建顶层分组'
+      const title = parentId ? '新增子分组' : '新增分组'
       this.$prompt('请输入分组名称', title, {
         confirmButtonText: '确定',
         cancelButtonText: '取消',

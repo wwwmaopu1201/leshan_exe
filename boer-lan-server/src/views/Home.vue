@@ -27,9 +27,9 @@
         <div class="summary-card__icon">
           <i class="el-icon-circle-check"></i>
         </div>
-        <div class="summary-card__label">在线设备</div>
+        <div class="summary-card__label">开机设备</div>
         <div class="summary-card__value">{{ stats.onlineDeviceCount }}</div>
-        <div class="summary-card__hint">包含在线、缝纫中和空闲状态设备。</div>
+        <div class="summary-card__hint">包含空闲和缝纫状态设备。</div>
       </div>
 
       <div class="summary-card indigo">

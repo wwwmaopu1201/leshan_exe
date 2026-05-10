@@ -7,10 +7,10 @@
           :class="['language-option', { active: currentLang === 'zh-CN' }]"
           @click="changeLang('zh-CN')"
         >
-          <div class="lang-icon">中</div>
+            <div class="lang-icon">中</div>
           <div class="lang-info">
             <div class="lang-name">{{ $t('profile.chinese') }}</div>
-            <div class="lang-desc">简体中文</div>
+            <div class="lang-desc">{{ $t('profile.chineseDesc') }}</div>
           </div>
           <i v-if="currentLang === 'zh-CN'" class="el-icon-check"></i>
         </div>
@@ -30,7 +30,7 @@
 
       <div class="language-tips">
         <i class="el-icon-info"></i>
-        <span>切换语言后，整个应用界面将使用新的语言显示。</span>
+        <span>{{ $t('profile.languageTip') }}</span>
       </div>
     </div>
   </div>
@@ -54,7 +54,7 @@ export default {
 
       this.$i18n.locale = lang
       this.setLanguage(lang)
-      this.$message.success(lang === 'zh-CN' ? '语言已切换为中文' : 'Language switched to English')
+      this.$message.success(lang === 'zh-CN' ? this.$t('profile.languageChangedZh') : this.$t('profile.languageChangedEn'))
     }
   }
 }

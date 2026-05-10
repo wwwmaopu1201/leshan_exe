@@ -7,6 +7,8 @@
           v-model="treeFilter"
           title="设备树与分组"
           :management="true"
+          :show-move-selected="true"
+          :selected-device-ids="selectedDeviceIds"
           :min-height="560"
           @change="handleTreeChange"
           @refresh="handleTreeRefresh"
@@ -25,14 +27,12 @@
               />
             </el-form-item>
             <el-form-item :label="$t('device.deviceStatus')">
-              <el-select v-model="searchForm.status" clearable placeholder="全部状态">
-                <el-option label="全部" value="" />
-                <el-option :label="$t('device.online')" value="online" />
-                <el-option :label="$t('device.working')" value="working" />
-                <el-option :label="$t('device.idle')" value="idle" />
-                <el-option :label="$t('device.offline')" value="offline" />
-                <el-option :label="$t('device.alarm')" value="alarm" />
-              </el-select>
+                <el-select v-model="searchForm.status" clearable placeholder="全部状态">
+                  <el-option label="全部" value="" />
+                  <el-option :label="$t('device.idle')" value="idle" />
+                  <el-option :label="$t('device.working')" value="working" />
+                  <el-option :label="$t('device.offline')" value="offline" />
+                </el-select>
             </el-form-item>
             <el-form-item :label="$t('common.createTime')">
               <el-date-picker
@@ -58,9 +58,6 @@
         <el-card ref="tableCard" shadow="never" class="card page-table-card">
           <div class="table-actions flex-between">
             <div class="action-group">
-              <el-button type="primary" icon="el-icon-plus" @click="handleAdd">
-                {{ $t('device.addDevice') }}
-              </el-button>
               <el-button
                 type="danger"
                 icon="el-icon-delete"
@@ -105,7 +102,7 @@
             </el-table-column>
             <el-table-column prop="initialName" :label="$t('device.initialName')" width="130" />
             <el-table-column prop="type" :label="$t('device.deviceType')" width="100" />
-            <el-table-column prop="model" :label="$t('device.deviceModel')" width="110" />
+            <!-- <el-table-column prop="model" :label="$t('device.deviceModel')" width="110" /> -->
             <el-table-column prop="employeeCode" :label="$t('employee.employeeCode')" width="120" />
             <el-table-column prop="employeeName" :label="$t('employee.employeeName')" width="120" />
             <el-table-column prop="mainboardSn" :label="$t('device.mainboardSn')" width="150" />
@@ -191,13 +188,13 @@
             </el-button>
           </div>
         </el-form-item>
-        <el-form-item :label="$t('device.deviceModel')" prop="model">
+        <!-- <el-form-item :label="$t('device.deviceModel')" prop="model">
           <el-select v-model="editForm.model">
             <el-option label="BM-2000" value="BM-2000" />
             <el-option label="BM-3000" value="BM-3000" />
             <el-option label="BM-5000" value="BM-5000" />
           </el-select>
-        </el-form-item>
+        </el-form-item> -->
         <el-form-item :label="$t('device.ipAddress')" prop="ip">
           <el-input v-model="editForm.ip" :disabled="isEditingExistingDevice" placeholder="192.168.1.xxx" />
         </el-form-item>
@@ -350,7 +347,6 @@ export default {
         code: [{ required: true, message: '请输入设备编码', trigger: 'blur' }],
         name: [{ required: true, message: '请输入设备名称', trigger: 'blur' }],
         type: [{ required: true, message: '请选择设备类型', trigger: 'change' }],
-        model: [{ required: true, message: '请选择设备型号', trigger: 'change' }],
         ip: [{ required: true, message: '请输入IP地址', trigger: 'blur' }]
       },
       showMoveDialog: false,
@@ -383,12 +379,12 @@ export default {
       return new Map((this.groupOptions || []).map(group => [Number(group.id), group.name]))
     },
     currentScopeLabel() {
-      return this.treeFilter.label || '全部设备'
+      return this.treeFilter.label || '总分组'
     },
     currentScopeTypeText() {
       if (this.treeFilter.nodeType === 'device') return '单台设备'
       if (this.treeFilter.nodeType === 'group') return '设备分组'
-      return '全部设备'
+      return '总分组'
     },
     pagedTableData() {
       const start = (this.pagination.page - 1) * this.pagination.pageSize
@@ -396,6 +392,9 @@ export default {
     },
     selectedGroupedRows() {
       return this.selectedRows.filter(row => this.isDeviceGrouped(row))
+    },
+    selectedDeviceIds() {
+      return this.selectedRows.map(row => row.id).filter(Boolean)
     }
   },
   mounted() {
@@ -602,21 +601,17 @@ export default {
     },
     getStatusType(status) {
       const map = {
-        online: 'success',
         working: 'primary',
         idle: 'success',
-        offline: 'info',
-        alarm: 'danger'
+        offline: 'info'
       }
       return map[status] || 'info'
     },
     getStatusText(status) {
       const map = {
-        online: this.$t('device.online'),
         working: this.$t('device.working'),
         idle: this.$t('device.idle'),
-        offline: this.$t('device.offline'),
-        alarm: this.$t('device.alarm')
+        offline: this.$t('device.offline')
       }
       return map[status] || status
     },
@@ -739,7 +734,6 @@ export default {
         const payload = {
           name: this.editForm.name,
           type: this.editForm.type,
-          model: this.editForm.model,
           employeeCode: this.editForm.employeeCode,
           employeeName: this.editForm.employeeName,
           remark: this.editForm.remark,
@@ -930,8 +924,7 @@ export default {
   border-radius: 50%;
   margin-right: 6px;
 
-  &.status-idle,
-  &.status-online {
+  &.status-idle {
     background: #2fb46e;
   }
 
@@ -941,10 +934,6 @@ export default {
 
   &.status-offline {
     background: #8a98ad;
-  }
-
-  &.status-alarm {
-    background: #ef5a5a;
   }
 }
 

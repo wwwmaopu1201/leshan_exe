@@ -3,14 +3,14 @@
     <header class="topbar">
       <div class="topbar-left">
         <img src="@/assets/images/logo.png" alt="Logo" class="topbar-logo" />
-        <span class="topbar-title">局域网管理软件客户端</span>
+        <span class="topbar-title">{{ $t('layout.appTitle') }}</span>
       </div>
       <div class="topbar-right">
         <div class="server-tag" v-if="serverAddress">
           <i class="el-icon-link"></i>
           <span>{{ serverAddress }}</span>
         </div>
-        <div class="lang-switch" role="group" aria-label="language switch">
+        <div class="lang-switch" role="group" :aria-label="$t('layout.languageSwitch')">
           <button
             v-for="item in languageOptions"
             :key="item.value"
@@ -38,7 +38,7 @@
               <i class="el-icon-lock"></i> {{ $t('menu.changePassword') }}
             </el-dropdown-item>
             <el-dropdown-item divided command="logout">
-              <i class="el-icon-switch-button"></i> 退出登录
+              <i class="el-icon-switch-button"></i> {{ $t('layout.logout') }}
             </el-dropdown-item>
           </el-dropdown-menu>
         </el-dropdown>
@@ -242,9 +242,9 @@ export default {
       }
     },
     handleLogout() {
-      this.$confirm('确定要退出登录吗？', '提示', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+      this.$confirm(this.$t('layout.logoutConfirm'), this.$t('common.tips'), {
+        confirmButtonText: this.$t('common.confirm'),
+        cancelButtonText: this.$t('common.cancel'),
         type: 'warning'
       }).then(() => {
         this.logout()

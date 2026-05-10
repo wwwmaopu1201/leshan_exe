@@ -392,7 +392,7 @@ export default {
       const chart = this.getOrCreateChart('alarmTrend', this.$refs.alarmTrendChart)
       const trendData = this.chartData.alarmTrend || []
       const dates = trendData.map(item => item.date)
-      const counts = trendData.map(item => item.count)
+      const counts = trendData.map(item => Math.trunc(Number(item.count) || 0))
       const durations = trendData.map(item => item.avgDuration)
       chart.setOption({
         tooltip: {
@@ -421,20 +421,35 @@ export default {
           axisLine: { lineStyle: { color: '#dbe4f0' } }
         },
         yAxis: [
-          { type: 'value', name: '次数', axisLabel: { color: '#6a7f9d' }, splitLine: { lineStyle: { color: '#edf2f8' } } },
+          {
+            type: 'value',
+            name: '次数',
+            minInterval: 1,
+            axisTick: { show: false },
+            axisLine: { show: false },
+            axisLabel: {
+              color: '#6a7f9d',
+              formatter: value => `${Math.trunc(Number(value) || 0)}`
+            },
+            splitLine: { lineStyle: { color: '#e9eef5', type: 'dashed' } }
+          },
           {
             type: 'value',
             name: '时长',
+            axisTick: { show: false },
+            axisLine: { show: false },
             axisLabel: {
               color: '#6a7f9d',
               formatter: value => this.formatDurationFromMinutes(value)
-            }
+            },
+            splitLine: { show: false }
           }
         ],
         series: [
           {
             name: '报警次数',
             type: 'bar',
+            barWidth: 34,
             data: counts,
             itemStyle: { color: '#ef5a5a', borderRadius: [10, 10, 0, 0] }
           },

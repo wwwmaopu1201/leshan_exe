@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"boer-lan-server/internal/model"
@@ -68,6 +69,107 @@ func TestGetDeviceGroupsReturnsFrontendFieldNames(t *testing.T) {
 	}
 	if body.Data[1].ID != child.ID || body.Data[1].Name != "车间A" || body.Data[1].ParentID == nil || *body.Data[1].ParentID != parent.ID {
 		t.Fatalf("unexpected child group payload: %#v", body.Data[1])
+	}
+}
+
+func TestCreateDeviceGroupDefaultsToTotalGroup(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db, err := gorm.Open(sqlite.Open("file:device_group_create_total_test?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Group{}); err != nil {
+		t.Fatalf("migrate schema: %v", err)
+	}
+
+	root := model.Group{Name: "总分组", SortOrder: 1}
+	if err := db.Create(&root).Error; err != nil {
+		t.Fatalf("create root group: %v", err)
+	}
+	stray := model.Group{Name: "误建顶层", SortOrder: 2}
+	if err := db.Create(&stray).Error; err != nil {
+		t.Fatalf("create stray group: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"name": "一车间",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/device/group", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+
+	NewDeviceHandler(db).CreateDeviceGroup(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+
+	var created model.Group
+	if err := db.Where("name = ?", "一车间").First(&created).Error; err != nil {
+		t.Fatalf("load created group: %v", err)
+	}
+	if created.ParentID == nil || *created.ParentID != root.ID {
+		t.Fatalf("expected created group under total group %d, got %#v", root.ID, created.ParentID)
+	}
+
+	var normalized model.Group
+	if err := db.First(&normalized, stray.ID).Error; err != nil {
+		t.Fatalf("load normalized stray group: %v", err)
+	}
+	if normalized.ParentID == nil || *normalized.ParentID != root.ID {
+		t.Fatalf("expected stray root group under total group %d, got %#v", root.ID, normalized.ParentID)
+	}
+}
+
+func TestUpdateDeviceGroupNullParentMovesUnderTotalGroup(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db, err := gorm.Open(sqlite.Open("file:device_group_update_total_test?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Group{}); err != nil {
+		t.Fatalf("migrate schema: %v", err)
+	}
+
+	root := model.Group{Name: "总分组", SortOrder: 1}
+	if err := db.Create(&root).Error; err != nil {
+		t.Fatalf("create root group: %v", err)
+	}
+	parent := model.Group{Name: "工厂A", ParentID: &root.ID, SortOrder: 1}
+	if err := db.Create(&parent).Error; err != nil {
+		t.Fatalf("create parent group: %v", err)
+	}
+	child := model.Group{Name: "车间A", ParentID: &parent.ID, SortOrder: 1}
+	if err := db.Create(&child).Error; err != nil {
+		t.Fatalf("create child group: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"parentId": nil,
+	})
+	req := httptest.NewRequest(http.MethodPut, "/device/group/1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+	c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(int(child.ID))}}
+
+	NewDeviceHandler(db).UpdateDeviceGroup(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+
+	var updated model.Group
+	if err := db.First(&updated, child.ID).Error; err != nil {
+		t.Fatalf("load updated group: %v", err)
+	}
+	if updated.ParentID == nil || *updated.ParentID != root.ID {
+		t.Fatalf("expected child group under total group %d, got %#v", root.ID, updated.ParentID)
 	}
 }
 
@@ -136,6 +238,83 @@ func TestUpdateDeviceUpdatesGroupID(t *testing.T) {
 	c.Params = gin.Params{{Key: "id", Value: "1"}}
 
 	NewDeviceHandler(db).UpdateDevice(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200 for ungroup, got %d, body=%s", w.Code, w.Body.String())
+	}
+	if err := db.First(&updated, device.ID).Error; err != nil {
+		t.Fatalf("reload updated device: %v", err)
+	}
+	if updated.GroupID != nil {
+		t.Fatalf("expected device to be ungrouped, got %#v", updated.GroupID)
+	}
+}
+
+func TestMoveToGroupUpdatesDeviceGroupID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db, err := gorm.Open(sqlite.Open("file:device_move_group_test?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Group{}, &model.Device{}); err != nil {
+		t.Fatalf("migrate schema: %v", err)
+	}
+
+	source := model.Group{Name: "原分组"}
+	target := model.Group{Name: "目标分组"}
+	if err := db.Create(&source).Error; err != nil {
+		t.Fatalf("create source group: %v", err)
+	}
+	if err := db.Create(&target).Error; err != nil {
+		t.Fatalf("create target group: %v", err)
+	}
+
+	device := model.Device{
+		Code:      "D-002",
+		Name:      "设备二",
+		Type:      model.DefaultDeviceType,
+		ModelName: "BM-2000",
+		GroupID:   &source.ID,
+	}
+	if err := db.Create(&device).Error; err != nil {
+		t.Fatalf("create device: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"deviceIds": []uint{device.ID},
+		"groupId":   target.ID,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/device/move", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+
+	NewDeviceHandler(db).MoveToGroup(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+	var updated model.Device
+	if err := db.First(&updated, device.ID).Error; err != nil {
+		t.Fatalf("load updated device: %v", err)
+	}
+	if updated.GroupID == nil || *updated.GroupID != target.ID {
+		t.Fatalf("expected target group %d, got %#v", target.ID, updated.GroupID)
+	}
+
+	body, _ = json.Marshal(map[string]interface{}{
+		"deviceIds": []uint{device.ID},
+		"groupId":   nil,
+	})
+	req = httptest.NewRequest(http.MethodPost, "/device/move", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	c, _ = gin.CreateTestContext(w)
+	c.Request = req
+
+	NewDeviceHandler(db).MoveToGroup(c)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected status 200 for ungroup, got %d, body=%s", w.Code, w.Body.String())

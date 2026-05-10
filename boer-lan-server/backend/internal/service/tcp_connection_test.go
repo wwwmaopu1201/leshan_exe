@@ -104,7 +104,7 @@ func TestHandleWorkStartAcceptsEmployeeCodeAndUpdatesDevice(t *testing.T) {
 	if err := db.Create(&employee).Error; err != nil {
 		t.Fatalf("create employee: %v", err)
 	}
-	device := model.Device{Code: "D-001", Name: "设备D-001", Type: model.DefaultDeviceType, Status: "online"}
+	device := model.Device{Code: "D-001", Name: "设备D-001", Type: model.DefaultDeviceType, Status: "idle"}
 	if err := db.Create(&device).Error; err != nil {
 		t.Fatalf("create device: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestHandleWorkStartAcceptsEmployeeCodeAndUpdatesDevice(t *testing.T) {
 
 func TestHandleWorkStartRejectsUnknownEmployeeCode(t *testing.T) {
 	db := openTCPConnectionTestDB(t, "work_start_reject")
-	device := model.Device{Code: "D-001", Name: "设备D-001", Type: model.DefaultDeviceType, Status: "online"}
+	device := model.Device{Code: "D-001", Name: "设备D-001", Type: model.DefaultDeviceType, Status: "idle"}
 	if err := db.Create(&device).Error; err != nil {
 		t.Fatalf("create device: %v", err)
 	}

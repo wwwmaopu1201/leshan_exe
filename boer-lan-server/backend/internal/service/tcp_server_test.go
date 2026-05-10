@@ -19,10 +19,8 @@ func TestResetStaleDeviceStatuses(t *testing.T) {
 	}
 
 	devices := []model.Device{
-		{Code: "online", Name: "online", Status: "online"},
 		{Code: "idle", Name: "idle", Status: "idle"},
 		{Code: "working", Name: "working", Status: "working"},
-		{Code: "alarm", Name: "alarm", Status: "alarm"},
 		{Code: "offline", Name: "offline", Status: "offline"},
 	}
 	if err := db.Create(&devices).Error; err != nil {

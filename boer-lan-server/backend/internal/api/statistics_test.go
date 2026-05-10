@@ -521,7 +521,7 @@ func TestDashboardUtilizationExtendsTodayRuntimeForOnlineDevice(t *testing.T) {
 		t.Fatalf("migrate schema: %v", err)
 	}
 
-	device := model.Device{Code: "D-005", Name: "在线设备", Status: "online"}
+	device := model.Device{Code: "D-005", Name: "开机设备", Status: "idle"}
 	if err := db.Create(&device).Error; err != nil {
 		t.Fatalf("create device: %v", err)
 	}
@@ -794,12 +794,14 @@ func TestGetProcessOverviewListAlarmDisplay(t *testing.T) {
 
 	now := time.Now()
 	recordDate := time.Date(now.Year(), now.Month(), now.Day(), 10, 0, 0, 0, now.Location())
+	recordEnd := recordDate.Add(30 * time.Minute)
 	sourceKey := "test-process-overview-alarm-display-001"
 	if err := db.Create(&model.ProductionRecord{
 		DeviceID:   device.ID,
 		Pieces:     1,
 		Stitches:   120,
 		StartTime:  &recordDate,
+		EndTime:    &recordEnd,
 		SourceKey:  sourceKey,
 		RecordDate: recordDate,
 	}).Error; err != nil {
@@ -845,6 +847,22 @@ func TestGetProcessOverviewListAlarmDisplay(t *testing.T) {
 	noAlarm := fetch(t)
 	if noAlarm.AlarmInfo != "无" || noAlarm.AlarmTime != "无" {
 		t.Fatalf("expected no alarm display 无/无, got %q/%q", noAlarm.AlarmInfo, noAlarm.AlarmTime)
+	}
+
+	previousAlarmStart := recordDate.Add(-30 * time.Minute)
+	if err := db.Create(&model.AlarmRecord{
+		DeviceID:  device.ID,
+		AlarmType: "断线报警",
+		Duration:  60,
+		Status:    "resolved",
+		StartTime: previousAlarmStart,
+	}).Error; err != nil {
+		t.Fatalf("create previous alarm record: %v", err)
+	}
+
+	normalSewing := fetch(t)
+	if normalSewing.AlarmInfo != "无" || normalSewing.AlarmTime != "无" {
+		t.Fatalf("expected previous alarm not to display during normal sewing, got %q/%q", normalSewing.AlarmInfo, normalSewing.AlarmTime)
 	}
 
 	alarmStart := recordDate.Add(15 * time.Minute)

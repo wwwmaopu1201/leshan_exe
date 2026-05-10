@@ -2,7 +2,13 @@
   <div class="page-container">
     <div class="pattern-layout">
       <aside class="pattern-side">
-        <device-tree-panel v-model="deviceFilter" @change="handleDeviceTreeChange" />
+        <device-tree-panel
+          v-model="deviceFilter"
+          :checkable-devices="true"
+          :checked-device-ids="selectedPatternDeviceIds"
+          @change="handleDeviceTreeChange"
+          @device-check-change="handleDeviceTreeCheckedDevicesChange"
+        />
       </aside>
       <section class="pattern-main">
         <div class="search-bar">
@@ -146,7 +152,13 @@
             </el-table-column>
             <el-table-column prop="orderNo" label="订单编号" min-width="140" />
             <el-table-column prop="uploadTime" :label="$t('file.uploadTime')" width="170" />
-            <el-table-column :label="$t('common.operation')" width="340" align="center" class-name="server-pattern-operation-column">
+            <el-table-column
+              :label="$t('common.operation')"
+              width="340"
+              align="center"
+              fixed="right"
+              class-name="server-pattern-operation-column"
+            >
               <template slot-scope="scope">
                 <el-button type="text" size="small" @click="handlePreview(scope.row)">
                   预览
@@ -194,13 +206,14 @@
           <div class="device-file-toolbar">
             <el-select
               v-model="deviceFileQuery.deviceId"
-              placeholder="选择设备"
+              :placeholder="selectedPatternDeviceIds.length ? '请选择设备' : '请先勾选左侧设备'"
               filterable
+              :disabled="!selectedPatternDeviceIds.length"
               style="width: 220px;"
               @change="handleDeviceFileDeviceChange"
             >
               <el-option
-                v-for="item in deviceOptions"
+                v-for="item in selectedDeviceFileOptions"
                 :key="item.id"
                 :label="item.name"
                 :value="item.id"
@@ -262,13 +275,28 @@
           >
             <el-table-column type="selection" width="48" align="center" />
             <el-table-column type="index" label="序号" width="60" align="center" />
+            <el-table-column prop="deviceName" label="设备" min-width="150" />
             <el-table-column prop="fileName" label="设备文件名" min-width="180" />
+            <el-table-column prop="patternName" label="花型名称" min-width="160">
+              <template slot-scope="scope">
+                <span>{{ scope.row.patternName || scope.row.fileName || '-' }}</span>
+                <el-tag
+                  v-if="scope.row.matchedServerPattern"
+                  size="mini"
+                  type="success"
+                  effect="plain"
+                  class="pattern-match-tag"
+                >
+                  已匹配
+                </el-tag>
+              </template>
+            </el-table-column>
             <el-table-column prop="patternType" label="花型类型" width="130" />
             <el-table-column prop="stitches" label="针数" width="100" />
             <el-table-column prop="size" label="文件大小" width="100" />
             <el-table-column prop="orderNo" label="订单号" min-width="130" />
             <el-table-column prop="updateTime" label="更新时间" width="170" />
-            <el-table-column label="操作" width="90" align="center">
+            <el-table-column label="操作" width="90" align="center" fixed="right">
               <template slot-scope="scope">
                 <el-button
                   type="text"
@@ -298,7 +326,7 @@
     <el-dialog
       title="添加花型文件"
       :visible.sync="showUploadDialog"
-      width="620px"
+      width="820px"
       @closed="resetUploadDialog"
     >
       <el-form :model="uploadForm" label-width="90px">
@@ -373,19 +401,83 @@
         ref="uploadRef"
         class="upload-area"
         drag
+        multiple
         action="#"
         :auto-upload="false"
         :file-list="uploadFileList"
+        :show-file-list="false"
         :on-change="handleFileChange"
         :on-remove="handleFileRemove"
-        :on-exceed="handleUploadExceed"
-        :limit="1"
-        accept=".dst,.dsb,.exp,.pes,.jef"
+        accept=".ntp,.mtp,.slw,.sdg,.sdt,.nsp,.vdt"
       >
         <i class="el-icon-upload"></i>
         <div class="el-upload__text">将花型文件拖到此处，或<em>点击上传</em></div>
-        <div class="el-upload__tip" slot="tip">支持 .dst, .dsb, .exp, .pes, .jef 格式</div>
+        <div class="el-upload__tip" slot="tip">支持 .ntp, .mtp, .slw, .sdg, .sdt, .nsp, .vdt 格式</div>
       </el-upload>
+
+      <div v-if="uploadFileList.length" class="upload-file-list">
+        <div class="upload-file-list__header">
+          <span>文件列表</span>
+          <span>点击文件行可编辑对应花型信息</span>
+        </div>
+        <el-table
+          :data="uploadFileList"
+          border
+          size="small"
+          max-height="220"
+          highlight-current-row
+          :row-class-name="getUploadFileRowClass"
+          @row-click="selectUploadFile"
+        >
+          <el-table-column type="index" label="序号" width="54" align="center" />
+          <el-table-column label="文件名" min-width="180" show-overflow-tooltip>
+            <template slot-scope="scope">
+              <span>{{ getUploadFileName(scope.row) }}</span>
+              <el-tag
+                v-if="scope.row.uid === activeUploadFileUid"
+                size="mini"
+                type="primary"
+                effect="plain"
+                class="upload-file-active-tag"
+              >
+                当前
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="花型名称" min-width="160" show-overflow-tooltip>
+            <template slot-scope="scope">
+              {{ getUploadFileDisplayValue(scope.row, 'name') || getUploadFileName(scope.row) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="花型类型" width="120" show-overflow-tooltip>
+            <template slot-scope="scope">
+              {{ getUploadFileDisplayValue(scope.row, 'patternType') || '-' }}
+            </template>
+          </el-table-column>
+          <el-table-column label="针数" width="90" align="right">
+            <template slot-scope="scope">
+              {{ formatUploadOptionalNumber(getUploadFileDisplayValue(scope.row, 'stitches')) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="工价" width="90" align="right">
+            <template slot-scope="scope">
+              {{ formatUploadOptionalNumber(getUploadFileDisplayValue(scope.row, 'unitPrice'), 3) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="订单编号" width="120" show-overflow-tooltip>
+            <template slot-scope="scope">
+              {{ getUploadFileDisplayValue(scope.row, 'orderNo') || '-' }}
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="70" align="center">
+            <template slot-scope="scope">
+              <el-button type="text" size="small" class="danger-text" @click.stop="removeUploadFile(scope.row)">
+                删除
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
       <span slot="footer" class="dialog-footer">
         <el-button @click="showUploadDialog = false">{{ $t('common.cancel') }}</el-button>
         <el-button type="primary" :loading="uploading" @click="handleUpload">
@@ -404,21 +496,26 @@
           <el-input v-model.trim="editForm.name" />
         </el-form-item>
         <el-form-item label="花型类型">
-          <el-select
-            v-model="editForm.patternType"
-            filterable
-            allow-create
-            default-first-option
-            clearable
-            placeholder="可输入新类型"
-          >
-            <el-option
-              v-for="item in patternTypeOptions"
-              :key="item"
-              :label="item"
-              :value="item"
-            />
-          </el-select>
+          <div class="inline-field-row">
+            <el-select
+              v-model="editForm.patternType"
+              filterable
+              allow-create
+              default-first-option
+              clearable
+              placeholder="可输入新类型"
+            >
+              <el-option
+                v-for="item in patternTypeOptions"
+                :key="item"
+                :label="item"
+                :value="item"
+              />
+            </el-select>
+            <el-button icon="el-icon-plus" @click="openQuickCreateDialog('patternType')">
+              新增
+            </el-button>
+          </div>
         </el-form-item>
         <el-form-item label="花型针数">
           <el-input-number
@@ -573,7 +670,7 @@
         default-expand-all
         :props="{ children: 'children', label: 'label' }"
       />
-      <div class="dialog-tip">同一设备按队列顺序下发；设备工作中或离线时会等待，队首任务等待超过10分钟才判定失败。</div>
+      <div class="dialog-tip">同一设备按队列顺序下发；设备缝纫中或关机时会等待，队首任务等待超过10分钟才判定失败。</div>
       <span slot="footer" class="dialog-footer">
         <el-button @click="showDeviceDialog = false">{{ $t('common.cancel') }}</el-button>
         <el-button type="primary" @click="confirmDownload">确认下发</el-button>
@@ -783,8 +880,8 @@ import DeviceTreePanel from '@/components/DeviceTreePanel.vue'
 const defaultUploadForm = () => ({
   name: '',
   patternType: '',
-  stitches: 0,
-  unitPrice: 0,
+  stitches: null,
+  unitPrice: null,
   orderNo: ''
 })
 
@@ -817,7 +914,7 @@ const defaultUploadConflictForm = () => ({
   renameNames: {}
 })
 
-const connectedDeviceStatuses = ['online', 'idle', 'working', 'alarm']
+const connectedDeviceStatuses = ['idle', 'working']
 
 export default {
   name: 'PatternList',
@@ -835,6 +932,7 @@ export default {
         deviceId: '',
         deviceIds: []
       },
+      selectedPatternDeviceIds: [],
       searchForm: {
         keyword: '',
         patternType: '',
@@ -851,6 +949,8 @@ export default {
       showUploadDialog: false,
       uploadFileList: [],
       uploadForm: defaultUploadForm(),
+      activeUploadFileUid: '',
+      applyingUploadForm: false,
       uploading: false,
       showEditDialog: false,
       editForm: defaultEditForm(),
@@ -904,6 +1004,20 @@ export default {
       uploadQueueTableMaxHeight: 460
     }
   },
+  computed: {
+    selectedDeviceFileOptions() {
+      const selected = new Set(this.selectedPatternDeviceIds.map(id => Number(id)))
+      return this.deviceOptions.filter(item => selected.has(Number(item.id)))
+    }
+  },
+  watch: {
+    uploadForm: {
+      deep: true,
+      handler() {
+        this.syncActiveUploadForm()
+      }
+    }
+  },
   mounted() {
     this.fetchData()
     this.fetchPatternTypes()
@@ -935,15 +1049,14 @@ export default {
       if (!device) return 99
       if (this.isConnectedDeviceStatus(device.status)) {
         if (device.status === 'working') return 1
-        if (device.status === 'alarm') return 2
-        if (device.status === 'idle') return 3
+        if (device.status === 'idle') return 2
         return 4
       }
       return 99
     },
     formatDeviceOptionLabel(device) {
       const name = device.name || device.deviceName || device.code || `设备${device.id}`
-      const status = this.isConnectedDeviceStatus(device.status) ? '在线' : '离线'
+      const status = this.isConnectedDeviceStatus(device.status) ? '开机' : '关机'
       const ip = device.ip ? ` · ${device.ip}` : ''
       const patternName = device.currentPatternName ? ` · ${device.currentPatternName}` : ''
       return `${name} [${status}]${ip}${patternName}`
@@ -1143,13 +1256,19 @@ export default {
             status: item.status
           }))
 
-          const preferredId = this.resolvePreferredDeviceOptionId(normalizedDevices)
-          if (preferredId) {
-            this.deviceFileQuery.deviceId = preferredId
+          if (this.selectedPatternDeviceIds.length) {
+            this.syncDeviceFileQueryDeviceId()
             if (shouldAutoLoad) {
-              this.handleDeviceFileDeviceChange()
+              this.fetchDeviceFileList()
             }
+            return
           }
+
+          this.deviceFileQuery.deviceId = ''
+          if (shouldAutoLoad) {
+            this.fetchDeviceFileList()
+          }
+          return
         }
       } catch (error) {
         console.error('Failed to fetch device options:', error)
@@ -1168,18 +1287,31 @@ export default {
     },
     async handleDeviceTreeChange(payload) {
       this.deviceFilter = payload
-      if (!this.deviceOptions.length) {
-        await this.fetchDeviceOptions({ autoLoad: false })
-      }
-      const targetDeviceId = this.resolveDeviceFileTargetFromTree(payload)
-      if (!targetDeviceId) {
-        return
-      }
-      if (Number(this.deviceFileQuery.deviceId) === Number(targetDeviceId)) {
+      const ids = Array.from(new Set((payload?.deviceIds || [])
+        .map(id => Number(id))
+        .filter(id => Number.isFinite(id) && id > 0)))
+      if (!ids.length) {
+        this.selectedPatternDeviceIds = []
+        this.syncDeviceFileQueryDeviceId()
         this.handleDeviceFileDeviceChange()
         return
       }
-      this.deviceFileQuery.deviceId = targetDeviceId
+      this.selectedPatternDeviceIds = ids
+      if (!this.deviceOptions.length) {
+        await this.fetchDeviceOptions({ autoLoad: false })
+      }
+      this.syncDeviceFileQueryDeviceId(ids)
+      this.handleDeviceFileDeviceChange()
+    },
+    async handleDeviceTreeCheckedDevicesChange(payload = {}) {
+      const ids = Array.from(new Set((payload.deviceIds || [])
+        .map(id => Number(id))
+        .filter(id => Number.isFinite(id) && id > 0)))
+      this.selectedPatternDeviceIds = ids
+      if (!this.deviceOptions.length) {
+        await this.fetchDeviceOptions({ autoLoad: false })
+      }
+      this.syncDeviceFileQueryDeviceId(ids)
       this.handleDeviceFileDeviceChange()
     },
     handleSizeChange(size) {
@@ -1197,18 +1329,145 @@ export default {
     resetUploadDialog() {
       this.uploadFileList = []
       this.uploadForm = defaultUploadForm()
+      this.activeUploadFileUid = ''
+      this.applyingUploadForm = false
       if (this.$refs.uploadRef) {
         this.$refs.uploadRef.clearFiles()
       }
     },
+    getUploadFileName(file) {
+      return String(file?.name || file?.raw?.name || '').trim()
+    },
+    getUploadOptionalNumber(value) {
+      if (value === null || value === undefined || value === '') {
+        return null
+      }
+      const num = Number(value)
+      return Number.isFinite(num) ? num : null
+    },
+    createUploadFileForm(file) {
+      return {
+        name: this.getUploadFileName(file),
+        patternType: '',
+        stitches: null,
+        unitPrice: null,
+        orderNo: ''
+      }
+    },
+    ensureUploadFileForm(file) {
+      if (!file) {
+        return defaultUploadForm()
+      }
+      if (!file._patternForm) {
+        this.$set(file, '_patternForm', this.createUploadFileForm(file))
+      }
+      return file._patternForm
+    },
+    findUploadFileByUid(uid) {
+      return this.uploadFileList.find(item => item.uid === uid)
+    },
+    applyUploadFormFromFile(file) {
+      const form = this.ensureUploadFileForm(file)
+      this.applyingUploadForm = true
+      this.uploadForm = {
+        name: form.name || this.getUploadFileName(file),
+        patternType: form.patternType || '',
+        stitches: this.getUploadOptionalNumber(form.stitches),
+        unitPrice: this.getUploadOptionalNumber(form.unitPrice),
+        orderNo: form.orderNo || ''
+      }
+      this.$nextTick(() => {
+        this.applyingUploadForm = false
+      })
+    },
+    syncActiveUploadForm() {
+      if (this.applyingUploadForm || !this.activeUploadFileUid) {
+        return
+      }
+      const file = this.findUploadFileByUid(this.activeUploadFileUid)
+      if (!file) {
+        return
+      }
+      this.$set(file, '_patternForm', {
+        name: String(this.uploadForm.name || '').trim(),
+        patternType: String(this.uploadForm.patternType || '').trim(),
+        stitches: this.getUploadOptionalNumber(this.uploadForm.stitches),
+        unitPrice: this.getUploadOptionalNumber(this.uploadForm.unitPrice),
+        orderNo: String(this.uploadForm.orderNo || '').trim()
+      })
+    },
+    selectUploadFile(file) {
+      if (!file) {
+        return
+      }
+      this.syncActiveUploadForm()
+      this.activeUploadFileUid = file.uid
+      this.applyUploadFormFromFile(file)
+    },
     handleFileChange(file, fileList) {
       this.uploadFileList = fileList
+      this.uploadFileList.forEach(item => this.ensureUploadFileForm(item))
+      const activeFile = this.findUploadFileByUid(this.activeUploadFileUid)
+      if (!activeFile && this.uploadFileList.length) {
+        this.selectUploadFile(this.uploadFileList[0])
+      }
     },
     handleFileRemove(file, fileList) {
+      const removedActiveFile = file?.uid === this.activeUploadFileUid
       this.uploadFileList = fileList
+      if (removedActiveFile) {
+        if (this.uploadFileList.length) {
+          this.selectUploadFile(this.uploadFileList[0])
+        } else {
+          this.activeUploadFileUid = ''
+          this.uploadForm = defaultUploadForm()
+        }
+      }
     },
-    handleUploadExceed() {
-      this.$message.warning('一次仅支持上传一个文件')
+    removeUploadFile(file) {
+      if (this.$refs.uploadRef?.handleRemove) {
+        this.$refs.uploadRef.handleRemove(file)
+        return
+      }
+      this.handleFileRemove(file, this.uploadFileList.filter(item => item.uid !== file.uid))
+    },
+    getUploadFileDisplayValue(file, field) {
+      const form = this.ensureUploadFileForm(file)
+      return form[field]
+    },
+    formatUploadOptionalNumber(value, precision = 0) {
+      const num = this.getUploadOptionalNumber(value)
+      if (num === null) {
+        return '-'
+      }
+      return precision > 0 ? num.toFixed(precision) : String(num)
+    },
+    getUploadFileRowClass({ row }) {
+      return row?.uid === this.activeUploadFileUid ? 'upload-file-row-active' : ''
+    },
+    buildUploadFormData(file) {
+      const form = this.ensureUploadFileForm(file)
+      const uploadName = String(form.name || '').trim() || this.getUploadFileName(file)
+      const formData = new FormData()
+      formData.append('file', file.raw)
+      if (uploadName) {
+        formData.append('name', uploadName)
+      }
+      if (form.patternType) {
+        formData.append('patternType', String(form.patternType).trim())
+      }
+      const stitches = this.getUploadOptionalNumber(form.stitches)
+      if (stitches !== null) {
+        formData.append('stitches', String(Math.max(0, Math.trunc(stitches))))
+      }
+      const unitPrice = this.getUploadOptionalNumber(form.unitPrice)
+      if (unitPrice !== null) {
+        formData.append('unitPrice', String(Math.max(0, unitPrice).toFixed(3)))
+      }
+      if (form.orderNo) {
+        formData.append('orderNo', String(form.orderNo).trim())
+      }
+      return formData
     },
     async handleUpload() {
       if (this.uploadFileList.length === 0) {
@@ -1216,31 +1475,39 @@ export default {
         return
       }
 
-      const uploadName = String(this.uploadForm.name || '').trim()
+      this.syncActiveUploadForm()
+      const uploadFiles = [...this.uploadFileList]
 
       this.uploading = true
+      let successCount = 0
+      const failedFiles = []
       try {
-        const formData = new FormData()
-        formData.append('file', this.uploadFileList[0].raw)
-        if (uploadName) {
-          formData.append('name', uploadName)
-        }
-        if (this.uploadForm.patternType) {
-          formData.append('patternType', this.uploadForm.patternType)
-        }
-        formData.append('stitches', String(this.uploadForm.stitches || 0))
-        formData.append('unitPrice', String(Number(this.uploadForm.unitPrice || 0).toFixed(3)))
-        if (this.uploadForm.orderNo) {
-          formData.append('orderNo', this.uploadForm.orderNo)
+        for (const file of uploadFiles) {
+          try {
+            const res = await uploadPattern(this.buildUploadFormData(file))
+            if (res.code === 0) {
+              successCount += 1
+            } else {
+              failedFiles.push(this.getUploadFileName(file))
+            }
+          } catch (error) {
+            console.error('Upload failed:', error)
+            failedFiles.push(this.getUploadFileName(file))
+          }
         }
 
-        const res = await uploadPattern(formData)
-        if (res.code === 0) {
-          this.$message.success('上传成功')
-          this.showUploadDialog = false
+        if (successCount > 0) {
           this.fetchPatternTypes()
           this.fetchOrderNos()
           this.fetchData()
+        }
+        if (failedFiles.length === 0) {
+          this.$message.success(successCount > 1 ? `成功上传 ${successCount} 个文件` : '上传成功')
+          this.showUploadDialog = false
+        } else if (successCount > 0) {
+          this.$message.warning(`成功上传 ${successCount} 个文件，失败 ${failedFiles.length} 个`)
+        } else {
+          this.$message.error('上传失败')
         }
       } catch (error) {
         console.error('Upload failed:', error)
@@ -1251,15 +1518,7 @@ export default {
     },
     async openDeviceFileDialog() {
       if (!this.deviceOptions.length) {
-        await this.fetchDeviceOptions()
-      }
-      if (this.deviceFilter.deviceId) {
-        this.deviceFileQuery.deviceId = Number(this.deviceFilter.deviceId)
-      } else if (this.deviceFilter.deviceIds.length > 0) {
-        this.deviceFileQuery.deviceId = Number(this.deviceFilter.deviceIds[0])
-      }
-      if (!this.deviceFileQuery.deviceId && this.deviceOptions.length) {
-        this.deviceFileQuery.deviceId = this.deviceOptions[0].id
+        await this.fetchDeviceOptions({ autoLoad: false })
       }
       this.handleDeviceFileSearch()
       this.$nextTick(() => {
@@ -1279,6 +1538,19 @@ export default {
       this.deviceFilePagination.page = 1
       this.fetchDeviceFileList()
     },
+    syncDeviceFileQueryDeviceId(ids = this.selectedPatternDeviceIds) {
+      const normalizedIds = Array.from(new Set((ids || [])
+        .map(id => Number(id))
+        .filter(id => Number.isFinite(id) && id > 0)))
+      if (!normalizedIds.length) {
+        this.deviceFileQuery.deviceId = ''
+        return
+      }
+      const currentDeviceId = Number(this.deviceFileQuery.deviceId || 0)
+      if (!Number.isFinite(currentDeviceId) || !normalizedIds.includes(currentDeviceId)) {
+        this.deviceFileQuery.deviceId = normalizedIds[0]
+      }
+    },
     resetDeviceFileSearch() {
       this.deviceFileQuery = {
         deviceId: this.deviceFileQuery.deviceId || '',
@@ -1295,8 +1567,19 @@ export default {
       this.deviceFilePagination.page = page
       this.fetchDeviceFileList()
     },
+    getDeviceFileQueryDeviceIds() {
+      const queryDeviceId = Number(this.deviceFileQuery.deviceId || 0)
+      if (Number.isFinite(queryDeviceId) && queryDeviceId > 0) {
+        return [queryDeviceId]
+      }
+      const firstSelectedDeviceId = this.selectedPatternDeviceIds
+        .map(id => Number(id))
+        .find(id => Number.isFinite(id) && id > 0)
+      return firstSelectedDeviceId ? [firstSelectedDeviceId] : []
+    },
     async fetchDeviceFileList() {
-      if (!this.deviceFileQuery.deviceId) {
+      const deviceIds = this.getDeviceFileQueryDeviceIds()
+      if (!deviceIds.length) {
         this.deviceFileList = []
         this.deviceFilePagination.total = 0
         return
@@ -1304,20 +1587,33 @@ export default {
 
       this.deviceFileLoading = true
       try {
+        const deviceNameMap = new Map(this.deviceOptions.map(item => [Number(item.id), item.name]))
         const res = await getDevicePatternFiles({
-          deviceId: this.deviceFileQuery.deviceId,
+          deviceId: deviceIds[0],
           keyword: this.deviceFileQuery.keyword,
           patternType: this.deviceFileQuery.patternType,
-          page: this.deviceFilePagination.page,
-          pageSize: this.deviceFilePagination.pageSize
+          page: 1,
+          pageSize: 10000
         })
+        const rows = []
         if (res.code === 0) {
-          this.deviceFileList = res.data.list || []
-          this.deviceFilePagination.total = res.data.total || 0
-          this.$nextTick(() => {
-            this.syncTableHeights()
+          const deviceId = deviceIds[0]
+          const deviceName = deviceNameMap.get(Number(deviceId)) || `设备${deviceId}`
+          ;(res.data.list || []).forEach(item => {
+            rows.push({
+              ...item,
+              sourceDeviceId: deviceId,
+              deviceName
+            })
           })
         }
+        rows.sort((a, b) => String(b.updateTime || '').localeCompare(String(a.updateTime || '')))
+        this.deviceFilePagination.total = rows.length
+        const start = (this.deviceFilePagination.page - 1) * this.deviceFilePagination.pageSize
+        this.deviceFileList = rows.slice(start, start + this.deviceFilePagination.pageSize)
+        this.$nextTick(() => {
+          this.syncTableHeights()
+        })
       } catch (error) {
         console.error('Failed to fetch device files:', error)
         this.$message.error(this.getRequestErrorMessage(error, '获取设备文件失败'))
@@ -1442,12 +1738,24 @@ export default {
     },
     resolveSelectedDeviceFileDeviceId() {
       const queryDeviceId = Number(this.deviceFileQuery.deviceId || 0)
-      return Number.isFinite(queryDeviceId) && queryDeviceId > 0 ? queryDeviceId : 0
+      if (Number.isFinite(queryDeviceId) && queryDeviceId > 0) {
+        return queryDeviceId
+      }
+      const selectedDeviceIds = Array.from(new Set(this.deviceFileSelectedRows
+        .map(item => Number(item.sourceDeviceId || item.deviceId || 0))
+        .filter(id => Number.isFinite(id) && id > 0)))
+      if (selectedDeviceIds.length === 1) {
+        return selectedDeviceIds[0]
+      }
+      if (selectedDeviceIds.length > 1) {
+        this.$message.warning('一次只能回传同一台设备的文件')
+      }
+      return 0
     },
     async refreshDeviceFilesAfterUpload(deviceId) {
       this.deviceFileSelectedRows = []
       this.$refs.deviceFileTableRef?.clearSelection()
-      if (deviceId) {
+      if (deviceId && this.selectedPatternDeviceIds.length <= 1) {
         this.deviceFileQuery.deviceId = Number(deviceId)
       }
       await this.fetchDeviceFileList()
@@ -1625,7 +1933,7 @@ export default {
         const { filename, saved } = await saveResponseWithDialog(response, fallbackName, {
           description: '花型文件',
           mimeType: 'application/octet-stream',
-          extensions: ['dst', 'dsb', 'exp', 'pes', 'jef']
+          extensions: ['ntp', 'mtp', 'slw', 'sdg', 'sdt', 'nsp', 'vdt']
         })
         if (saved === null) {
           return
@@ -1757,19 +2065,26 @@ export default {
     applyPreferredDownloadTargets() {
       const treeRef = this.$refs.deviceTree
       if (!treeRef) return
-      const preferredDeviceIds = this.deviceFilter.deviceIds.length > 0
-        ? this.deviceFilter.deviceIds
-        : (this.deviceFilter.deviceId ? [Number(this.deviceFilter.deviceId)] : [])
+      const preferredDeviceIds = this.selectedPatternDeviceIds.length > 0
+        ? this.selectedPatternDeviceIds
+        : (this.deviceFilter.deviceIds.length > 0
+          ? this.deviceFilter.deviceIds
+          : (this.deviceFilter.deviceId ? [Number(this.deviceFilter.deviceId)] : []))
       treeRef.setCheckedKeys([])
       if (preferredDeviceIds.length > 0) {
         treeRef.setCheckedKeys(preferredDeviceIds.map(id => `device-${id}`))
       }
     },
     async confirmDownload() {
-      const checkedNodes = this.$refs.deviceTree.getCheckedNodes()
-      const deviceIds = checkedNodes
-        .filter(n => n.type === 'device')
-        .map(n => n.id)
+      const selectedIds = this.selectedPatternDeviceIds.length
+        ? this.selectedPatternDeviceIds
+        : []
+      const checkedNodes = this.$refs.deviceTree?.getCheckedNodes?.() || []
+      const deviceIds = selectedIds.length
+        ? selectedIds
+        : checkedNodes
+          .filter(n => n.type === 'device')
+          .map(n => n.id)
 
       if (deviceIds.length === 0) {
         this.$message.warning('请选择要下发的设备')
@@ -1943,6 +2258,33 @@ export default {
   }
 }
 
+.upload-file-list {
+  margin-top: 14px;
+}
+
+.upload-file-list__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  color: #909399;
+  font-size: 12px;
+
+  span:first-child {
+    color: #303133;
+    font-size: 14px;
+    font-weight: 600;
+  }
+}
+
+.upload-file-active-tag {
+  margin-left: 8px;
+}
+
+.upload-file-list ::v-deep .upload-file-row-active > td {
+  background: #ecf5ff;
+}
+
 .batch-tip {
   width: 100%;
   padding: 8px 10px;
@@ -2006,6 +2348,11 @@ export default {
 
 .text-muted {
   color: #909399;
+}
+
+.pattern-match-tag {
+  margin-left: 6px;
+  vertical-align: middle;
 }
 
 .preview-container {

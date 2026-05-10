@@ -349,18 +349,35 @@ export default {
         grid: { left: '4%', right: '4%', bottom: '4%', top: 40, containLabel: true },
         xAxis: {
           type: 'category',
-          axisLabel: { color: '#6a7f9d' },
-          axisLine: { lineStyle: { color: '#dbe4f0' } },
+          axisTick: { show: false },
+          axisLabel: { color: '#6f7b8c', fontSize: 11 },
+          axisLine: { lineStyle: { color: '#cfd7e4' } },
           data: trendData.map(item => item.date)
         },
         yAxis: [
-          { type: 'value', name: '产量(件)', axisLabel: { color: '#6a7f9d' }, splitLine: { lineStyle: { color: '#edf2f8' } } },
-          { type: 'value', name: '效率(%)', max: 100, axisLabel: { color: '#6a7f9d' } }
+          {
+            type: 'value',
+            name: '产量(件)',
+            axisTick: { show: false },
+            axisLine: { show: false },
+            axisLabel: { color: '#6f7b8c', fontSize: 11 },
+            splitLine: { lineStyle: { color: '#e9eef5', type: 'dashed' } }
+          },
+          {
+            type: 'value',
+            name: '效率(%)',
+            max: 100,
+            axisTick: { show: false },
+            axisLine: { show: false },
+            axisLabel: { color: '#6f7b8c', fontSize: 11 },
+            splitLine: { show: false }
+          }
         ],
         series: [
           {
             name: '产量',
             type: 'bar',
+            barWidth: 34,
             data: trendData.map(item => item.pieces ?? item.value ?? 0),
             itemStyle: { color: '#2f6df6', borderRadius: [10, 10, 0, 0] }
           },

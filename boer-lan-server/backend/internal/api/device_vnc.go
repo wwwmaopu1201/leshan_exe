@@ -85,7 +85,7 @@ func (h *DeviceHandler) ConfirmRemoteControl(c *gin.Context) {
 	if strings.EqualFold(strings.TrimSpace(device.Status), "offline") {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "设备离线，无法开启远程控制",
+			"message": "设备关机，无法开启远程控制",
 		})
 		return
 	}
