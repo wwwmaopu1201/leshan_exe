@@ -13,7 +13,7 @@ const (
 	workUserNameBytes         = 16
 	workCurrentUserPayloadLen = workUserIDBytes + workUserNameBytes
 	workStartAckResultBytes   = 1
-	workStartAckPayloadLen    = workCurrentUserPayloadLen + workStartAckResultBytes
+	workStartAckPayloadLen    = workStartAckResultBytes
 )
 
 func parseWorkStartUserID(data []byte) string {
@@ -37,19 +37,12 @@ func buildUpdateCurrentUserIDCommand(employeeCode, employeeName string) *Packet 
 	return buildProtocolCommand(PTWorkUser, PNUpdateCurrentUserID, encodeCurrentUserPayload(employeeCode, employeeName))
 }
 
-func buildWorkStartCurrentUserCommand(employeeCode, employeeName string) *Packet {
-	return buildProtocolCommand(PTWorkUser, PNUpdateCurrentUserID, encodeCurrentUserPayload(employeeCode, employeeName))
+func buildWorkStartAckReply(request *Packet, result byte) *Packet {
+	return buildProtocolReply(request, encodeWorkStartAckPayload(result))
 }
 
-func buildWorkStartAckReply(request *Packet, employeeCode, employeeName string, result byte) *Packet {
-	return buildProtocolReply(request, encodeWorkStartAckPayload(employeeCode, employeeName, result))
-}
-
-func encodeWorkStartAckPayload(employeeCode, employeeName string, result byte) []byte {
-	payload := make([]byte, 0, workStartAckPayloadLen)
-	payload = append(payload, encodeCurrentUserPayload(employeeCode, employeeName)...)
-	payload = append(payload, result)
-	return payload
+func encodeWorkStartAckPayload(result byte) []byte {
+	return []byte{result}
 }
 
 func encodeCurrentUserPayload(employeeCode, employeeName string) []byte {

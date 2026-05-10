@@ -968,7 +968,7 @@ func (dc *DeviceConnection) SendCurrentUser(employeeCode, employeeName string) e
 }
 
 func (dc *DeviceConnection) sendWorkStartAck(request *Packet, employeeCode, employeeName string, result byte) {
-	reply := buildWorkStartAckReply(request, employeeCode, employeeName, result)
+	reply := buildWorkStartAckReply(request, result)
 	raw := BuildPacket(reply)
 	emitTCPLog(dc.db, "info", true,
 		"[TCP] Work start ack sent: device=%s requestNo=0x%04X type=0x%04X no=0x%04X employeeCode=%s employeeName=%s result=%d dataLen=%d data=%s rawLen=%d raw=%s",
@@ -985,9 +985,6 @@ func (dc *DeviceConnection) sendWorkStartAck(request *Packet, employeeCode, empl
 		packetDataPreview(raw, 128),
 	)
 	_ = dc.writeRawPacket(raw)
-	if result == 0 {
-		dc.sendWorkStartCurrentUserUpdate(employeeCode, employeeName)
-	}
 }
 
 func (dc *DeviceConnection) sendCurrentUserUpdate(employeeCode, employeeName string) {
@@ -1003,24 +1000,6 @@ func (dc *DeviceConnection) sendCurrentUserUpdate(employeeCode, employeeName str
 		packetDataPreview(pkt.Data, 48),
 	)
 	dc.send(pkt)
-}
-
-func (dc *DeviceConnection) sendWorkStartCurrentUserUpdate(employeeCode, employeeName string) {
-	pkt := buildWorkStartCurrentUserCommand(employeeCode, employeeName)
-	raw := BuildPacket(pkt)
-	emitTCPLog(dc.db, "info", true,
-		"[TCP] Work start current user update sent: device=%s type=0x%04X no=0x%04X employeeCode=%s employeeName=%s len=%d data=%s rawLen=%d raw=%s",
-		dc.deviceCode,
-		pkt.ParamType,
-		pkt.ParamNo,
-		employeeCode,
-		employeeName,
-		len(pkt.Data),
-		packetDataPreview(pkt.Data, 32),
-		len(raw),
-		packetDataPreview(raw, 128),
-	)
-	_ = dc.writeRawPacket(raw)
 }
 
 func (dc *DeviceConnection) clearOfflineProbe() {
