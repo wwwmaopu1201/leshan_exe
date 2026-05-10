@@ -210,6 +210,110 @@ func TestHandleWorkStartRejectsUnknownEmployeeCode(t *testing.T) {
 	}
 }
 
+func TestQueryRealtimeStatusSendsProtocolCommand(t *testing.T) {
+	db := openTCPConnectionTestDB(t, "query_realtime_status")
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	dc := NewDeviceConnection(serverConn, db, nil)
+	dc.deviceCode = "D-001"
+	dc.markRegistered("test")
+
+	done := make(chan error, 1)
+	go func() {
+		done <- dc.queryRealtimeStatus()
+	}()
+
+	_ = clientConn.SetReadDeadline(time.Now().Add(time.Second))
+	pkt, err := ParsePacket(clientConn)
+	if err != nil {
+		t.Fatalf("read realtime status query: %v", err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("query realtime status: %v", err)
+	}
+	if pkt.ParamType != PTRealtimeStatus || pkt.ParamNo != PNRealtimeStatus {
+		t.Fatalf("unexpected realtime query command type=0x%04X no=0x%04X", pkt.ParamType, pkt.ParamNo)
+	}
+	if len(pkt.Data) != 0 {
+		t.Fatalf("expected empty realtime query payload, got %d bytes", len(pkt.Data))
+	}
+}
+
+func TestHandleRealtimeStatusUpdatesDeviceStatusAndPattern(t *testing.T) {
+	db := openTCPConnectionTestDB(t, "handle_realtime_status")
+	device := model.Device{Code: "D-001", Name: "设备D-001", Type: model.DefaultDeviceType, Status: "idle"}
+	if err := db.Create(&device).Error; err != nil {
+		t.Fatalf("create device: %v", err)
+	}
+
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	dc := NewDeviceConnection(serverConn, db, nil)
+	dc.deviceID = device.ID
+	dc.deviceCode = device.Code
+
+	payload := make([]byte, 3, 9)
+	payload[0] = 0x01
+	binary.BigEndian.PutUint16(payload[1:3], 12)
+	payload = append(payload, []byte("P-001")...)
+
+	dc.handleRealtimeStatus(&Packet{
+		ParamType: PTRealtimeStatus,
+		ParamNo:   PNRealtimeStatus,
+		Data:      payload,
+	})
+
+	var updated model.Device
+	if err := db.First(&updated, device.ID).Error; err != nil {
+		t.Fatalf("load updated device: %v", err)
+	}
+	if updated.Status != "working" {
+		t.Fatalf("expected realtime status working, got %q", updated.Status)
+	}
+	if updated.CurrentPatternNo != 12 || updated.CurrentPatternName != "P-001" {
+		t.Fatalf("expected pattern 12/P-001, got %d/%q", updated.CurrentPatternNo, updated.CurrentPatternName)
+	}
+}
+
+func TestHandleCurrentSpeedMarksDeviceWorking(t *testing.T) {
+	db := openTCPConnectionTestDB(t, "current_speed_marks_working")
+	device := model.Device{Code: "D-001", Name: "设备D-001", Type: model.DefaultDeviceType, Status: "idle"}
+	if err := db.Create(&device).Error; err != nil {
+		t.Fatalf("create device: %v", err)
+	}
+
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	dc := NewDeviceConnection(serverConn, db, nil)
+	dc.deviceID = device.ID
+	dc.deviceCode = device.Code
+
+	payload := make([]byte, 2)
+	binary.BigEndian.PutUint16(payload, 1900)
+	dc.handleCurrentSpeed(&Packet{
+		ParamType: PTCurrentSpeed,
+		ParamNo:   PNCurrentSpeed,
+		Data:      payload,
+	})
+
+	var updated model.Device
+	if err := db.First(&updated, device.ID).Error; err != nil {
+		t.Fatalf("load updated device: %v", err)
+	}
+	if updated.Status != "working" {
+		t.Fatalf("expected speed to mark device working, got %q", updated.Status)
+	}
+	if updated.CurrentSpeed != 1900 {
+		t.Fatalf("expected current speed 1900, got %d", updated.CurrentSpeed)
+	}
+}
+
 func TestHandleRepliesToCapturedWorkStartFrame(t *testing.T) {
 	db := openTCPConnectionTestDB(t, "work_start_captured_frame")
 	serverConn, clientConn := net.Pipe()

@@ -611,7 +611,11 @@ func (dc *DeviceConnection) handleCurrentSpeed(pkt *Packet) {
 		return
 	}
 	currentSpeed := binary.BigEndian.Uint16(pkt.Data[0:2])
-	dc.updateDeviceRuntime(map[string]interface{}{"current_speed": uint(currentSpeed)})
+	updates := map[string]interface{}{"current_speed": uint(currentSpeed)}
+	if currentSpeed > 0 {
+		updates["status"] = "working"
+	}
+	dc.updateDeviceRuntime(updates)
 	emitTCPLog(dc.db, "info", false, "[TCP] Device current speed: device=%s speed=%d", dc.deviceCode, currentSpeed)
 }
 
@@ -652,14 +656,21 @@ func (dc *DeviceConnection) handleRealtimeStatus(pkt *Packet) {
 	status := pkt.Data[0]
 	patternNo := binary.BigEndian.Uint16(pkt.Data[1:3])
 	patternName := normalizeProtocolText(pkt.Data[3:])
-	dc.updateDeviceRuntime(map[string]interface{}{
+	mappedStatus := ""
+	updates := map[string]interface{}{
 		"current_pattern_no":   uint(patternNo),
 		"current_pattern_name": patternName,
-	})
+	}
+	if deviceStatus, ok := mapRealtimeDeviceStatus(status); ok {
+		mappedStatus = deviceStatus
+		updates["status"] = deviceStatus
+	}
+	dc.updateDeviceRuntime(updates)
 	emitTCPLog(dc.db, "info", false,
-		"[TCP] Device realtime status: device=%s status=%d patternNo=%d patternName=%s",
+		"[TCP] Device realtime status: device=%s status=%d mappedStatus=%s patternNo=%d patternName=%s",
 		dc.deviceCode,
 		status,
+		mappedStatus,
 		patternNo,
 		patternName,
 	)
@@ -961,6 +972,17 @@ func (dc *DeviceConnection) writeRawPacket(data []byte) error {
 
 func (dc *DeviceConnection) SendCurrentUser(employeeCode, employeeName string) error {
 	return dc.writePacket(buildUpdateCurrentUserIDCommand(employeeCode, employeeName))
+}
+
+func (dc *DeviceConnection) queryRealtimeStatus() error {
+	if !dc.isRegistered() {
+		return nil
+	}
+	if err := dc.writePacket(buildRealtimeStatusQueryCommand()); err != nil {
+		return err
+	}
+	emitTCPLog(dc.db, "info", false, "[TCP] Realtime status query sent: device=%s", dc.deviceCode)
+	return nil
 }
 
 func (dc *DeviceConnection) sendWorkStartAck(request *Packet, employeeCode, employeeName string, result byte) {

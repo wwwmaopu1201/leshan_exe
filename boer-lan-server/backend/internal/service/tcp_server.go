@@ -19,6 +19,7 @@ const (
 	OfflineCheckInterval  = 15 * time.Second
 	OfflineProbeGrace     = 15 * time.Second
 	ReconnectGracePeriod  = 5 * time.Second
+	RealtimeQueryInterval = 10 * time.Second
 )
 
 // ConnectionManager 管理所有设备TCP连接
@@ -123,6 +124,7 @@ func (s *TCPServer) Start() {
 	}
 	go s.serve()
 	go s.offlineChecker()
+	go s.realtimeStatusQuerier()
 }
 
 // Stop 优雅关闭
@@ -192,6 +194,24 @@ func (s *TCPServer) offlineChecker() {
 						emitTCPLog(s.db, "warn", true, "[TCP] Device %s idle probe failed, closing connection: %v", dc.deviceCode, err)
 						dc.conn.Close()
 					}
+				}
+			}
+		}
+	}
+}
+
+func (s *TCPServer) realtimeStatusQuerier() {
+	ticker := time.NewTicker(RealtimeQueryInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.stopCh:
+			return
+		case <-ticker.C:
+			for _, dc := range s.connMgr.GetAll() {
+				if err := dc.queryRealtimeStatus(); err != nil {
+					emitTCPLog(s.db, "warn", false, "[TCP] Realtime status query failed: device=%s err=%v", dc.deviceCode, err)
 				}
 			}
 		}
