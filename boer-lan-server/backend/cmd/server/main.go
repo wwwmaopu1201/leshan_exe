@@ -472,6 +472,7 @@ func initDB() {
 		&model.Operator{},
 		&model.Device{},
 		&model.DeviceTypeCatalog{},
+		&model.ElectricControlTypeCatalog{},
 		&model.DeviceRuntimeSession{},
 		&model.Pattern{},
 		&model.PatternTypeCatalog{},
@@ -598,23 +599,21 @@ func initDefaultData(db *gorm.DB) {
 	ensureDefaultRole("user", "系统默认普通角色")
 	ensureDefaultRootGroup(db)
 	normalizeTopLevelGroupsUnderRoot(db)
-	ensureDefaultDeviceType(db)
-	backfillDefaultDeviceTypes(db)
+	clearLegacyDefaultDeviceType(db)
 
 	ensureDefaultAdminUser(db)
 }
 
-func ensureDefaultDeviceType(db *gorm.DB) {
-	if err := db.FirstOrCreate(&model.DeviceTypeCatalog{}, model.DeviceTypeCatalog{Value: model.DefaultDeviceType}).Error; err != nil {
-		log.Printf("Failed to ensure default device type: %v", err)
-	}
-}
-
-func backfillDefaultDeviceTypes(db *gorm.DB) {
+func clearLegacyDefaultDeviceType(db *gorm.DB) {
+	const legacyDefaultDeviceType = "电控类型"
 	if err := db.Model(&model.Device{}).
-		Where("type IS NULL OR TRIM(type) = '' OR type = ?", "模板机").
-		Update("type", model.DefaultDeviceType).Error; err != nil {
-		log.Printf("Failed to backfill default device types: %v", err)
+		Where("type = ?", legacyDefaultDeviceType).
+		Update("type", "").Error; err != nil {
+		log.Printf("Failed to clear legacy default device type: %v", err)
+	}
+	if err := db.Where("value = ?", legacyDefaultDeviceType).
+		Delete(&model.DeviceTypeCatalog{}).Error; err != nil {
+		log.Printf("Failed to remove legacy default device type catalog: %v", err)
 	}
 }
 

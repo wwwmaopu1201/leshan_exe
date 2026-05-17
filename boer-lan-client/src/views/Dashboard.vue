@@ -651,8 +651,8 @@ export default {
 .dashboard-main {
   min-width: 0;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr);
   gap: 10px;
 }
 
@@ -717,7 +717,6 @@ export default {
 }
 
 .dashboard-chart-row {
-  flex: 1 1 0;
   min-height: 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -740,7 +739,6 @@ export default {
 }
 
 .board-card--production {
-  flex: 0 0 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -809,7 +807,7 @@ export default {
   min-height: 0;
   display: grid;
   grid-template-columns: 126px minmax(0, 1fr);
-  grid-auto-rows: minmax(240px, 1fr);
+  grid-auto-rows: minmax(0, 1fr);
   gap: 10px;
   align-items: stretch;
 }
@@ -867,20 +865,20 @@ export default {
 .utilization-panel__chart {
   align-self: stretch;
   height: 100%;
-  min-height: 240px;
+  min-height: 0;
 }
 
 .board-card--production ::v-deep .el-card__body {
-  flex: 0 0 auto;
+  flex: 1;
   min-height: 0;
   padding: 10px 14px;
   display: flex;
 }
 
 .production-chart {
-  flex: 0 0 auto;
+  flex: 1;
   width: 100%;
-  height: 280px;
+  height: 100%;
   min-height: 0;
 }
 

@@ -365,7 +365,7 @@ export default {
         ...node,
         type: node.type === 'device' ? 'device' : 'group',
         label: this.isTotalGroupNode(node) ? '总分组' : (node.label || node.name || ''),
-        children: (node.children || []).map(cloneNode)
+        children: (node.children || []).filter(child => !this.isUngroupedNode(child)).map(cloneNode)
       })
       const roots = (nodes || []).map(cloneNode)
       const ungroupedNodes = []
@@ -393,13 +393,30 @@ export default {
         isVirtual: true
       }
 
-      return [{
-        id: 'all',
-        label: '总分组',
-        type: 'group',
-        children: [ungroupedNode, ...groupNodes],
-        isVirtual: true
-      }]
+      const totalNode = groupNodes.length === 1 && this.isTotalGroupNode(groupNodes[0])
+        ? groupNodes[0]
+        : {
+            id: 'all',
+            label: '总分组',
+            type: 'group',
+            children: groupNodes,
+            isVirtual: true
+          }
+
+      return [
+        ungroupedNode,
+        {
+          ...totalNode,
+          label: '总分组',
+          type: 'group'
+        }
+      ]
+    },
+    buildSelectionGroupId(data) {
+      if (data.type !== 'group' || this.isTotalGroupNode(data) || this.isUngroupedNode(data)) {
+        return ''
+      }
+      return String(data.id)
     },
     resolveNodeKey(value) {
       if (value?.nodeType === 'device' && value?.deviceId) {
@@ -483,7 +500,7 @@ export default {
       return {
         label: data.label,
         nodeType: data.type === 'device' ? 'device' : 'group',
-        groupId: data.type === 'group' ? String(data.id) : String(data.groupId || data.parentId || ''),
+        groupId: data.type === 'group' ? this.buildSelectionGroupId(data) : String(data.groupId || data.parentId || ''),
         deviceId: data.type === 'device' ? String(data.id) : '',
         deviceIds: this.collectDeviceIds(data),
         employeeCode: data.type === 'device' ? String(data.employeeCode || '') : '',

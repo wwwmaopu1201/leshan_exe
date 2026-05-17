@@ -507,24 +507,32 @@ export default {
       }
 
       const groupNodes = attachDeviceNodes(this.groupTree)
-      return [{
-        id: 'all',
-        _nodeKey: 'group-all',
-        label: '总分组',
-        type: 'group',
-        children: [
-          {
-            id: 'ungrouped',
-            _nodeKey: 'group-ungrouped',
-            label: '未分组设备',
+      const totalNode = groupNodes.length === 1 && this.isTotalGroupNode(groupNodes[0])
+        ? {
+            ...groupNodes[0],
+            _nodeKey: `group-${groupNodes[0].id}`,
+            label: '总分组',
+            type: 'group'
+          }
+        : {
+            id: 'all',
+            _nodeKey: 'group-all',
+            label: '总分组',
             type: 'group',
-            children: sortDevices(ungroupedDevices).map(toDeviceNode),
+            children: groupNodes,
             isVirtual: true
-          },
-          ...groupNodes
-        ],
-        isVirtual: true
-      }]
+          }
+      return [
+        {
+          id: 'ungrouped',
+          _nodeKey: 'group-ungrouped',
+          label: '未分组设备',
+          type: 'group',
+          children: sortDevices(ungroupedDevices).map(toDeviceNode),
+          isVirtual: true
+        },
+        totalNode
+      ]
     },
     treeScopeLabel() {
       if (this.treeSelection.mode === 'device') {

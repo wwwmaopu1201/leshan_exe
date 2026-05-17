@@ -603,15 +603,26 @@ export default {
         isVirtual: true
       }
 
-      this.groupTree = [{
-        id: 'all',
-        label: '总分组',
-        parentId: null,
-        parentLabel: '',
-        children: [ungroupedNode, ...roots],
-        deviceCount: this.allDevices.length,
-        isRoot: true
-      }]
+      const totalNode = roots.length === 1 && this.isTotalGroupNode(roots[0])
+        ? {
+            ...roots[0],
+            label: '总分组'
+          }
+        : {
+            id: 'all',
+            label: '总分组',
+            parentId: null,
+            parentLabel: '',
+            children: roots,
+            deviceCount: this.allDevices.length,
+            isRoot: true,
+            isVirtual: true
+          }
+
+      this.groupTree = [
+        ungroupedNode,
+        totalNode
+      ]
     },
     getDescendantGroupIdsById(groupId) {
       const childMap = new Map()

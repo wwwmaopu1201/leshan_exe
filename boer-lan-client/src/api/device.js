@@ -69,6 +69,50 @@ export function deleteDeviceType(data) {
   })
 }
 
+// 获取电控类型列表
+export function getElectricControlTypes() {
+  return request({
+    url: '/device/electric-control-types',
+    method: 'get'
+  })
+}
+
+// 获取电控类型汇总
+export function getElectricControlTypeSummary(params) {
+  return request({
+    url: '/device/electric-control-type-summary',
+    method: 'get',
+    params
+  })
+}
+
+// 新增电控类型
+export function createElectricControlType(data) {
+  return request({
+    url: '/device/electric-control-type-summary',
+    method: 'post',
+    data
+  })
+}
+
+// 重命名电控类型
+export function renameElectricControlType(data) {
+  return request({
+    url: '/device/electric-control-type-summary',
+    method: 'put',
+    data
+  })
+}
+
+// 删除电控类型，关联设备会清空该字段
+export function deleteElectricControlType(data) {
+  return request({
+    url: '/device/electric-control-type-summary',
+    method: 'delete',
+    data
+  })
+}
+
 // 创建设备
 export function createDevice(data) {
   return request({

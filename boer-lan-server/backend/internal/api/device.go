@@ -30,11 +30,11 @@ func NewDeviceHandler(db *gorm.DB, connMgr ...*service.ConnectionManager) *Devic
 }
 
 func normalizeDeviceType(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" || value == "模板机" {
-		return model.DefaultDeviceType
-	}
-	return value
+	return strings.TrimSpace(value)
+}
+
+func normalizeElectricControlType(value string) string {
+	return strings.TrimSpace(value)
 }
 
 func normalizeDeviceStatus(value string) string {
@@ -76,8 +76,7 @@ func (h *DeviceHandler) loadDeviceTypeCatalogValues() ([]string, error) {
 }
 
 func sortDeviceTypes(values []string) []string {
-	unique := make(map[string]struct{}, len(values)+1)
-	unique[model.DefaultDeviceType] = struct{}{}
+	unique := make(map[string]struct{}, len(values))
 	for _, value := range values {
 		value = normalizeDeviceType(value)
 		if value != "" {
@@ -90,15 +89,39 @@ func sortDeviceTypes(values []string) []string {
 		result = append(result, value)
 	}
 	sort.Strings(result)
-	sort.SliceStable(result, func(i, j int) bool {
-		if result[i] == model.DefaultDeviceType {
-			return true
+	return result
+}
+
+func (h *DeviceHandler) upsertElectricControlTypeCatalog(value string) error {
+	value = normalizeElectricControlType(value)
+	if value == "" {
+		return nil
+	}
+	return h.db.FirstOrCreate(&model.ElectricControlTypeCatalog{}, model.ElectricControlTypeCatalog{Value: value}).Error
+}
+
+func (h *DeviceHandler) loadElectricControlTypeCatalogValues() ([]string, error) {
+	values := make([]string, 0)
+	if err := h.db.Model(&model.ElectricControlTypeCatalog{}).Order("value ASC").Pluck("value", &values).Error; err != nil {
+		return nil, err
+	}
+	return values, nil
+}
+
+func sortElectricControlTypes(values []string) []string {
+	unique := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = normalizeElectricControlType(value)
+		if value != "" {
+			unique[value] = struct{}{}
 		}
-		if result[j] == model.DefaultDeviceType {
-			return false
-		}
-		return result[i] < result[j]
-	})
+	}
+
+	result := make([]string, 0, len(unique))
+	for value := range unique {
+		result = append(result, value)
+	}
+	sort.Strings(result)
 	return result
 }
 
@@ -307,7 +330,7 @@ func (h *DeviceHandler) buildScopedTree(allowedGroupIDs []uint) []gin.H {
 		return nodes
 	}
 
-	return buildGroupNodes(nil)
+	return h.withDeviceTreeRoots(buildGroupNodes(nil), nil)
 }
 
 func (h *DeviceHandler) GetDeviceTree(c *gin.Context) {
@@ -329,28 +352,71 @@ func (h *DeviceHandler) GetDeviceTree(c *gin.Context) {
 		return
 	}
 
+	root, err := requireTotalGroup(h.db)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "总分组不存在",
+		})
+		return
+	}
+
 	var groups []model.Group
 	h.db.
 		Preload("Devices", func(db *gorm.DB) *gorm.DB { return db.Order("sort_order ASC, code ASC, id ASC") }).
-		Where("parent_id IS NULL").
+		Where("id = ?", root.ID).
 		Order("sort_order ASC, id ASC").
 		Find(&groups)
 
-	tree := h.buildTree(groups)
 	var ungroupedDevices []model.Device
-	if err := h.db.Where("group_id IS NULL").Order("code ASC").Find(&ungroupedDevices).Error; err == nil && len(ungroupedDevices) > 0 {
-		tree = append(tree, gin.H{
-			"id":       "ungrouped",
-			"label":    "未分组设备",
-			"children": h.buildDeviceNodes(ungroupedDevices),
-		})
-	}
+	_ = h.db.Where("group_id IS NULL").Order("code ASC").Find(&ungroupedDevices).Error
+	tree := h.withDeviceTreeRoots(h.buildTree(groups), h.buildDeviceNodes(ungroupedDevices))
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"data":    tree,
 		"message": "success",
 	})
+}
+
+func (h *DeviceHandler) withDeviceTreeRoots(groupNodes []gin.H, ungroupedDeviceNodes []gin.H) []gin.H {
+	if groupNodes == nil {
+		groupNodes = []gin.H{}
+	}
+	if ungroupedDeviceNodes == nil {
+		ungroupedDeviceNodes = []gin.H{}
+	}
+	ungroupedNode := gin.H{
+		"id":        "ungrouped",
+		"label":     "未分组设备",
+		"type":      "group",
+		"isVirtual": true,
+		"children":  ungroupedDeviceNodes,
+	}
+
+	totalNode := gin.H{
+		"id":        "all",
+		"label":     "总分组",
+		"type":      "group",
+		"isVirtual": true,
+		"children":  groupNodes,
+	}
+	if len(groupNodes) == 1 && isTotalGroupTreeNode(groupNodes[0]) {
+		totalNode = groupNodes[0]
+		totalNode["label"] = "总分组"
+		totalNode["type"] = "group"
+	}
+
+	return []gin.H{ungroupedNode, totalNode}
+}
+
+func isTotalGroupTreeNode(node gin.H) bool {
+	label, _ := node["label"].(string)
+	if strings.TrimSpace(label) == "总分组" {
+		return true
+	}
+	name, _ := node["name"].(string)
+	return strings.TrimSpace(name) == "总分组"
 }
 
 func (h *DeviceHandler) buildDeviceNodes(devices []model.Device) []gin.H {
@@ -361,16 +427,17 @@ func (h *DeviceHandler) buildDeviceNodes(devices []model.Device) []gin.H {
 			label = label + "（" + strings.TrimSpace(d.EmployeeName) + "）"
 		}
 		nodes = append(nodes, gin.H{
-			"id":           d.ID,
-			"label":        label,
-			"name":         resolveDeviceDisplayName(d.Name, d.InitialName, d.Code),
-			"type":         "device",
-			"status":       normalizeDeviceStatus(d.Status),
-			"model":        d.ModelName,
-			"ip":           d.IP,
-			"groupId":      d.GroupID,
-			"employeeCode": d.EmployeeCode,
-			"employeeName": d.EmployeeName,
+			"id":                  d.ID,
+			"label":               label,
+			"name":                resolveDeviceDisplayName(d.Name, d.InitialName, d.Code),
+			"type":                "device",
+			"status":              normalizeDeviceStatus(d.Status),
+			"model":               d.ModelName,
+			"electricControlType": d.ElectricControlType,
+			"ip":                  d.IP,
+			"groupId":             d.GroupID,
+			"employeeCode":        d.EmployeeCode,
+			"employeeName":        d.EmployeeName,
 		})
 	}
 	return nodes
@@ -467,7 +534,8 @@ func (h *DeviceHandler) GetDeviceList(c *gin.Context) {
 	if keyword := c.Query("keyword"); keyword != "" {
 		like := "%" + strings.TrimSpace(keyword) + "%"
 		query = query.Where(
-			"name LIKE ? OR initial_name LIKE ? OR code LIKE ? OR type LIKE ? OR model_name LIKE ? OR ip LIKE ? OR employee_code LIKE ? OR employee_name LIKE ? OR mainboard_sn LIKE ? OR remark LIKE ? OR current_pattern_name LIKE ? OR alarm_code LIKE ?",
+			"name LIKE ? OR initial_name LIKE ? OR code LIKE ? OR type LIKE ? OR electric_control_type LIKE ? OR model_name LIKE ? OR ip LIKE ? OR employee_code LIKE ? OR employee_name LIKE ? OR mainboard_sn LIKE ? OR remark LIKE ? OR current_pattern_name LIKE ? OR alarm_code LIKE ?",
+			like,
 			like,
 			like,
 			like,
@@ -543,38 +611,39 @@ func (h *DeviceHandler) GetDeviceList(c *gin.Context) {
 	for _, d := range devices {
 		displayName := resolveDeviceDisplayName(d.Name, d.InitialName, d.Code)
 		item := gin.H{
-			"id":                 d.ID,
-			"code":               d.Code,
-			"name":               d.Name,
-			"displayName":        displayName,
-			"initialName":        d.InitialName,
-			"type":               d.Type,
-			"model":              d.ModelName,
-			"employeeCode":       d.EmployeeCode,
-			"employeeName":       d.EmployeeName,
-			"mainboardSn":        d.MainboardSN,
-			"identifiedBy":       d.IdentifiedBy,
-			"remark":             d.Remark,
-			"ip":                 d.IP,
-			"status":             normalizeDeviceStatus(d.Status),
-			"currentPatternNo":   d.CurrentPatternNo,
-			"currentPatternName": d.CurrentPatternName,
-			"alarmCode":          d.AlarmCode,
-			"currentSpeed":       d.CurrentSpeed,
-			"maxSpeedValue":      d.MaxSpeedValue,
-			"productionTotal":    d.ProductionTotal,
-			"productionCurrent":  d.ProductionCurrent,
-			"bottomThreadTotal":  d.BottomThreadTotal,
-			"bottomThreadRemain": d.BottomThreadRemain,
-			"needleCountValue":   d.NeedleCountValue,
-			"sewingRangeX":       d.SewingRangeX,
-			"sewingRangeY":       d.SewingRangeY,
-			"highPointValue":     d.HighPointValue,
-			"lowPointValue":      d.LowPointValue,
-			"lastProtocolAt":     formatNullableTime(d.LastProtocolAt),
-			"groupId":            d.GroupID,
-			"sortOrder":          d.SortOrder,
-			"createTime":         d.CreatedAt.Format("2006-01-02 15:04:05"),
+			"id":                  d.ID,
+			"code":                d.Code,
+			"name":                d.Name,
+			"displayName":         displayName,
+			"initialName":         d.InitialName,
+			"type":                d.Type,
+			"electricControlType": d.ElectricControlType,
+			"model":               d.ModelName,
+			"employeeCode":        d.EmployeeCode,
+			"employeeName":        d.EmployeeName,
+			"mainboardSn":         d.MainboardSN,
+			"identifiedBy":        d.IdentifiedBy,
+			"remark":              d.Remark,
+			"ip":                  d.IP,
+			"status":              normalizeDeviceStatus(d.Status),
+			"currentPatternNo":    d.CurrentPatternNo,
+			"currentPatternName":  d.CurrentPatternName,
+			"alarmCode":           d.AlarmCode,
+			"currentSpeed":        d.CurrentSpeed,
+			"maxSpeedValue":       d.MaxSpeedValue,
+			"productionTotal":     d.ProductionTotal,
+			"productionCurrent":   d.ProductionCurrent,
+			"bottomThreadTotal":   d.BottomThreadTotal,
+			"bottomThreadRemain":  d.BottomThreadRemain,
+			"needleCountValue":    d.NeedleCountValue,
+			"sewingRangeX":        d.SewingRangeX,
+			"sewingRangeY":        d.SewingRangeY,
+			"highPointValue":      d.HighPointValue,
+			"lowPointValue":       d.LowPointValue,
+			"lastProtocolAt":      formatNullableTime(d.LastProtocolAt),
+			"groupId":             d.GroupID,
+			"sortOrder":           d.SortOrder,
+			"createTime":          d.CreatedAt.Format("2006-01-02 15:04:05"),
 		}
 		groupName := ""
 		if d.Group != nil {
@@ -709,7 +778,6 @@ func (h *DeviceHandler) GetDeviceTypeSummary(c *gin.Context) {
 			"value":       value,
 			"deviceCount": row.DeviceCount,
 			"updateTime":  updateTime,
-			"isDefault":   value == model.DefaultDeviceType,
 		}
 	}
 
@@ -717,7 +785,6 @@ func (h *DeviceHandler) GetDeviceTypeSummary(c *gin.Context) {
 	if err != nil {
 		catalogValues = nil
 	}
-	catalogValues = append(catalogValues, model.DefaultDeviceType)
 	for _, value := range catalogValues {
 		value = normalizeDeviceType(value)
 		if value == "" {
@@ -731,7 +798,6 @@ func (h *DeviceHandler) GetDeviceTypeSummary(c *gin.Context) {
 				"value":       value,
 				"deviceCount": int64(0),
 				"updateTime":  "-",
-				"isDefault":   value == model.DefaultDeviceType,
 			}
 		}
 	}
@@ -741,11 +807,6 @@ func (h *DeviceHandler) GetDeviceTypeSummary(c *gin.Context) {
 		list = append(list, item)
 	}
 	sort.Slice(list, func(i, j int) bool {
-		leftDefault := list[i]["isDefault"].(bool)
-		rightDefault := list[j]["isDefault"].(bool)
-		if leftDefault != rightDefault {
-			return leftDefault
-		}
 		leftCount := list[i]["deviceCount"].(int64)
 		rightCount := list[j]["deviceCount"].(int64)
 		if leftCount != rightCount {
@@ -814,13 +875,6 @@ func (h *DeviceHandler) RenameDeviceType(c *gin.Context) {
 		})
 		return
 	}
-	if oldValue == model.DefaultDeviceType && newValue != model.DefaultDeviceType {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "默认设备类型不能改名",
-		})
-		return
-	}
 	if oldValue == newValue {
 		c.JSON(http.StatusOK, gin.H{
 			"code":    0,
@@ -878,20 +932,10 @@ func (h *DeviceHandler) DeleteDeviceType(c *gin.Context) {
 		})
 		return
 	}
-	if value == model.DefaultDeviceType {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "默认设备类型不能删除",
-		})
-		return
-	}
 
 	var affected int64
 	err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.FirstOrCreate(&model.DeviceTypeCatalog{}, model.DeviceTypeCatalog{Value: model.DefaultDeviceType}).Error; err != nil {
-			return err
-		}
-		result := tx.Model(&model.Device{}).Where("type = ?", value).Update("type", model.DefaultDeviceType)
+		result := tx.Model(&model.Device{}).Where("type = ?", value).Update("type", "")
 		if result.Error != nil {
 			return result.Error
 		}
@@ -905,6 +949,270 @@ func (h *DeviceHandler) DeleteDeviceType(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
 			"message": "删除设备类型失败",
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"data":    gin.H{"affected": affected},
+		"message": "success",
+	})
+}
+
+func (h *DeviceHandler) GetElectricControlTypes(c *gin.Context) {
+	types := make([]string, 0)
+	query := h.db.Model(&model.Device{}).Where("electric_control_type <> ''")
+	scope := h.getCurrentUserScope(c)
+	if !scope.All {
+		if len(scope.GroupIDs) == 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"code": 0,
+				"data": sortElectricControlTypes(nil),
+			})
+			return
+		}
+		query = query.Where("group_id IN ?", scope.GroupIDs)
+	}
+
+	if err := query.Distinct("electric_control_type").Pluck("electric_control_type", &types).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "查询电控类型失败",
+		})
+		return
+	}
+	catalogTypes, err := h.loadElectricControlTypeCatalogValues()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "查询电控类型失败",
+		})
+		return
+	}
+	types = append(types, catalogTypes...)
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": sortElectricControlTypes(types),
+	})
+}
+
+func (h *DeviceHandler) GetElectricControlTypeSummary(c *gin.Context) {
+	scope := h.getCurrentUserScope(c)
+	query := h.db.Model(&model.Device{}).Where("electric_control_type <> ''")
+	if !scope.All {
+		if len(scope.GroupIDs) == 0 {
+			query = query.Where("1 = 0")
+		} else {
+			query = query.Where("group_id IN ?", scope.GroupIDs)
+		}
+	}
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		query = query.Where("electric_control_type LIKE ?", "%"+keyword+"%")
+	}
+
+	var rows []struct {
+		Value       string
+		DeviceCount int64
+		UpdateTime  string
+	}
+	if err := query.
+		Select("electric_control_type as value, COUNT(*) as device_count, MAX(updated_at) as update_time").
+		Group("electric_control_type").
+		Order("device_count DESC, value ASC").
+		Scan(&rows).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "查询电控类型汇总失败",
+		})
+		return
+	}
+
+	summaryMap := make(map[string]gin.H, len(rows))
+	for _, row := range rows {
+		value := normalizeElectricControlType(row.Value)
+		if value == "" {
+			continue
+		}
+		updateTime := strings.TrimSpace(row.UpdateTime)
+		if updateTime == "" {
+			updateTime = "-"
+		}
+		summaryMap[value] = gin.H{
+			"value":       value,
+			"deviceCount": row.DeviceCount,
+			"updateTime":  updateTime,
+		}
+	}
+
+	catalogValues, err := h.loadElectricControlTypeCatalogValues()
+	if err != nil {
+		catalogValues = nil
+	}
+	for _, value := range catalogValues {
+		value = normalizeElectricControlType(value)
+		if value == "" {
+			continue
+		}
+		if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" && !strings.Contains(value, keyword) {
+			continue
+		}
+		if _, exists := summaryMap[value]; !exists {
+			summaryMap[value] = gin.H{
+				"value":       value,
+				"deviceCount": int64(0),
+				"updateTime":  "-",
+			}
+		}
+	}
+
+	list := make([]gin.H, 0, len(summaryMap))
+	for _, item := range summaryMap {
+		list = append(list, item)
+	}
+	sort.Slice(list, func(i, j int) bool {
+		leftCount := list[i]["deviceCount"].(int64)
+		rightCount := list[j]["deviceCount"].(int64)
+		if leftCount != rightCount {
+			return leftCount > rightCount
+		}
+		return list[i]["value"].(string) < list[j]["value"].(string)
+	})
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 0,
+		"data": list,
+	})
+}
+
+func (h *DeviceHandler) CreateElectricControlType(c *gin.Context) {
+	var req struct {
+		Value string `json:"value" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "参数错误",
+		})
+		return
+	}
+	value := normalizeElectricControlType(req.Value)
+	if value == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "电控类型不能为空",
+		})
+		return
+	}
+	if err := h.upsertElectricControlTypeCatalog(value); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "新增电控类型失败",
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"data":    gin.H{"value": value},
+		"message": "success",
+	})
+}
+
+func (h *DeviceHandler) RenameElectricControlType(c *gin.Context) {
+	var req struct {
+		OldValue string `json:"oldValue" binding:"required"`
+		NewValue string `json:"newValue" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "参数错误",
+		})
+		return
+	}
+	oldValue := normalizeElectricControlType(req.OldValue)
+	newValue := normalizeElectricControlType(req.NewValue)
+	if oldValue == "" || newValue == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "电控类型不能为空",
+		})
+		return
+	}
+	if oldValue == newValue {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    0,
+			"data":    gin.H{"affected": 0},
+			"message": "success",
+		})
+		return
+	}
+
+	var affected int64
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.FirstOrCreate(&model.ElectricControlTypeCatalog{}, model.ElectricControlTypeCatalog{Value: newValue}).Error; err != nil {
+			return err
+		}
+		result := tx.Model(&model.Device{}).Where("electric_control_type = ?", oldValue).Update("electric_control_type", newValue)
+		if result.Error != nil {
+			return result.Error
+		}
+		affected = result.RowsAffected
+		if err := tx.Where("value = ?", oldValue).Delete(&model.ElectricControlTypeCatalog{}).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "更新电控类型失败",
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"data":    gin.H{"affected": affected},
+		"message": "success",
+	})
+}
+
+func (h *DeviceHandler) DeleteElectricControlType(c *gin.Context) {
+	var req struct {
+		Value string `json:"value" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "参数错误",
+		})
+		return
+	}
+	value := normalizeElectricControlType(req.Value)
+	if value == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "电控类型不能为空",
+		})
+		return
+	}
+
+	var affected int64
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&model.Device{}).Where("electric_control_type = ?", value).Update("electric_control_type", "")
+		if result.Error != nil {
+			return result.Error
+		}
+		affected = result.RowsAffected
+		if err := tx.Where("value = ?", value).Delete(&model.ElectricControlTypeCatalog{}).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "删除电控类型失败",
 		})
 		return
 	}
@@ -929,6 +1237,7 @@ func (h *DeviceHandler) CreateDevice(c *gin.Context) {
 	device.Name = strings.TrimSpace(device.Name)
 	device.InitialName = strings.TrimSpace(device.InitialName)
 	device.Type = normalizeDeviceType(device.Type)
+	device.ElectricControlType = normalizeElectricControlType(device.ElectricControlType)
 	device.ModelName = strings.TrimSpace(device.ModelName)
 	device.EmployeeCode = strings.TrimSpace(device.EmployeeCode)
 	device.EmployeeName = strings.TrimSpace(device.EmployeeName)
@@ -950,6 +1259,13 @@ func (h *DeviceHandler) CreateDevice(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
 			"message": "设备类型保存失败",
+		})
+		return
+	}
+	if err := h.upsertElectricControlTypeCatalog(device.ElectricControlType); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "电控类型保存失败",
 		})
 		return
 	}
@@ -1016,19 +1332,20 @@ func (h *DeviceHandler) UpdateDevice(c *gin.Context) {
 	}
 
 	var req struct {
-		Code         *string         `json:"code"`
-		Name         *string         `json:"name"`
-		InitialName  *string         `json:"initialName"`
-		SortOrder    *int            `json:"sortOrder"`
-		Type         *string         `json:"type"`
-		ModelName    *string         `json:"model"`
-		IP           *string         `json:"ip"`
-		Status       *string         `json:"status"`
-		GroupID      json.RawMessage `json:"groupId"`
-		EmployeeCode *string         `json:"employeeCode"`
-		EmployeeName *string         `json:"employeeName"`
-		MainboardSN  *string         `json:"mainboardSn"`
-		Remark       *string         `json:"remark"`
+		Code                *string         `json:"code"`
+		Name                *string         `json:"name"`
+		InitialName         *string         `json:"initialName"`
+		SortOrder           *int            `json:"sortOrder"`
+		Type                *string         `json:"type"`
+		ElectricControlType *string         `json:"electricControlType"`
+		ModelName           *string         `json:"model"`
+		IP                  *string         `json:"ip"`
+		Status              *string         `json:"status"`
+		GroupID             json.RawMessage `json:"groupId"`
+		EmployeeCode        *string         `json:"employeeCode"`
+		EmployeeName        *string         `json:"employeeName"`
+		MainboardSN         *string         `json:"mainboardSn"`
+		Remark              *string         `json:"remark"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -1078,6 +1395,17 @@ func (h *DeviceHandler) UpdateDevice(c *gin.Context) {
 			return
 		}
 		updates["type"] = deviceType
+	}
+	if req.ElectricControlType != nil {
+		electricControlType := normalizeElectricControlType(*req.ElectricControlType)
+		if err := h.upsertElectricControlTypeCatalog(electricControlType); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "电控类型保存失败",
+			})
+			return
+		}
+		updates["electric_control_type"] = electricControlType
 	}
 	if req.ModelName != nil {
 		updates["model_name"] = strings.TrimSpace(*req.ModelName)

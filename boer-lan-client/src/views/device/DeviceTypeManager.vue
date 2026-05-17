@@ -2,11 +2,11 @@
   <div class="page-container">
     <div class="search-bar">
       <el-form :inline="true" :model="searchForm">
-        <el-form-item label="设备类型">
+        <el-form-item :label="currentCatalog.label">
           <el-input
             v-model.trim="searchForm.keyword"
             clearable
-            placeholder="输入设备类型关键字"
+            :placeholder="`输入${currentCatalog.label}关键字`"
             @keyup.enter.native="fetchData"
           />
         </el-form-item>
@@ -24,8 +24,8 @@
     <el-card shadow="never" class="card page-table-card">
       <div class="section-title">
         <div>
-          <h3>设备类型</h3>
-          <p>用于统一维护设备类型。删除类型时，关联设备会自动调整为默认的电控类型。</p>
+          <h3>{{ currentCatalog.label }}</h3>
+          <p>用于统一维护{{ currentCatalog.label }}。删除类型时，关联设备会清空对应字段。</p>
         </div>
       </div>
 
@@ -36,7 +36,7 @@
           </el-button>
           <el-button
             icon="el-icon-edit-outline"
-            :disabled="selectedRows.length !== 1 || selectedRows[0].isDefault"
+            :disabled="selectedRows.length !== 1"
             @click="openRenameDialog(selectedRows[0])"
           >
             修改名称
@@ -44,7 +44,7 @@
           <el-button
             type="danger"
             icon="el-icon-delete"
-            :disabled="selectedRows.length !== 1 || selectedRows[0].isDefault"
+            :disabled="selectedRows.length !== 1"
             @click="handleDelete(selectedRows[0])"
           >
             删除类型
@@ -62,12 +62,7 @@
       >
         <el-table-column type="selection" width="48" align="center" />
         <el-table-column type="index" label="序号" width="60" align="center" />
-        <el-table-column prop="value" label="设备类型" min-width="220">
-          <template slot-scope="scope">
-            <span>{{ scope.row.value }}</span>
-            <el-tag v-if="scope.row.isDefault" size="mini" type="success" class="default-tag">默认</el-tag>
-          </template>
-        </el-table-column>
+        <el-table-column prop="value" :label="currentCatalog.label" min-width="220" />
         <el-table-column prop="deviceCount" label="关联设备数" width="120" align="center" />
         <el-table-column prop="updateTime" label="最近更新时间" width="180" align="center" />
         <el-table-column label="操作" width="180" align="center">
@@ -75,7 +70,6 @@
             <el-button
               type="text"
               size="small"
-              :disabled="scope.row.isDefault"
               @click="openRenameDialog(scope.row)"
             >
               修改
@@ -84,7 +78,6 @@
               type="text"
               size="small"
               class="danger-text"
-              :disabled="scope.row.isDefault"
               @click="handleDelete(scope.row)"
             >
               删除
@@ -95,7 +88,7 @@
     </el-card>
 
     <el-dialog
-      :title="renameDialog.mode === 'create' ? '新增设备类型' : '修改设备类型'"
+      :title="renameDialog.mode === 'create' ? `新增${currentCatalog.label}` : `修改${currentCatalog.label}`"
       :visible.sync="renameDialog.visible"
       width="420px"
       @closed="resetRenameDialog"
@@ -107,7 +100,7 @@
         <el-form-item :label="renameDialog.mode === 'create' ? '类型名称' : '新类型'">
           <el-input
             v-model.trim="renameDialog.newValue"
-            placeholder="请输入设备类型"
+            :placeholder="`请输入${currentCatalog.label}`"
             @keyup.enter.native="submitRename"
           />
         </el-form-item>
@@ -124,9 +117,13 @@
 
 <script>
 import {
+  createElectricControlType,
   createDeviceType,
+  deleteElectricControlType,
   deleteDeviceType,
+  getElectricControlTypeSummary,
   getDeviceTypeSummary,
+  renameElectricControlType,
   renameDeviceType
 } from '@/api/device'
 
@@ -149,22 +146,49 @@ export default {
       }
     }
   },
+  computed: {
+    currentCatalog() {
+      if (this.$route.meta?.catalog === 'electricControl') {
+        return {
+          label: '电控类型',
+          fetchSummary: getElectricControlTypeSummary,
+          create: createElectricControlType,
+          rename: renameElectricControlType,
+          delete: deleteElectricControlType
+        }
+      }
+      return {
+        label: '设备类型',
+        fetchSummary: getDeviceTypeSummary,
+        create: createDeviceType,
+        rename: renameDeviceType,
+        delete: deleteDeviceType
+      }
+    }
+  },
   mounted() {
     this.fetchData()
+  },
+  watch: {
+    '$route.name'() {
+      this.selectedRows = []
+      this.searchForm.keyword = ''
+      this.fetchData()
+    }
   },
   methods: {
     async fetchData() {
       this.loading = true
       try {
-        const res = await getDeviceTypeSummary({
+        const res = await this.currentCatalog.fetchSummary({
           keyword: this.searchForm.keyword
         })
         if (res.code === 0) {
           this.tableData = res.data || []
         }
       } catch (error) {
-        console.error('Failed to fetch device type summary:', error)
-        this.$message.error('获取设备类型失败')
+        console.error('Failed to fetch type summary:', error)
+        this.$message.error(`获取${this.currentCatalog.label}失败`)
       } finally {
         this.loading = false
       }
@@ -185,7 +209,7 @@ export default {
       }
     },
     openRenameDialog(row) {
-      if (!row || row.isDefault) return
+      if (!row) return
       this.renameDialog = {
         visible: true,
         mode: 'rename',
@@ -206,50 +230,44 @@ export default {
       const newValue = String(this.renameDialog.newValue || '').trim()
       const oldValue = String(this.renameDialog.oldValue || '').trim()
       if (!newValue) {
-        this.$message.warning('设备类型不能为空')
+        this.$message.warning(`${this.currentCatalog.label}不能为空`)
         return
       }
       this.submitting = true
       try {
         const res = this.renameDialog.mode === 'create'
-          ? await createDeviceType({ value: newValue })
-          : await renameDeviceType({ oldValue, newValue })
+          ? await this.currentCatalog.create({ value: newValue })
+          : await this.currentCatalog.rename({ oldValue, newValue })
         if (res.code === 0) {
-          this.$message.success(this.renameDialog.mode === 'create' ? '设备类型已新增' : '设备类型已更新')
+          this.$message.success(this.renameDialog.mode === 'create' ? `${this.currentCatalog.label}已新增` : `${this.currentCatalog.label}已更新`)
           this.renameDialog.visible = false
           this.fetchData()
         } else {
-          this.$message.error(res.message || (this.renameDialog.mode === 'create' ? '设备类型新增失败' : '设备类型更新失败'))
+          this.$message.error(res.message || (this.renameDialog.mode === 'create' ? `${this.currentCatalog.label}新增失败` : `${this.currentCatalog.label}更新失败`))
         }
       } catch (error) {
-        console.error('Save device type failed:', error)
-        this.$message.error(this.renameDialog.mode === 'create' ? '设备类型新增失败' : '设备类型更新失败')
+        console.error('Save type failed:', error)
+        this.$message.error(this.renameDialog.mode === 'create' ? `${this.currentCatalog.label}新增失败` : `${this.currentCatalog.label}更新失败`)
       } finally {
         this.submitting = false
       }
     },
     handleDelete(row) {
-      if (!row?.value || row.isDefault) return
-      this.$confirm(`确定删除设备类型“${row.value}”吗？关联设备会改为默认的电控类型。`, this.$t('common.warning'), {
+      if (!row?.value) return
+      this.$confirm(`确定删除${this.currentCatalog.label}“${row.value}”吗？关联设备会清空对应字段。`, this.$t('common.warning'), {
         confirmButtonText: this.$t('common.confirm'),
         cancelButtonText: this.$t('common.cancel'),
         type: 'warning'
       }).then(async () => {
-        const res = await deleteDeviceType({ value: row.value })
+        const res = await this.currentCatalog.delete({ value: row.value })
         if (res.code === 0) {
-          this.$message.success('设备类型已删除')
+          this.$message.success(`${this.currentCatalog.label}已删除`)
           this.fetchData()
         } else {
-          this.$message.error(res.message || '删除设备类型失败')
+          this.$message.error(res.message || `删除${this.currentCatalog.label}失败`)
         }
       }).catch(() => {})
     }
   }
 }
 </script>
-
-<style lang="scss" scoped>
-.default-tag {
-  margin-left: 8px;
-}
-</style>

@@ -78,6 +78,9 @@
             <el-menu-item v-if="canAccess.deviceManagement" index="/device/types">
               {{ $t('menu.deviceTypeManager') }}
             </el-menu-item>
+            <el-menu-item v-if="canAccess.deviceManagement" index="/device/electric-control-types">
+              {{ $t('menu.electricControlTypeManager') }}
+            </el-menu-item>
             <el-menu-item v-if="canAccess.remoteMonitoring" index="/device/monitor">
               {{ $t('menu.remoteMonitor') }}
             </el-menu-item>

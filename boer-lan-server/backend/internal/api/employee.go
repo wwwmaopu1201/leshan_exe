@@ -238,6 +238,11 @@ func isValidEmployeePhone(phone string) bool {
 	return matched
 }
 
+func isValidEmployeeName(name string) bool {
+	name = strings.TrimSpace(name)
+	return name != "" && len([]rune(name)) <= 8
+}
+
 func (h *EmployeeHandler) GetEmployeeList(c *gin.Context) {
 	var employees []model.Employee
 	query := h.db.Model(&model.Employee{}).Preload("Group")
@@ -360,10 +365,10 @@ func (h *EmployeeHandler) CreateEmployee(c *gin.Context) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Phone = strings.TrimSpace(req.Phone)
 	req.Remark = strings.TrimSpace(req.Remark)
-	if !isValidEmployeeCode(req.Code) || req.Name == "" {
+	if !isValidEmployeeCode(req.Code) || !isValidEmployeeName(req.Name) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
-			"message": "员工工号不能为空且不能超过11位，姓名不能为空",
+			"message": "员工工号不能为空且不能超过11位，姓名不能为空且不能超过8个字符",
 		})
 		return
 	}
@@ -476,10 +481,10 @@ func (h *EmployeeHandler) UpdateEmployee(c *gin.Context) {
 
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
-		if name == "" {
+		if !isValidEmployeeName(name) {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"code":    400,
-				"message": "员工姓名不能为空",
+				"message": "员工姓名不能为空且不能超过8个字符",
 			})
 			return
 		}

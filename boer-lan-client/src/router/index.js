@@ -73,6 +73,17 @@ const routes = [
         }
       },
       {
+        path: 'device/electric-control-types',
+        name: 'ElectricControlTypeManager',
+        component: () => import('@/views/device/DeviceTypeManager.vue'),
+        meta: {
+          title: 'menu.electricControlTypeManager',
+          parent: 'menu.device',
+          permission: PERMISSIONS.DEVICE_MANAGEMENT,
+          catalog: 'electricControl'
+        }
+      },
+      {
         path: 'device/monitor',
         name: 'RemoteMonitor',
         component: () => import('@/views/device/RemoteMonitor.vue'),

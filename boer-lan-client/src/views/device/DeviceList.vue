@@ -102,6 +102,7 @@
             </el-table-column>
             <el-table-column prop="initialName" :label="$t('device.initialName')" width="130" />
             <el-table-column prop="type" :label="$t('device.deviceType')" width="100" />
+            <el-table-column prop="electricControlType" :label="$t('device.electricControlType')" width="120" />
             <!-- <el-table-column prop="model" :label="$t('device.deviceModel')" width="110" /> -->
             <el-table-column prop="employeeCode" :label="$t('employee.employeeCode')" width="120" />
             <el-table-column prop="employeeName" :label="$t('employee.employeeName')" width="120" />
@@ -175,7 +176,7 @@
         </el-form-item>
         <el-form-item :label="$t('device.deviceType')" prop="type">
           <div class="device-type-control">
-            <el-select v-model="editForm.type" filterable placeholder="请选择设备类型">
+            <el-select v-model="editForm.type" filterable clearable placeholder="请选择设备类型">
               <el-option
                 v-for="type in deviceTypeOptions"
                 :key="type"
@@ -184,6 +185,21 @@
               />
             </el-select>
             <el-button icon="el-icon-plus" @click="openDeviceTypeDialog">
+              添加类型
+            </el-button>
+          </div>
+        </el-form-item>
+        <el-form-item :label="$t('device.electricControlType')" prop="electricControlType">
+          <div class="device-type-control">
+            <el-select v-model="editForm.electricControlType" filterable clearable placeholder="请选择电控类型">
+              <el-option
+                v-for="type in electricControlTypeOptions"
+                :key="type"
+                :label="type"
+                :value="type"
+              />
+            </el-select>
+            <el-button icon="el-icon-plus" @click="openElectricControlTypeDialog">
               添加类型
             </el-button>
           </div>
@@ -251,6 +267,29 @@
     </el-dialog>
 
     <el-dialog
+      title="新增电控类型"
+      :visible.sync="showElectricControlTypeDialog"
+      width="420px"
+      @closed="resetElectricControlTypeForm"
+    >
+      <el-form label-width="92px">
+        <el-form-item label="类型名称">
+          <el-input
+            v-model.trim="electricControlTypeForm.value"
+            placeholder="请输入电控类型"
+            @keyup.enter.native="handleCreateElectricControlType"
+          />
+        </el-form-item>
+      </el-form>
+      <span slot="footer" class="dialog-footer">
+        <el-button @click="showElectricControlTypeDialog = false">{{ $t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="creatingElectricControlType" @click="handleCreateElectricControlType">
+          {{ $t('common.save') }}
+        </el-button>
+      </span>
+    </el-dialog>
+
+    <el-dialog
       :title="$t('device.moveToGroup')"
       :visible.sync="showMoveDialog"
       width="420px"
@@ -286,15 +325,15 @@ import {
   getDeviceList,
   createDevice,
   createDeviceType,
+  createElectricControlType,
   updateDevice,
   deleteDevice,
   batchDeleteDevices,
   moveToGroup,
   getDeviceGroups,
-  getDeviceTypes
+  getDeviceTypes,
+  getElectricControlTypes
 } from '@/api/device'
-
-const DEFAULT_DEVICE_TYPE = '电控类型'
 
 const defaultTreeFilter = () => ({
   label: '',
@@ -314,7 +353,8 @@ export default {
       loading: false,
       tableData: [],
       groupOptions: [],
-      deviceTypeOptions: [DEFAULT_DEVICE_TYPE],
+      deviceTypeOptions: [],
+      electricControlTypeOptions: [],
       selectedRows: [],
       treeFilter: defaultTreeFilter(),
       searchForm: {
@@ -333,7 +373,8 @@ export default {
         code: '',
         name: '',
         initialName: '',
-        type: DEFAULT_DEVICE_TYPE,
+        type: '',
+        electricControlType: '',
         model: '',
         ip: '',
         employeeCode: '',
@@ -346,7 +387,6 @@ export default {
       editRules: {
         code: [{ required: true, message: '请输入设备编码', trigger: 'blur' }],
         name: [{ required: true, message: '请输入设备名称', trigger: 'blur' }],
-        type: [{ required: true, message: '请选择设备类型', trigger: 'change' }],
         ip: [{ required: true, message: '请输入IP地址', trigger: 'blur' }]
       },
       showMoveDialog: false,
@@ -354,6 +394,11 @@ export default {
       showDeviceTypeDialog: false,
       creatingDeviceType: false,
       deviceTypeForm: {
+        value: ''
+      },
+      showElectricControlTypeDialog: false,
+      creatingElectricControlType: false,
+      electricControlTypeForm: {
         value: ''
       },
       tableHeight: 320
@@ -400,6 +445,7 @@ export default {
   mounted() {
     this.fetchGroups()
     this.fetchDeviceTypes()
+    this.fetchElectricControlTypes()
     this.fetchData()
     window.addEventListener('resize', this.syncTableHeight)
   },
@@ -428,22 +474,30 @@ export default {
         }
       } catch (error) {
         console.error('Failed to fetch device types:', error)
-        this.deviceTypeOptions = [DEFAULT_DEVICE_TYPE]
+        this.deviceTypeOptions = []
       }
     },
     normalizeDeviceTypeOptions(types = []) {
-      const merged = new Set([DEFAULT_DEVICE_TYPE])
+      const merged = new Set()
       types.forEach(item => {
         const value = String(item || '').trim()
         if (value) {
           merged.add(value)
         }
       })
-      return Array.from(merged).sort((a, b) => {
-        if (a === DEFAULT_DEVICE_TYPE) return -1
-        if (b === DEFAULT_DEVICE_TYPE) return 1
-        return a.localeCompare(b, 'zh-Hans-CN')
-      })
+      return Array.from(merged).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))
+    },
+    async fetchElectricControlTypes() {
+      try {
+        const res = await getElectricControlTypes()
+        if (res.code === 0) {
+          const types = Array.isArray(res.data) ? res.data : []
+          this.electricControlTypeOptions = this.normalizeDeviceTypeOptions(types)
+        }
+      } catch (error) {
+        console.error('Failed to fetch electric control types:', error)
+        this.electricControlTypeOptions = []
+      }
     },
     async fetchData() {
       this.loading = true
@@ -565,7 +619,7 @@ export default {
     async reloadDeviceData({ refreshTypes = false } = {}) {
       await this.fetchGroups()
       if (refreshTypes) {
-        await this.fetchDeviceTypes()
+        await Promise.all([this.fetchDeviceTypes(), this.fetchElectricControlTypes()])
       }
       await this.syncTreeSelection()
       this.pagination.page = 1
@@ -652,7 +706,8 @@ export default {
         code: '',
         name: '',
         initialName: '',
-        type: DEFAULT_DEVICE_TYPE,
+        type: '',
+        electricControlType: '',
         model: '',
         ip: '',
         employeeCode: '',
@@ -670,7 +725,8 @@ export default {
         code: row.code,
         name: row.name,
         initialName: row.initialName || '',
-        type: row.type || DEFAULT_DEVICE_TYPE,
+        type: row.type || '',
+        electricControlType: row.electricControlType || '',
         model: row.model,
         ip: row.ip,
         employeeCode: row.employeeCode || '',
@@ -724,6 +780,38 @@ export default {
         this.creatingDeviceType = false
       }
     },
+    openElectricControlTypeDialog() {
+      this.electricControlTypeForm.value = ''
+      this.showElectricControlTypeDialog = true
+    },
+    resetElectricControlTypeForm() {
+      this.creatingElectricControlType = false
+      this.electricControlTypeForm.value = ''
+    },
+    async handleCreateElectricControlType() {
+      const value = String(this.electricControlTypeForm.value || '').trim()
+      if (!value) {
+        this.$message.warning('电控类型不能为空')
+        return
+      }
+      this.creatingElectricControlType = true
+      try {
+        const res = await createElectricControlType({ value })
+        if (res.code === 0) {
+          this.$message.success('电控类型已新增')
+          this.showElectricControlTypeDialog = false
+          await this.fetchElectricControlTypes()
+          this.editForm.electricControlType = res.data?.value || value
+        } else {
+          this.$message.error(res.message || '电控类型新增失败')
+        }
+      } catch (error) {
+        console.error('Create electric control type failed:', error)
+        this.$message.error('电控类型新增失败')
+      } finally {
+        this.creatingElectricControlType = false
+      }
+    },
     resetEditForm() {
       this.$refs.editFormRef?.resetFields()
     },
@@ -734,6 +822,7 @@ export default {
         const payload = {
           name: this.editForm.name,
           type: this.editForm.type,
+          electricControlType: this.editForm.electricControlType,
           employeeCode: this.editForm.employeeCode,
           employeeName: this.editForm.employeeName,
           remark: this.editForm.remark,

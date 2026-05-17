@@ -174,6 +174,7 @@ func autoMigrate(db *gorm.DB) error {
 		&model.Operator{},
 		&model.Device{},
 		&model.DeviceTypeCatalog{},
+		&model.ElectricControlTypeCatalog{},
 		&model.DeviceRuntimeSession{},
 		&model.Pattern{},
 		&model.PatternTypeCatalog{},
@@ -600,7 +601,7 @@ func seedEmployees(ctx *seedContext) error {
 }
 
 func seedDeviceTypes(ctx *seedContext) error {
-	return ctx.db.FirstOrCreate(&model.DeviceTypeCatalog{}, model.DeviceTypeCatalog{Value: model.DefaultDeviceType}).Error
+	return nil
 }
 
 func seedDevices(ctx *seedContext) error {
@@ -647,7 +648,7 @@ func seedDevices(ctx *seedContext) error {
 			Code:         def.code,
 			Name:         def.name,
 			InitialName:  def.initialName,
-			Type:         model.DefaultDeviceType,
+			Type:         def.deviceType,
 			ModelName:    def.model,
 			EmployeeCode: def.employeeCode,
 			EmployeeName: employeeName,

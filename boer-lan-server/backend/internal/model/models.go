@@ -6,7 +6,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const DefaultDeviceType = "电控类型"
+const DefaultDeviceType = ""
 
 // User 用户模型（客户端用户）
 type User struct {
@@ -61,41 +61,48 @@ type Group struct {
 // Device 设备模型
 type Device struct {
 	gorm.Model
-	Code               string    `gorm:"size:50;index;not null" json:"code"`
-	Name               string    `gorm:"size:100;not null" json:"name"`
-	InitialName        string    `gorm:"size:100" json:"initialName"`       // 初始名称
-	Type               string    `gorm:"size:50" json:"type"`               // 设备类型
-	ModelName          string    `gorm:"size:50" json:"model"`              // BM-2000, BM-3000
-	IdentifiedBy       string    `gorm:"size:30" json:"identifiedBy"`       // protocol, mainboard, ip-pending
-	EmployeeCode       string    `gorm:"size:50" json:"employeeCode"`       // 当前员工工号
-	EmployeeName       string    `gorm:"size:50" json:"employeeName"`       // 当前员工姓名
-	MainboardSN        string    `gorm:"size:100;index" json:"mainboardSn"` // 主板编号
-	Remark             string    `gorm:"size:255" json:"remark"`            // 备注
-	IP                 string    `gorm:"size:50" json:"ip"`
-	Status             string    `gorm:"size:20;default:offline" json:"status"` // idle, working, offline
-	CurrentPatternNo   uint      `gorm:"default:0" json:"currentPatternNo"`
-	CurrentPatternName string    `gorm:"size:255" json:"currentPatternName"`
-	AlarmCode          string    `gorm:"size:20" json:"alarmCode"`
-	CurrentSpeed       uint      `gorm:"default:0" json:"currentSpeed"`
-	MaxSpeedValue      uint      `gorm:"column:max_speed_value;default:0" json:"maxSpeedValue"`
-	ProductionTotal    uint      `gorm:"default:0" json:"productionTotal"`
-	ProductionCurrent  uint      `gorm:"default:0" json:"productionCurrent"`
-	BottomThreadTotal  uint      `gorm:"default:0" json:"bottomThreadTotal"`
-	BottomThreadRemain uint      `gorm:"default:0" json:"bottomThreadRemain"`
-	NeedleCountValue   uint      `gorm:"column:needle_count_value;default:0" json:"needleCountValue"`
-	SewingRangeX       int       `gorm:"default:0" json:"sewingRangeX"`
-	SewingRangeY       int       `gorm:"default:0" json:"sewingRangeY"`
-	HighPointValue     uint      `gorm:"column:high_point_value;default:0" json:"highPointValue"`
-	LowPointValue      uint      `gorm:"column:low_point_value;default:0" json:"lowPointValue"`
-	LastProtocolAt     time.Time `json:"lastProtocolAt"`
-	GroupID            *uint     `gorm:"index" json:"groupId"`
-	Group              *Group    `gorm:"foreignKey:GroupID" json:"group,omitempty"`
-	SortOrder          int       `gorm:"default:0" json:"sortOrder"` // 分组内排序
-	LastOnline         time.Time `json:"lastOnline"`
+	Code                string    `gorm:"size:50;index;not null" json:"code"`
+	Name                string    `gorm:"size:100;not null" json:"name"`
+	InitialName         string    `gorm:"size:100" json:"initialName"`         // 初始名称
+	Type                string    `gorm:"size:50" json:"type"`                 // 设备类型
+	ElectricControlType string    `gorm:"size:100" json:"electricControlType"` // 电控类型
+	ModelName           string    `gorm:"size:50" json:"model"`                // BM-2000, BM-3000
+	IdentifiedBy        string    `gorm:"size:30" json:"identifiedBy"`         // protocol, mainboard, ip-pending
+	EmployeeCode        string    `gorm:"size:50" json:"employeeCode"`         // 当前员工工号
+	EmployeeName        string    `gorm:"size:50" json:"employeeName"`         // 当前员工姓名
+	MainboardSN         string    `gorm:"size:100;index" json:"mainboardSn"`   // 主板编号
+	Remark              string    `gorm:"size:255" json:"remark"`              // 备注
+	IP                  string    `gorm:"size:50" json:"ip"`
+	Status              string    `gorm:"size:20;default:offline" json:"status"` // idle, working, offline
+	CurrentPatternNo    uint      `gorm:"default:0" json:"currentPatternNo"`
+	CurrentPatternName  string    `gorm:"size:255" json:"currentPatternName"`
+	AlarmCode           string    `gorm:"size:20" json:"alarmCode"`
+	CurrentSpeed        uint      `gorm:"default:0" json:"currentSpeed"`
+	MaxSpeedValue       uint      `gorm:"column:max_speed_value;default:0" json:"maxSpeedValue"`
+	ProductionTotal     uint      `gorm:"default:0" json:"productionTotal"`
+	ProductionCurrent   uint      `gorm:"default:0" json:"productionCurrent"`
+	BottomThreadTotal   uint      `gorm:"default:0" json:"bottomThreadTotal"`
+	BottomThreadRemain  uint      `gorm:"default:0" json:"bottomThreadRemain"`
+	NeedleCountValue    uint      `gorm:"column:needle_count_value;default:0" json:"needleCountValue"`
+	SewingRangeX        int       `gorm:"default:0" json:"sewingRangeX"`
+	SewingRangeY        int       `gorm:"default:0" json:"sewingRangeY"`
+	HighPointValue      uint      `gorm:"column:high_point_value;default:0" json:"highPointValue"`
+	LowPointValue       uint      `gorm:"column:low_point_value;default:0" json:"lowPointValue"`
+	LastProtocolAt      time.Time `json:"lastProtocolAt"`
+	GroupID             *uint     `gorm:"index" json:"groupId"`
+	Group               *Group    `gorm:"foreignKey:GroupID" json:"group,omitempty"`
+	SortOrder           int       `gorm:"default:0" json:"sortOrder"` // 分组内排序
+	LastOnline          time.Time `json:"lastOnline"`
 }
 
 // DeviceTypeCatalog 设备类型目录
 type DeviceTypeCatalog struct {
+	gorm.Model
+	Value string `gorm:"size:100;uniqueIndex;not null" json:"value"`
+}
+
+// ElectricControlTypeCatalog 电控类型目录
+type ElectricControlTypeCatalog struct {
 	gorm.Model
 	Value string `gorm:"size:100;uniqueIndex;not null" json:"value"`
 }

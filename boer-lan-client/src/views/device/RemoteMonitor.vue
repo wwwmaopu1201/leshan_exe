@@ -366,7 +366,7 @@ export default {
         ...node,
         type: node.type === 'device' ? 'device' : 'group',
         label: isTotal(node) ? '总分组' : (node.label || node.name || ''),
-        children: (node.children || []).map(cloneNode)
+        children: (node.children || []).filter(child => !isUngrouped(child)).map(cloneNode)
       })
       const roots = (nodes || []).map(cloneNode)
       const ungroupedNodes = []
@@ -386,22 +386,31 @@ export default {
         groupNodes.push(node)
       })
 
-      return [{
-        id: 'all',
-        label: '总分组',
+      const ungroupedNode = ungroupedNodes[0] || {
+        id: 'ungrouped',
+        label: '未分组设备',
         type: 'group',
-        children: [
-          ungroupedNodes[0] || {
-            id: 'ungrouped',
-            label: '未分组设备',
-            type: 'group',
-            children: [],
-            isVirtual: true
-          },
-          ...groupNodes
-        ],
+        children: [],
         isVirtual: true
-      }]
+      }
+      const totalNode = groupNodes.length === 1 && isTotal(groupNodes[0])
+        ? groupNodes[0]
+        : {
+            id: 'all',
+            label: '总分组',
+            type: 'group',
+            children: groupNodes,
+            isVirtual: true
+          }
+
+      return [
+        ungroupedNode,
+        {
+          ...totalNode,
+          label: '总分组',
+          type: 'group'
+        }
+      ]
     },
     filterTreeNode(value, data) {
       if (!value) return true

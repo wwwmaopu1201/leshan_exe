@@ -162,7 +162,7 @@ export default {
         ...node,
         type: node.type === 'device' ? 'device' : 'group',
         label: isTotal(node) ? '总分组' : (node.label || node.name || ''),
-        children: (node.children || []).map(cloneNode)
+        children: (node.children || []).filter(child => !isUngrouped(child)).map(cloneNode)
       })
       const roots = (nodes || []).map(cloneNode)
       const ungroupedNodes = []
@@ -182,22 +182,31 @@ export default {
         groupNodes.push(node)
       })
 
-      return [{
-        id: 'all',
-        label: '总分组',
+      const ungroupedNode = ungroupedNodes[0] || {
+        id: 'ungrouped',
+        label: '未分组设备',
         type: 'group',
-        children: [
-          ungroupedNodes[0] || {
-            id: 'ungrouped',
-            label: '未分组设备',
-            type: 'group',
-            children: [],
-            isVirtual: true
-          },
-          ...groupNodes
-        ],
+        children: [],
         isVirtual: true
-      }]
+      }
+      const totalNode = groupNodes.length === 1 && isTotal(groupNodes[0])
+        ? groupNodes[0]
+        : {
+            id: 'all',
+            label: '总分组',
+            type: 'group',
+            children: groupNodes,
+            isVirtual: true
+          }
+
+      return [
+        ungroupedNode,
+        {
+          ...totalNode,
+          label: '总分组',
+          type: 'group'
+        }
+      ]
     },
     resolveNodeKey(value) {
       if (!value) return ''
@@ -216,6 +225,16 @@ export default {
     getNodeIcon(data) {
       if (data.type === 'device') return 'el-icon-monitor'
       return data.children && data.children.length ? 'el-icon-folder-opened' : 'el-icon-folder'
+    },
+    isUngroupedNode(data) {
+      const label = String(data?.label || data?.name || '')
+      const id = String(data?.id || '')
+      return label.includes('未分组') || id === 'ungrouped'
+    },
+    isTotalGroupNode(data) {
+      const label = String(data?.label || data?.name || '').trim()
+      const id = String(data?.id || '')
+      return label === '总分组' || label === '全部设备' || id === 'all'
     },
     collectDeviceIds(node) {
       if (!node) return []
@@ -239,7 +258,7 @@ export default {
       const payload = {
         label: data.label,
         nodeType: data.type === 'device' ? 'device' : 'group',
-        groupId: data.type === 'group' ? String(data.id) : '',
+        groupId: data.type === 'group' && !this.isTotalGroupNode(data) && !this.isUngroupedNode(data) ? String(data.id) : '',
         deviceId: data.type === 'device' ? String(data.id) : '',
         deviceIds: this.collectDeviceIds(data)
       }

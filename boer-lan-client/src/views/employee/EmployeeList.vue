@@ -155,7 +155,7 @@
           <el-input v-model="editForm.code" placeholder="请输入11位以内员工工号" :disabled="!!editForm.id" />
         </el-form-item>
         <el-form-item :label="$t('employee.employeeName')" prop="name">
-          <el-input v-model="editForm.name" />
+          <el-input v-model.trim="editForm.name" maxlength="8" show-word-limit />
         </el-form-item>
         <el-form-item :label="$t('employee.phone')" prop="phone">
           <el-input v-model="editForm.phone" />
@@ -306,7 +306,10 @@ export default {
           { required: true, message: '请输入员工工号', trigger: 'blur' },
           { max: 11, message: '员工工号不能超过11位', trigger: 'blur' }
         ],
-        name: [{ required: true, message: '请输入员工姓名', trigger: 'blur' }],
+        name: [
+          { required: true, message: '请输入员工姓名', trigger: 'blur' },
+          { max: 8, message: '员工姓名不能超过8个字符', trigger: 'blur' }
+        ],
         phone: [
           { required: true, message: '请输入联系电话', trigger: 'blur' },
           { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号', trigger: 'blur' }
