@@ -2,11 +2,7 @@ name: Build Client Windows Installer
 
 on:
   push:
-    branches: [ main, master ]
     tags: [ 'v*' ]
-    paths:
-      - 'boer-lan-client/**'
-      - '.github/workflows/build-client-windows-portable.yml'
   workflow_dispatch:
 
 jobs:

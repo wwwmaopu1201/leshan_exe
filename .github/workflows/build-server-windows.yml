@@ -3,11 +3,7 @@ name: Build Server Windows Installer
 on:
   workflow_dispatch:
   push:
-    branches: [ main, master ]
     tags: [ 'v*' ]
-    paths:
-      - 'boer-lan-server/**'
-      - '.github/workflows/build-server-windows.yml'
 
 jobs:
   build:
