@@ -63,7 +63,7 @@
         <div class="queue-note">
           <div class="queue-note-main">
             <i class="el-icon-info"></i>
-            <span>同一设备按队列顺序下发；设备缝纫中或关机时会等待，队首任务等待超过10分钟才判定失败。</span>
+            <span>同一设备按队列顺序下发；设备缝纫中或关机时会等待，失败任务会在设备在线且空闲后自动重试。</span>
           </div>
           <span class="queue-note-time">最后刷新 {{ lastUpdatedAt || '-' }}</span>
         </div>
@@ -143,8 +143,14 @@
                 </el-button>
               </template>
               <template v-else-if="scope.row.status === 'failed'">
-                <el-button type="text" size="small" @click="handleRetry(scope.row)">
-                  重试提示
+                <span class="text-muted">自动重试中</span>
+                <el-button
+                  type="text"
+                  size="small"
+                  class="danger-text"
+                  @click="handleCancel(scope.row)"
+                >
+                  取消
                 </el-button>
               </template>
               <span v-else class="text-muted">-</span>
@@ -346,9 +352,6 @@ export default {
       } catch (error) {
         console.error('Clear completed downloads failed:', error)
       }
-    },
-    handleRetry(row) {
-      this.$message.info(`任务「${row.patternName}」已失败，请在花型列表重新下发`)
     }
   }
 }

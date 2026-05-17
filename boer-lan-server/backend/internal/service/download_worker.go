@@ -14,7 +14,9 @@ import (
 
 const DownloadTaskQueueTimeout = 10 * time.Minute
 
-// DownloadTaskWorker 驱动下发任务状态推进（waiting -> downloading -> completed）
+var runnableDownloadTaskStatuses = []string{"waiting", "failed"}
+
+// DownloadTaskWorker 驱动下发任务状态推进（waiting/failed -> downloading -> completed）
 type DownloadTaskWorker struct {
 	db       *gorm.DB
 	transfer *PatternTransferService
@@ -73,25 +75,25 @@ func (w *DownloadTaskWorker) processOnce() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	return w.startWaitingTasks()
+	return w.startRunnableTasks()
 }
 
-func (w *DownloadTaskWorker) startWaitingTasks() error {
+func (w *DownloadTaskWorker) startRunnableTasks() error {
 	if w.transfer == nil {
 		return nil
 	}
 
-	var waitingTasks []model.DownloadTask
+	var tasks []model.DownloadTask
 	if err := w.db.
-		Where("status = ?", "waiting").
+		Where("status IN ?", runnableDownloadTaskStatuses).
 		Order("device_id ASC, created_at ASC").
-		Find(&waitingTasks).Error; err != nil {
+		Find(&tasks).Error; err != nil {
 		return err
 	}
 
 	now := time.Now()
 	seenDevices := make(map[uint]struct{})
-	for _, task := range waitingTasks {
+	for _, task := range tasks {
 		if _, seen := seenDevices[task.DeviceID]; seen {
 			continue
 		}
@@ -106,32 +108,44 @@ func (w *DownloadTaskWorker) startWaitingTasks() error {
 			continue
 		}
 		if !w.transfer.IsDeviceConnected(device) {
-			if w.hasQueueSlotExpired(task, now) {
+			if task.Status == "waiting" && w.hasQueueSlotExpired(task, now) {
 				if err := w.failWaitingTask(task, "设备未连接，等待超过10分钟，任务失败"); err != nil {
 					return err
 				}
 				continue
 			}
-			_ = w.updateWaitingTaskMessage(task.ID, "设备未连接，等待开机")
+			message := "设备未连接，等待开机"
+			if task.Status == "failed" {
+				message = "设备未连接，恢复后自动重试"
+			}
+			_ = w.updateTaskMessage(task.ID, task.Status, message)
 			continue
 		}
 		if device.Status == "working" {
-			if w.hasQueueSlotExpired(task, now) {
+			if task.Status == "waiting" && w.hasQueueSlotExpired(task, now) {
 				if err := w.failWaitingTask(task, "设备缝纫中，等待超过10分钟，任务失败"); err != nil {
 					return err
 				}
 				continue
 			}
-			_ = w.updateWaitingTaskMessage(task.ID, "设备缝纫中，等待空闲")
+			message := "设备缝纫中，等待空闲"
+			if task.Status == "failed" {
+				message = "设备缝纫中，空闲后自动重试"
+			}
+			_ = w.updateTaskMessage(task.ID, task.Status, message)
 			continue
 		}
 
+		message := "准备下发"
+		if task.Status == "failed" {
+			message = "准备重新下发"
+		}
 		if err := w.db.Model(&model.DownloadTask{}).
-			Where("id = ? AND status = ?", task.ID, "waiting").
+			Where("id = ? AND status IN ?", task.ID, runnableDownloadTaskStatuses).
 			Updates(map[string]interface{}{
 				"status":   "downloading",
 				"progress": 0,
-				"message":  "准备下发",
+				"message":  message,
 			}).Error; err != nil {
 			return err
 		}
@@ -193,9 +207,9 @@ func (w *DownloadTaskWorker) hasQueueSlotExpired(task model.DownloadTask, now ti
 	return now.Sub(slotStartedAt) > DownloadTaskQueueTimeout
 }
 
-func (w *DownloadTaskWorker) updateWaitingTaskMessage(taskID uint, message string) error {
+func (w *DownloadTaskWorker) updateTaskMessage(taskID uint, status, message string) error {
 	return w.db.Model(&model.DownloadTask{}).
-		Where("id = ? AND status = ?", taskID, "waiting").
+		Where("id = ? AND status = ?", taskID, status).
 		UpdateColumn("message", message).Error
 }
 

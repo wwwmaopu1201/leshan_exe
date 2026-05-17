@@ -2190,7 +2190,7 @@ func (h *PatternHandler) ResumeAllDownloads(c *gin.Context) {
 
 func (h *PatternHandler) ClearCompletedDownloads(c *gin.Context) {
 	scope := h.getCurrentUserScope(c)
-	query := h.db.Model(&model.DownloadTask{}).Where("status IN ?", []string{"completed", "failed"})
+	query := h.db.Model(&model.DownloadTask{}).Where("status = ?", "completed")
 	if !scope.All {
 		allowedDeviceIDs, err := h.queryScopedDeviceIDs(scope)
 		if err != nil {
