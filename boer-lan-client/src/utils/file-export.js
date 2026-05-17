@@ -70,12 +70,19 @@ async function saveWithTauri(blob, filename) {
 
 export function parseContentDispositionFilename(contentDisposition, fallbackName) {
   if (!contentDisposition) return fallbackName
+  const safeDecode = value => {
+    try {
+      return decodeURIComponent(value)
+    } catch (error) {
+      return value
+    }
+  }
   const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i)
   if (utf8Match && utf8Match[1]) {
-    return decodeURIComponent(utf8Match[1])
+    return safeDecode(utf8Match[1])
   }
   const normalMatch = contentDisposition.match(/filename="?([^";]+)"?/i)
-  return normalMatch?.[1] || fallbackName
+  return normalMatch?.[1] ? safeDecode(normalMatch[1]) : fallbackName
 }
 
 export async function saveBlobWithDialog(blob, filename, options = {}) {

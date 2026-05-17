@@ -9,12 +9,17 @@ import './assets/styles/global.scss'
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { installPermissionDirective, installPermissionDisableDirective } from './utils/permission'
+import { installI18nNormalizer, translateApiMessage } from './utils/i18n-normalizer'
 
 Vue.use(ElementUI, {
   size: 'medium',
   i18n: (key, value) => i18n.t(key, value)
 })
 
+installI18nNormalizer(Vue, {
+  languageKey: 'language',
+  localeGetter: () => i18n.locale || localStorage.getItem('language') || 'zh-CN'
+})
 installPermissionDirective(Vue)
 installPermissionDisableDirective(Vue)
 
@@ -68,8 +73,9 @@ async function ensureTrialAvailable() {
     return true
   }
 
-  renderTrialMessage(status.message || '试用已过期，请联系供应商')
-  alert(status.message || '试用已过期，请联系供应商')
+  const message = translateApiMessage(status.message || '试用已过期，请联系供应商')
+  renderTrialMessage(message)
+  alert(message)
   return false
 }
 
@@ -87,8 +93,9 @@ function startTrialMonitor() {
       const status = await invoke('get_trial_status')
       if (!status.valid) {
         trialExpiredHandled = true
-        renderTrialMessage(status.message || '试用已过期，请联系供应商')
-        alert(status.message || '试用已过期，请联系供应商')
+        const message = translateApiMessage(status.message || '试用已过期，请联系供应商')
+        renderTrialMessage(message)
+        alert(message)
         clearInterval(trialMonitorTimer)
         await getCurrentWindow().close()
       }
@@ -102,7 +109,7 @@ async function initApp() {
   installInteractionGuards()
 
   if (!isDevMode) {
-    renderTrialMessage('正在检查试用状态...')
+    renderTrialMessage(translateApiMessage('正在检查试用状态...'))
     const trialOk = await ensureTrialAvailable()
     if (!trialOk) {
       return

@@ -2,11 +2,11 @@
   <div class="page-container">
     <div class="search-bar">
       <el-form :inline="true" :model="searchForm">
-        <el-form-item :label="currentCatalog.label">
+        <el-form-item :label="catalogLabel">
           <el-input
             v-model.trim="searchForm.keyword"
             clearable
-            :placeholder="`输入${currentCatalog.label}关键字`"
+            :placeholder="catalogKeywordPlaceholder"
             @keyup.enter.native="fetchData"
           />
         </el-form-item>
@@ -24,8 +24,8 @@
     <el-card shadow="never" class="card page-table-card">
       <div class="section-title">
         <div>
-          <h3>{{ currentCatalog.label }}</h3>
-          <p>用于统一维护{{ currentCatalog.label }}。删除类型时，关联设备会清空对应字段。</p>
+          <h3>{{ catalogLabel }}</h3>
+          <p>{{ catalogDescription }}</p>
         </div>
       </div>
 
@@ -62,7 +62,7 @@
       >
         <el-table-column type="selection" width="48" align="center" />
         <el-table-column type="index" label="序号" width="60" align="center" />
-        <el-table-column prop="value" :label="currentCatalog.label" min-width="220" />
+        <el-table-column prop="value" :label="catalogLabel" min-width="220" />
         <el-table-column prop="deviceCount" label="关联设备数" width="120" align="center" />
         <el-table-column prop="updateTime" label="最近更新时间" width="180" align="center" />
         <el-table-column label="操作" width="180" align="center">
@@ -88,7 +88,7 @@
     </el-card>
 
     <el-dialog
-      :title="renameDialog.mode === 'create' ? `新增${currentCatalog.label}` : `修改${currentCatalog.label}`"
+      :title="renameDialogTitle"
       :visible.sync="renameDialog.visible"
       width="420px"
       @closed="resetRenameDialog"
@@ -100,7 +100,7 @@
         <el-form-item :label="renameDialog.mode === 'create' ? '类型名称' : '新类型'">
           <el-input
             v-model.trim="renameDialog.newValue"
-            :placeholder="`请输入${currentCatalog.label}`"
+            :placeholder="catalogInputPlaceholder"
             @keyup.enter.native="submitRename"
           />
         </el-form-item>
@@ -151,6 +151,7 @@ export default {
       if (this.$route.meta?.catalog === 'electricControl') {
         return {
           label: '电控类型',
+          labelEn: 'Electric Control Type',
           fetchSummary: getElectricControlTypeSummary,
           create: createElectricControlType,
           rename: renameElectricControlType,
@@ -159,11 +160,42 @@ export default {
       }
       return {
         label: '设备类型',
+        labelEn: 'Device Type',
         fetchSummary: getDeviceTypeSummary,
         create: createDeviceType,
         rename: renameDeviceType,
         delete: deleteDeviceType
       }
+    },
+    isEnglish() {
+      return this.$i18n?.locale === 'en-US' || localStorage.getItem('language') === 'en-US'
+    },
+    catalogLabel() {
+      return this.isEnglish ? this.currentCatalog.labelEn : this.currentCatalog.label
+    },
+    catalogDescription() {
+      if (this.isEnglish) {
+        return `Manage ${this.catalogLabel}. Deleting a type clears the field on related devices.`
+      }
+      return `用于统一维护${this.currentCatalog.label}。删除类型时，关联设备会清空对应字段。`
+    },
+    catalogKeywordPlaceholder() {
+      return this.isEnglish
+        ? `Enter ${this.catalogLabel} keyword`
+        : `输入${this.currentCatalog.label}关键字`
+    },
+    catalogInputPlaceholder() {
+      return this.isEnglish
+        ? `Please enter ${this.catalogLabel}`
+        : `请输入${this.currentCatalog.label}`
+    },
+    renameDialogTitle() {
+      if (this.isEnglish) {
+        return `${this.renameDialog.mode === 'create' ? 'Add' : 'Edit'} ${this.catalogLabel}`
+      }
+      return this.renameDialog.mode === 'create'
+        ? `新增${this.currentCatalog.label}`
+        : `修改${this.currentCatalog.label}`
     }
   },
   mounted() {
@@ -188,7 +220,7 @@ export default {
         }
       } catch (error) {
         console.error('Failed to fetch type summary:', error)
-        this.$message.error(`获取${this.currentCatalog.label}失败`)
+        this.$message.error(this.isEnglish ? `Failed to get ${this.catalogLabel}` : `获取${this.currentCatalog.label}失败`)
       } finally {
         this.loading = false
       }
@@ -230,7 +262,7 @@ export default {
       const newValue = String(this.renameDialog.newValue || '').trim()
       const oldValue = String(this.renameDialog.oldValue || '').trim()
       if (!newValue) {
-        this.$message.warning(`${this.currentCatalog.label}不能为空`)
+        this.$message.warning(this.isEnglish ? `${this.catalogLabel} is required` : `${this.currentCatalog.label}不能为空`)
         return
       }
       this.submitting = true
@@ -239,32 +271,41 @@ export default {
           ? await this.currentCatalog.create({ value: newValue })
           : await this.currentCatalog.rename({ oldValue, newValue })
         if (res.code === 0) {
-          this.$message.success(this.renameDialog.mode === 'create' ? `${this.currentCatalog.label}已新增` : `${this.currentCatalog.label}已更新`)
+          this.$message.success(this.renameDialog.mode === 'create'
+            ? (this.isEnglish ? `${this.catalogLabel} added` : `${this.currentCatalog.label}已新增`)
+            : (this.isEnglish ? `${this.catalogLabel} updated` : `${this.currentCatalog.label}已更新`))
           this.renameDialog.visible = false
           this.fetchData()
         } else {
-          this.$message.error(res.message || (this.renameDialog.mode === 'create' ? `${this.currentCatalog.label}新增失败` : `${this.currentCatalog.label}更新失败`))
+          this.$message.error(res.message || (this.renameDialog.mode === 'create'
+            ? (this.isEnglish ? `Failed to add ${this.catalogLabel}` : `${this.currentCatalog.label}新增失败`)
+            : (this.isEnglish ? `Failed to update ${this.catalogLabel}` : `${this.currentCatalog.label}更新失败`)))
         }
       } catch (error) {
         console.error('Save type failed:', error)
-        this.$message.error(this.renameDialog.mode === 'create' ? `${this.currentCatalog.label}新增失败` : `${this.currentCatalog.label}更新失败`)
+        this.$message.error(this.renameDialog.mode === 'create'
+          ? (this.isEnglish ? `Failed to add ${this.catalogLabel}` : `${this.currentCatalog.label}新增失败`)
+          : (this.isEnglish ? `Failed to update ${this.catalogLabel}` : `${this.currentCatalog.label}更新失败`))
       } finally {
         this.submitting = false
       }
     },
     handleDelete(row) {
       if (!row?.value) return
-      this.$confirm(`确定删除${this.currentCatalog.label}“${row.value}”吗？关联设备会清空对应字段。`, this.$t('common.warning'), {
+      const confirmMessage = this.isEnglish
+        ? `Delete ${this.catalogLabel} "${row.value}"? Related devices will clear this field.`
+        : `确定删除${this.currentCatalog.label}“${row.value}”吗？关联设备会清空对应字段。`
+      this.$confirm(confirmMessage, this.$t('common.warning'), {
         confirmButtonText: this.$t('common.confirm'),
         cancelButtonText: this.$t('common.cancel'),
         type: 'warning'
       }).then(async () => {
         const res = await this.currentCatalog.delete({ value: row.value })
         if (res.code === 0) {
-          this.$message.success(`${this.currentCatalog.label}已删除`)
+          this.$message.success(this.isEnglish ? `${this.catalogLabel} deleted` : `${this.currentCatalog.label}已删除`)
           this.fetchData()
         } else {
-          this.$message.error(res.message || `删除${this.currentCatalog.label}失败`)
+          this.$message.error(res.message || (this.isEnglish ? `Failed to delete ${this.catalogLabel}` : `删除${this.currentCatalog.label}失败`))
         }
       }).catch(() => {})
     }

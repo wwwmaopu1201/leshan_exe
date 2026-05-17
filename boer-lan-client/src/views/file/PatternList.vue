@@ -11,8 +11,8 @@
         />
       </aside>
       <section class="pattern-main">
-        <div class="search-bar">
-          <el-form :inline="true" :model="searchForm">
+        <div class="search-bar pattern-search-bar">
+          <el-form :inline="true" :model="searchForm" class="pattern-search-form">
             <el-form-item :label="$t('file.fileName')">
               <el-input
                 v-model="searchForm.keyword"
@@ -21,7 +21,7 @@
                 @keyup.enter.native="handleSearch"
               />
             </el-form-item>
-            <el-form-item label="花型类型">
+            <!-- <el-form-item label="花型类型">
               <el-select
                 v-model="searchForm.patternType"
                 placeholder="全部类型"
@@ -35,7 +35,7 @@
                   :value="item"
                 />
               </el-select>
-            </el-form-item>
+            </el-form-item> -->
             <el-form-item label="订单编号">
               <el-input
                 v-model="searchForm.orderNo"
@@ -47,6 +47,7 @@
             <el-form-item label="上传时间">
               <el-date-picker
                 v-model="searchForm.dateRange"
+                class="pattern-date-range"
                 type="daterange"
                 range-separator="至"
                 start-placeholder="开始日期"
@@ -914,6 +915,8 @@ const defaultUploadConflictForm = () => ({
   renameNames: {}
 })
 
+const patternFileExtensions = ['.ntp', '.mtp', '.slw', '.sdg', '.sdt', '.nsp', '.vdt', '.dst']
+
 const connectedDeviceStatuses = ['idle', 'working']
 
 export default {
@@ -951,6 +954,7 @@ export default {
       uploadForm: defaultUploadForm(),
       activeUploadFileUid: '',
       applyingUploadForm: false,
+      uploadInitialPreferredForm: null,
       uploading: false,
       showEditDialog: false,
       editForm: defaultEditForm(),
@@ -1032,6 +1036,20 @@ export default {
   methods: {
     getRequestErrorMessage(error, fallback) {
       return error?.response?.data?.message || error?.message || fallback
+    },
+    isZeroSizePattern(row) {
+      return Number(row?.fileSize || 0) <= 0
+    },
+    getZeroSizePatterns(rows = []) {
+      return rows.filter(row => this.isZeroSizePattern(row))
+    },
+    showZeroSizeDownloadWarning(rows = []) {
+      const names = rows
+        .map(row => row.name || row.fileName || `ID ${row.id}`)
+        .filter(Boolean)
+      const previewNames = names.slice(0, 5).join('、')
+      const extraCount = names.length > 5 ? ` 等 ${names.length} 个` : ''
+      this.$message.warning(`文件大小为 0 的花型不能下发：${previewNames}${extraCount}`)
     },
     getPatternQueryParams() {
       return {
@@ -1253,6 +1271,7 @@ export default {
           this.deviceOptions = normalizedDevices.map(item => ({
             id: item.id,
             name: this.formatDeviceOptionLabel(item),
+            deviceName: item.name,
             status: item.status
           }))
 
@@ -1331,12 +1350,25 @@ export default {
       this.uploadForm = defaultUploadForm()
       this.activeUploadFileUid = ''
       this.applyingUploadForm = false
+      this.uploadInitialPreferredForm = null
       if (this.$refs.uploadRef) {
         this.$refs.uploadRef.clearFiles()
       }
     },
     getUploadFileName(file) {
       return String(file?.name || file?.raw?.name || '').trim()
+    },
+    getKnownPatternFileExtension(fileName) {
+      const normalized = String(fileName || '').trim().toLowerCase()
+      return patternFileExtensions.find(ext => normalized.endsWith(ext)) || ''
+    },
+    trimKnownPatternFileExtension(fileName) {
+      const value = String(fileName || '').trim()
+      const ext = this.getKnownPatternFileExtension(value)
+      return ext ? value.slice(0, -ext.length).trim() : value
+    },
+    getUploadPatternDefaultName(file) {
+      return this.trimKnownPatternFileExtension(this.getUploadFileName(file))
     },
     getUploadOptionalNumber(value) {
       if (value === null || value === undefined || value === '') {
@@ -1345,21 +1377,53 @@ export default {
       const num = Number(value)
       return Number.isFinite(num) ? num : null
     },
+    normalizeUploadFormInput(form = {}) {
+      return {
+        name: String(form.name || '').trim(),
+        patternType: String(form.patternType || '').trim(),
+        stitches: this.getUploadOptionalNumber(form.stitches),
+        unitPrice: this.getUploadOptionalNumber(form.unitPrice),
+        orderNo: String(form.orderNo || '').trim()
+      }
+    },
+    hasUploadFormInput(form = {}) {
+      const normalized = this.normalizeUploadFormInput(form)
+      return Boolean(
+        normalized.name ||
+        normalized.patternType ||
+        normalized.stitches !== null ||
+        normalized.unitPrice !== null ||
+        normalized.orderNo
+      )
+    },
     createUploadFileForm(file) {
       return {
-        name: this.getUploadFileName(file),
+        name: this.getUploadPatternDefaultName(file),
         patternType: '',
         stitches: null,
         unitPrice: null,
         orderNo: ''
       }
     },
-    ensureUploadFileForm(file) {
+    mergeUploadFileForm(file, preferredForm = null) {
+      const detectedForm = this.createUploadFileForm(file)
+      if (!preferredForm) {
+        return detectedForm
+      }
+      return {
+        name: preferredForm.name || detectedForm.name,
+        patternType: preferredForm.patternType || detectedForm.patternType,
+        stitches: preferredForm.stitches !== null ? preferredForm.stitches : detectedForm.stitches,
+        unitPrice: preferredForm.unitPrice !== null ? preferredForm.unitPrice : detectedForm.unitPrice,
+        orderNo: preferredForm.orderNo || detectedForm.orderNo
+      }
+    },
+    ensureUploadFileForm(file, preferredForm = null) {
       if (!file) {
         return defaultUploadForm()
       }
       if (!file._patternForm) {
-        this.$set(file, '_patternForm', this.createUploadFileForm(file))
+        this.$set(file, '_patternForm', this.mergeUploadFileForm(file, preferredForm))
       }
       return file._patternForm
     },
@@ -1370,7 +1434,7 @@ export default {
       const form = this.ensureUploadFileForm(file)
       this.applyingUploadForm = true
       this.uploadForm = {
-        name: form.name || this.getUploadFileName(file),
+        name: form.name || this.getUploadPatternDefaultName(file),
         patternType: form.patternType || '',
         stitches: this.getUploadOptionalNumber(form.stitches),
         unitPrice: this.getUploadOptionalNumber(form.unitPrice),
@@ -1388,13 +1452,7 @@ export default {
       if (!file) {
         return
       }
-      this.$set(file, '_patternForm', {
-        name: String(this.uploadForm.name || '').trim(),
-        patternType: String(this.uploadForm.patternType || '').trim(),
-        stitches: this.getUploadOptionalNumber(this.uploadForm.stitches),
-        unitPrice: this.getUploadOptionalNumber(this.uploadForm.unitPrice),
-        orderNo: String(this.uploadForm.orderNo || '').trim()
-      })
+      this.$set(file, '_patternForm', this.normalizeUploadFormInput(this.uploadForm))
     },
     selectUploadFile(file) {
       if (!file) {
@@ -1405,8 +1463,12 @@ export default {
       this.applyUploadFormFromFile(file)
     },
     handleFileChange(file, fileList) {
+      if (!this.activeUploadFileUid && !this.uploadFileList.length && this.hasUploadFormInput(this.uploadForm)) {
+        this.uploadInitialPreferredForm = this.normalizeUploadFormInput(this.uploadForm)
+      }
+      const preferredForm = this.uploadInitialPreferredForm
       this.uploadFileList = fileList
-      this.uploadFileList.forEach(item => this.ensureUploadFileForm(item))
+      this.uploadFileList.forEach(item => this.ensureUploadFileForm(item, preferredForm))
       const activeFile = this.findUploadFileByUid(this.activeUploadFileUid)
       if (!activeFile && this.uploadFileList.length) {
         this.selectUploadFile(this.uploadFileList[0])
@@ -1420,6 +1482,7 @@ export default {
           this.selectUploadFile(this.uploadFileList[0])
         } else {
           this.activeUploadFileUid = ''
+          this.uploadInitialPreferredForm = null
           this.uploadForm = defaultUploadForm()
         }
       }
@@ -1447,7 +1510,7 @@ export default {
     },
     buildUploadFormData(file) {
       const form = this.ensureUploadFileForm(file)
-      const uploadName = String(form.name || '').trim() || this.getUploadFileName(file)
+      const uploadName = String(form.name || '').trim() || this.getUploadPatternDefaultName(file)
       const formData = new FormData()
       formData.append('file', file.raw)
       if (uploadName) {
@@ -1587,7 +1650,7 @@ export default {
 
       this.deviceFileLoading = true
       try {
-        const deviceNameMap = new Map(this.deviceOptions.map(item => [Number(item.id), item.name]))
+        const deviceNameMap = new Map(this.deviceOptions.map(item => [Number(item.id), item.deviceName || item.name]))
         const res = await getDevicePatternFiles({
           deviceId: deviceIds[0],
           keyword: this.deviceFileQuery.keyword,
@@ -1922,6 +1985,20 @@ export default {
       this.previewPattern = { ...row }
       this.showPreviewDialog = true
     },
+    getPatternDownloadFileName(row) {
+      const downloadFileName = String(row?.downloadFileName || '').trim()
+      if (downloadFileName) {
+        return downloadFileName
+      }
+
+      const fileName = String(row?.fileName || '').trim()
+      const name = String(row?.name || '').trim()
+      const ext = this.getKnownPatternFileExtension(fileName)
+      if (name) {
+        return ext && !name.toLowerCase().endsWith(ext) ? `${name}${ext}` : name
+      }
+      return fileName || `pattern-${row?.id || Date.now()}`
+    },
     async handleLocalDownload(row) {
       if (!row?.id) return
       if (this.localDownloadingIds.includes(row.id)) return
@@ -1929,7 +2006,7 @@ export default {
       this.localDownloadingIds = [...this.localDownloadingIds, row.id]
       try {
         const response = await downloadPatternFile(row.id)
-        const fallbackName = row.fileName || row.name || `pattern-${row.id}`
+        const fallbackName = this.getPatternDownloadFileName(row)
         const { filename, saved } = await saveResponseWithDialog(response, fallbackName, {
           description: '花型文件',
           mimeType: 'application/octet-stream',
@@ -2049,6 +2126,10 @@ export default {
       }
     },
     handleDownload(row) {
+      if (this.isZeroSizePattern(row)) {
+        this.showZeroSizeDownloadWarning([row])
+        return
+      }
       this.downloadPatternIds = [row.id]
       this.showDeviceDialog = true
       this.$nextTick(() => {
@@ -2056,6 +2137,11 @@ export default {
       })
     },
     handleBatchDownload() {
+      const zeroSizeRows = this.getZeroSizePatterns(this.selectedRows)
+      if (zeroSizeRows.length) {
+        this.showZeroSizeDownloadWarning(zeroSizeRows)
+        return
+      }
       this.downloadPatternIds = this.selectedRows.map(r => r.id)
       this.showDeviceDialog = true
       this.$nextTick(() => {
@@ -2164,6 +2250,42 @@ export default {
 .pattern-main {
   flex: 1;
   min-width: 0;
+}
+
+.pattern-search-bar {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.pattern-search-form {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+  min-width: max-content;
+}
+
+.pattern-search-form ::v-deep .el-form-item {
+  flex: 0 0 auto;
+  margin-right: 0;
+  margin-bottom: 0;
+}
+
+.pattern-search-form ::v-deep .el-input {
+  width: 170px;
+}
+
+.pattern-search-form ::v-deep .pattern-date-range.el-date-editor {
+  width: 235px;
+}
+
+.pattern-search-form ::v-deep .pattern-date-range .el-range-input {
+  width: 82px;
+}
+
+.pattern-search-form ::v-deep .pattern-date-range .el-range-separator {
+  width: 20px;
+  padding: 0;
 }
 
 .action-group {

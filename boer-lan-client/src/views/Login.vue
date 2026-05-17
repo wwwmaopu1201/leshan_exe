@@ -297,7 +297,7 @@ export default {
         this.$message.success(this.$t('login.loginSuccess'))
         this.$router.push(getDefaultAccessiblePath())
       } catch (error) {
-        const message = error.userMessage || error.response?.data?.message || this.$t('login.loginFailed')
+        const message = this.$translateApiMessage(error.userMessage || error.response?.data?.message) || this.$t('login.loginFailed')
         this.$message.error(message)
       } finally {
         this.loading = false

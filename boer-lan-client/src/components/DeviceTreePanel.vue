@@ -49,10 +49,12 @@
         >
           <div class="tree-node-main" :class="{ ungrouped: isUngroupedNode(data) }">
             <el-checkbox
-              v-if="checkableDevices && data.type === 'device'"
+              v-if="checkableDevices && isCheckableNode(data)"
               class="tree-node-checkbox"
-              :value="isDeviceChecked(data)"
-              @input="checked => handleDeviceCheckboxChange(data, checked)"
+              :value="isTreeNodeChecked(data)"
+              :indeterminate="isTreeNodeIndeterminate(data)"
+              :disabled="isTreeNodeCheckboxDisabled(data)"
+              @input="checked => handleTreeNodeCheckboxChange(data, checked)"
               @click.native.stop
               @mousedown.native.stop
             />
@@ -461,6 +463,39 @@ export default {
       const deviceId = Number(data?.id || 0)
       return deviceId > 0 && this.localCheckedDeviceIds.includes(deviceId)
     },
+    isCheckableNode(data) {
+      if (!data) return false
+      if (data.type === 'device') return true
+      return data.type === 'group'
+    },
+    getNodeDeviceIds(data) {
+      return this.normalizeDeviceIds(this.collectDeviceIds(data))
+    },
+    isTreeNodeCheckboxDisabled(data) {
+      if (data?.type === 'device') return false
+      return this.getNodeDeviceIds(data).length === 0
+    },
+    isTreeNodeChecked(data) {
+      if (data?.type === 'device') {
+        return this.isDeviceChecked(data)
+      }
+      const ids = this.getNodeDeviceIds(data)
+      return ids.length > 0 && ids.every(id => this.localCheckedDeviceIds.includes(id))
+    },
+    isTreeNodeIndeterminate(data) {
+      if (!data || data.type === 'device') return false
+      const ids = this.getNodeDeviceIds(data)
+      if (!ids.length) return false
+      const checkedCount = ids.filter(id => this.localCheckedDeviceIds.includes(id)).length
+      return checkedCount > 0 && checkedCount < ids.length
+    },
+    handleTreeNodeCheckboxChange(data, checked) {
+      if (data?.type === 'device') {
+        this.handleDeviceCheckboxChange(data, checked)
+        return
+      }
+      this.handleGroupCheckboxChange(data, checked)
+    },
     handleDeviceCheckboxChange(data, checked) {
       const deviceId = Number(data?.id || 0)
       if (!deviceId) return
@@ -470,6 +505,20 @@ export default {
       } else {
         next.delete(deviceId)
       }
+      this.localCheckedDeviceIds = Array.from(next)
+      this.emitDeviceCheckChange()
+    },
+    handleGroupCheckboxChange(data, checked) {
+      const deviceIds = this.getNodeDeviceIds(data)
+      if (!deviceIds.length) return
+      const next = new Set(this.localCheckedDeviceIds)
+      deviceIds.forEach(id => {
+        if (checked) {
+          next.add(id)
+        } else {
+          next.delete(id)
+        }
+      })
       this.localCheckedDeviceIds = Array.from(next)
       this.emitDeviceCheckChange()
     },

@@ -6,6 +6,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -379,19 +380,20 @@ func (h *PatternHandler) GetPatternList(c *gin.Context) {
 	list := make([]gin.H, 0, len(patterns))
 	for _, p := range patterns {
 		list = append(list, gin.H{
-			"id":          p.ID,
-			"name":        p.Name,
-			"patternType": p.PatternType,
-			"fileName":    p.FileName,
-			"size":        formatFileSize(p.FileSize),
-			"fileSize":    p.FileSize,
-			"stitches":    p.Stitches,
-			"colors":      p.Colors,
-			"width":       p.Width,
-			"height":      p.Height,
-			"unitPrice":   roundTo3(p.UnitPrice),
-			"orderNo":     p.OrderNo,
-			"uploadTime":  p.CreatedAt.Format("2006-01-02 15:04:05"),
+			"id":               p.ID,
+			"name":             p.Name,
+			"patternType":      p.PatternType,
+			"fileName":         p.FileName,
+			"downloadFileName": patternDownloadFileName(p, p.FilePath),
+			"size":             formatFileSize(p.FileSize),
+			"fileSize":         p.FileSize,
+			"stitches":         p.Stitches,
+			"colors":           p.Colors,
+			"width":            p.Width,
+			"height":           p.Height,
+			"unitPrice":        roundTo3(p.UnitPrice),
+			"orderNo":          p.OrderNo,
+			"uploadTime":       p.CreatedAt.Format("2006-01-02 15:04:05"),
 		})
 	}
 
@@ -1095,13 +1097,14 @@ func (h *PatternHandler) DownloadPatternFile(c *gin.Context) {
 	}
 
 	c.Header("Access-Control-Expose-Headers", "Content-Disposition")
-	c.FileAttachment(filePath, patternDownloadFileName(pattern, filePath))
+	c.Header("Content-Disposition", patternContentDisposition(patternDownloadFileName(pattern, filePath)))
+	c.File(filePath)
 }
 
 func patternDownloadFileName(pattern model.Pattern, filePath string) string {
 	fileName := strings.TrimSpace(pattern.FileName)
 	if pattern.Name != "" {
-		fileExt := filepath.Ext(fileName)
+		fileExt := patternDownloadFileExtension(pattern, filePath)
 		fileName = strings.TrimSpace(pattern.Name)
 		if fileExt != "" && !strings.HasSuffix(strings.ToLower(fileName), strings.ToLower(fileExt)) {
 			fileName += fileExt
@@ -1111,6 +1114,28 @@ func patternDownloadFileName(pattern model.Pattern, filePath string) string {
 		fileName = filepath.Base(filePath)
 	}
 	return filepath.Base(strings.ReplaceAll(strings.ReplaceAll(fileName, "/", "_"), "\\", "_"))
+}
+
+func patternDownloadFileExtension(pattern model.Pattern, filePath string) string {
+	for _, candidate := range []string{
+		pattern.FileName,
+		filepath.Base(filePath),
+	} {
+		if ext := service.KnownPatternFileExtension(candidate); ext != "" {
+			return ext
+		}
+	}
+	return ""
+}
+
+func patternContentDisposition(fileName string) string {
+	fileName = filepath.Base(strings.ReplaceAll(strings.ReplaceAll(strings.TrimSpace(fileName), "/", "_"), "\\", "_"))
+	if fileName == "" || fileName == "." {
+		fileName = "pattern-file"
+	}
+	ext := filepath.Ext(fileName)
+	fallback := "pattern-file" + ext
+	return `attachment; filename="` + fallback + `"; filename*=UTF-8''` + url.PathEscape(fileName)
 }
 
 func uniqueArchiveFileName(fileName string, used map[string]int) string {
@@ -1421,18 +1446,18 @@ func (h *PatternHandler) DownloadToDevice(c *gin.Context) {
 
 	req.DeviceIDs = normalizeGroupIDs(req.DeviceIDs)
 
-	var patternCount int64
-	if err := h.db.Model(&model.Pattern{}).Where("id = ?", req.PatternID).Count(&patternCount).Error; err != nil {
+	var pattern model.Pattern
+	if err := h.db.Select("id", "name", "file_name", "file_size").First(&pattern, req.PatternID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    400,
+				"message": "花型不存在",
+			})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
 			"message": "花型校验失败",
-		})
-		return
-	}
-	if patternCount == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "花型不存在",
 		})
 		return
 	}
@@ -1450,6 +1475,13 @@ func (h *PatternHandler) DownloadToDevice(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{
 			"code":    403,
 			"message": "无权下发该花型",
+		})
+		return
+	}
+	if pattern.FileSize <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": zeroSizePatternDownloadMessage([]model.Pattern{pattern}),
 		})
 		return
 	}
@@ -1577,6 +1609,23 @@ func (h *PatternHandler) BatchDownload(c *gin.Context) {
 		})
 		return
 	}
+	var zeroSizePatterns []model.Pattern
+	if err := h.db.Select("id", "name", "file_name", "file_size").
+		Where("id IN ? AND file_size <= 0", req.PatternIDs).
+		Find(&zeroSizePatterns).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "花型校验失败",
+		})
+		return
+	}
+	if len(zeroSizePatterns) > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": zeroSizePatternDownloadMessage(zeroSizePatterns),
+		})
+		return
+	}
 
 	existingDeviceIDs := make([]uint, 0)
 	if err := h.db.Model(&model.Device{}).
@@ -1644,6 +1693,27 @@ func (h *PatternHandler) BatchDownload(c *gin.Context) {
 		"code":    0,
 		"message": "success",
 	})
+}
+
+func zeroSizePatternDownloadMessage(patterns []model.Pattern) string {
+	names := make([]string, 0, len(patterns))
+	for _, pattern := range patterns {
+		name := strings.TrimSpace(pattern.Name)
+		if name == "" {
+			name = strings.TrimSpace(pattern.FileName)
+		}
+		if name == "" {
+			name = strconv.FormatUint(uint64(pattern.ID), 10)
+		}
+		names = append(names, name)
+	}
+	if len(names) == 0 {
+		return "文件大小为0的花型不能下发"
+	}
+	if len(names) > 5 {
+		names = append(names[:5], "等"+strconv.Itoa(len(names))+"个")
+	}
+	return "文件大小为0的花型不能下发：" + strings.Join(names, "、")
 }
 
 func (h *PatternHandler) queryPatternIDs(patternName, patternType, orderNo string) ([]uint, error) {

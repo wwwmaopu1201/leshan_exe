@@ -8,14 +8,25 @@
 
       <div class="app-topbar__actions">
         <div class="server-chip">
-          <span class="server-chip__label">服务器 IP</span>
+          <span class="server-chip__label">{{ formatText('服务器 IP') }}</span>
           <strong>{{ serverIpText }}</strong>
         </div>
         <div class="server-chip">
-          <span class="server-chip__label">设备 TCP 端口</span>
+          <span class="server-chip__label">{{ formatText('设备 TCP 端口') }}</span>
           <strong>{{ serverInfo.tcpPort || '-' }}</strong>
         </div>
-        <el-button size="small" @click="logout">退出登录</el-button>
+        <div class="lang-switch" role="group" :aria-label="formatText('语言切换')">
+          <button
+            v-for="item in languageOptions"
+            :key="item.value"
+            type="button"
+            :class="{ active: currentLanguage === item.value }"
+            @click="changeLanguage(item.value)"
+          >
+            {{ item.label }}
+          </button>
+        </div>
+        <el-button size="small" @click="logout">{{ formatText('退出登录') }}</el-button>
       </div>
     </header>
 
@@ -31,7 +42,7 @@
         >
           <el-menu-item v-for="item in menuItems" :key="item.path" :index="item.path">
             <i :class="item.icon"></i>
-            <span>{{ item.label }}</span>
+            <span>{{ formatText(item.label) }}</span>
           </el-menu-item>
         </el-menu>
       </aside>
@@ -58,6 +69,11 @@ export default {
         { path: '/devices', label: '设备管理', icon: 'el-icon-monitor' },
         { path: '/login-logs', label: '登录日志', icon: 'el-icon-document' }
       ],
+      languageOptions: [
+        { label: '中', value: 'zh-CN' },
+        { label: 'EN', value: 'en-US' }
+      ],
+      currentLanguage: localStorage.getItem('server_login_language') || 'zh-CN',
       serverInfo: {
         ips: [],
         port: 8088,
@@ -88,9 +104,19 @@ export default {
         this.$router.push(path)
       }
     },
+    formatText(text) {
+      return this.$translateText(text)
+    },
+    changeLanguage(language) {
+      if (language === this.currentLanguage) {
+        return
+      }
+      this.currentLanguage = language
+      localStorage.setItem('server_login_language', language)
+    },
     logout() {
       localStorage.removeItem('token')
-      this.$message.success('已退出登录')
+      this.$message.success(this.formatText('已退出登录'))
       this.$router.push('/login')
     },
     async loadServerInfo() {
@@ -219,6 +245,33 @@ export default {
 .server-chip__label {
   color: rgba(255, 255, 255, 0.78);
   font-size: 11px;
+}
+
+.lang-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.16);
+
+  button {
+    width: 28px;
+    height: 22px;
+    border: none;
+    border-radius: 2px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 11px;
+    line-height: 22px;
+    cursor: pointer;
+
+    &.active {
+      background: #ffffff;
+      color: #287de8;
+      font-weight: 700;
+    }
+  }
 }
 
 .app-content {

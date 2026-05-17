@@ -397,7 +397,7 @@ func NormalizeUploadConflictMode(raw string) UploadConflictMode {
 }
 
 func ResolveUploadedPatternName(file model.DevicePatternFile, deviceID uint) string {
-	patternName := strings.TrimSpace(strings.TrimSuffix(file.FileName, filepath.Ext(file.FileName)))
+	patternName := TrimKnownPatternFileExtension(file.FileName)
 	if patternName == "" {
 		patternName = strings.TrimSpace(file.FileName)
 	}
@@ -638,7 +638,7 @@ func (s *PatternTransferService) ExecuteDownloadTask(taskID uint) error {
 
 	patternName := strings.TrimSpace(pattern.Name)
 	if patternName == "" {
-		patternName = strings.TrimSpace(strings.TrimSuffix(pattern.FileName, filepath.Ext(pattern.FileName)))
+		patternName = TrimKnownPatternFileExtension(pattern.FileName)
 	}
 	if patternName == "" {
 		patternName = fmt.Sprintf("pattern_%d", pattern.ID)

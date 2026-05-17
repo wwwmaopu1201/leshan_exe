@@ -5,6 +5,7 @@ import store from '@/store'
 import { checkRoutePermission, getDefaultAccessiblePath, PERMISSIONS } from '@/utils/permission'
 import { Message } from 'element-ui'
 import { getUserInfo } from '@/api/auth'
+import { translateApiMessage } from '@/utils/i18n-normalizer'
 
 Vue.use(VueRouter)
 
@@ -265,7 +266,7 @@ router.beforeEach((to, from, next) => {
           if (res.code === 0 && res.data) {
             store.commit('SET_USER', res.data)
           } else {
-            throw new Error('获取账号信息失败')
+            throw new Error(translateApiMessage('获取账号信息失败'))
           }
         } catch (error) {
           store.dispatch('logout')
@@ -276,7 +277,7 @@ router.beforeEach((to, from, next) => {
 
       // 检查用户是否被禁用
       if (store.getters.isUserDisabled) {
-        Message.error('您的账号已被禁用，请联系管理员')
+        Message.error(translateApiMessage('您的账号已被禁用，请联系管理员'))
         store.dispatch('logout')
         next({ name: 'Login' })
         return
@@ -286,7 +287,7 @@ router.beforeEach((to, from, next) => {
       if (!checkRoutePermission(to)) {
         const fallbackPath = getDefaultAccessiblePath()
         if (to.path !== '/home' && to.path !== '/' && !to.path.startsWith('/profile') && !to.path.startsWith('/support')) {
-          Message.error('您没有权限访问该页面')
+          Message.error(translateApiMessage('您没有权限访问该页面'))
         }
         if (to.path !== fallbackPath) {
           next({ path: fallbackPath })

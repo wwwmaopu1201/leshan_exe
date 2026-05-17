@@ -3,7 +3,6 @@ package api
 import (
 	"fmt"
 	"net/http"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -143,7 +142,7 @@ func (h *PatternHandler) GetDevicePatternFiles(c *gin.Context) {
 }
 
 func (h *PatternHandler) buildDevicePatternFileRow(deviceID uint, item model.DevicePatternFile, serverPatterns map[string]model.Pattern) gin.H {
-	patternName := strings.TrimSpace(strings.TrimSuffix(item.FileName, filepath.Ext(item.FileName)))
+	patternName := service.TrimKnownPatternFileExtension(item.FileName)
 	patternType := item.PatternType
 	stitches := item.Stitches
 	unitPrice := item.UnitPrice
@@ -210,7 +209,7 @@ func (h *PatternHandler) loadServerPatternMatches(deviceID uint, files []model.D
 
 	result := make(map[string]model.Pattern, len(patterns)*3)
 	for _, pattern := range patterns {
-		for _, candidate := range []string{pattern.Name, pattern.FileName, strings.TrimSuffix(pattern.FileName, filepath.Ext(pattern.FileName))} {
+		for _, candidate := range []string{pattern.Name, pattern.FileName, service.TrimKnownPatternFileExtension(pattern.FileName)} {
 			key := normalizePatternMatchKey(candidate)
 			if key == "" {
 				continue
@@ -234,7 +233,7 @@ func findMatchedServerPattern(deviceID uint, file model.DevicePatternFile, patte
 
 func buildDevicePatternMatchCandidates(deviceID uint, file model.DevicePatternFile) []string {
 	fileName := strings.TrimSpace(file.FileName)
-	baseName := strings.TrimSpace(strings.TrimSuffix(fileName, filepath.Ext(fileName)))
+	baseName := service.TrimKnownPatternFileExtension(fileName)
 	return []string{
 		service.ResolveUploadedPatternName(file, deviceID),
 		fileName,

@@ -317,7 +317,7 @@ export default {
         this.$router.push('/home')
       } catch (error) {
         localStorage.removeItem('token')
-        const message = error?.response?.data?.message || error?.message
+        const message = this.$translateApiMessage(error?.response?.data?.message || error?.message)
         if (message) {
           this.$message.error(message)
         }

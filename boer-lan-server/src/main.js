@@ -1,5 +1,8 @@
 import Vue from 'vue'
 import ElementUI from 'element-ui'
+import ElementLocale from 'element-ui/lib/locale'
+import zhLocale from 'element-ui/lib/locale/lang/zh-CN'
+import enLocale from 'element-ui/lib/locale/lang/en'
 import 'element-ui/lib/theme-chalk/index.css'
 import './assets/styles/global.scss'
 import App from './App.vue'
@@ -7,8 +10,22 @@ import router from './router'
 import request, { getRequestBaseURL, initRequestBaseURL } from './utils/request'
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { installI18nNormalizer, translateApiMessage } from './utils/i18n-normalizer'
 
+function getServerLanguage() {
+  return localStorage.getItem('server_login_language') || 'zh-CN'
+}
+
+function applyElementLanguage() {
+  ElementLocale.use(getServerLanguage() === 'en-US' ? enLocale : zhLocale)
+}
+
+applyElementLanguage()
 Vue.use(ElementUI)
+installI18nNormalizer(Vue, {
+  languageKey: 'server_login_language',
+  localeGetter: getServerLanguage
+})
 Vue.prototype.$axios = request
 
 Vue.config.productionTip = false
@@ -32,8 +49,9 @@ async function ensureTrialAvailable() {
     return true
   }
 
-  renderBootMessage(status.message || '试用已过期，请联系供应商')
-  alert(status.message || '试用已过期，请联系供应商')
+  const message = translateApiMessage(status.message || '试用已过期，请联系供应商')
+  renderBootMessage(message)
+  alert(message)
   return false
 }
 
@@ -51,8 +69,9 @@ function startTrialMonitor() {
       const status = await invoke('get_trial_status')
       if (!status.valid) {
         trialExpiredHandled = true
-        renderBootMessage(status.message || '试用已过期，请联系供应商')
-        alert(status.message || '试用已过期，请联系供应商')
+        const message = translateApiMessage(status.message || '试用已过期，请联系供应商')
+        renderBootMessage(message)
+        alert(message)
         clearInterval(trialMonitorTimer)
         await getCurrentWindow().close()
       }
@@ -85,14 +104,14 @@ async function waitForBackend(retries = 30, options = {}) {
       return true
     } catch (error) {
       console.log(`Waiting for backend... (${i + 1}/${retries})`, error)
-      renderBootMessage(`正在启动服务端... (${i + 1}/${retries})`)
+      renderBootMessage(translateApiMessage(`正在启动服务端... (${i + 1}/${retries})`))
       await new Promise(resolve => setTimeout(resolve, 1000))
     }
   }
 
-  renderBootMessage('服务端启动失败，请检查应用配置')
+  renderBootMessage(translateApiMessage('服务端启动失败，请检查应用配置'))
   if (showAlert) {
-    alert('后端服务启动失败，请检查应用配置')
+    alert(translateApiMessage('后端服务启动失败，请检查应用配置'))
   }
   return false
 }
@@ -100,13 +119,13 @@ async function waitForBackend(retries = 30, options = {}) {
 async function initApp() {
   installContextMenuGuard()
 
-  renderBootMessage('正在检查试用状态...')
+  renderBootMessage(translateApiMessage('正在检查试用状态...'))
   const trialOk = await ensureTrialAvailable()
   if (!trialOk) {
     return
   }
 
-  renderBootMessage('正在准备服务端...')
+  renderBootMessage(translateApiMessage('正在准备服务端...'))
   await initRequestBaseURL()
 
   const backendReady = await waitForBackend(import.meta.env.PROD ? 30 : 10, {
@@ -125,3 +144,5 @@ async function initApp() {
 }
 
 initApp()
+
+window.addEventListener('boer-language-change', applyElementLanguage)

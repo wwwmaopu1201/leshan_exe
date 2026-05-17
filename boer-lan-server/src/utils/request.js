@@ -2,6 +2,7 @@ import axios from 'axios'
 import { Message } from 'element-ui'
 import { invoke } from '@tauri-apps/api/core'
 import router from '@/router'
+import { translateApiMessage } from '@/utils/i18n-normalizer'
 
 let authRedirecting = false
 const defaultHost = '127.0.0.1'
@@ -74,13 +75,14 @@ request.interceptors.request.use(config => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
+  config.headers['Accept-Language'] = localStorage.getItem('server_login_language') || 'zh-CN'
   return config
 })
 
 request.interceptors.response.use(
   response => response.data,
   error => {
-    const message = error.response?.data?.message || error.response?.data?.error || '请求失败'
+    const message = translateApiMessage(error.response?.data?.message || error.response?.data?.error || '请求失败')
     if (error.response?.status === 401) {
       localStorage.removeItem('token')
       if (!error.config?.skipAuthRedirect) {
