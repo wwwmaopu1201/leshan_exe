@@ -26,12 +26,6 @@
   ${EndIf}
   RMDir /r "$INSTDIR"
 
-  DetailPrint "Clearing ${PRODUCTNAME} local data..."
-  SetShellVarContext current
-  RMDir /r "$APPDATA\${BUNDLEID}"
-  RMDir /r "$LOCALAPPDATA\${BUNDLEID}"
-  RMDir /r "$APPDATA\BoerLAN"
-  RMDir /r "$LOCALAPPDATA\BoerLAN"
   DeleteRegKey SHCTX "${MANUPRODUCTKEY}"
   DeleteRegKey SHCTX "${UNINSTKEY}"
   DeleteRegValue HKCU "${MANUPRODUCTKEY}" "Installer Language"
