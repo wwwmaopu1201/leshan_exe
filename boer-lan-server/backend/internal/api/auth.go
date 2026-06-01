@@ -11,6 +11,7 @@ import (
 
 	"boer-lan-server/internal/model"
 	"boer-lan-server/pkg/utils"
+	"boer-lan-server/pkg/version"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -31,8 +32,9 @@ func NewAuthHandler(db *gorm.DB, jwtSecret string, jwtExpire int) *AuthHandler {
 }
 
 type LoginRequest struct {
-	Username string `json:"username" binding:"required"`
-	Password string `json:"password" binding:"required"`
+	Username      string `json:"username" binding:"required"`
+	Password      string `json:"password" binding:"required"`
+	ClientVersion string `json:"clientVersion"`
 }
 
 func encodeEffectivePermissionsJSON(db *gorm.DB, user model.User) string {
@@ -49,22 +51,32 @@ func encodeEffectivePermissionsJSON(db *gorm.DB, user model.User) string {
 	return string(encoded)
 }
 
-func (h *AuthHandler) recordLoginLog(c *gin.Context, userID uint, username, status string) {
+func normalizeLoginClientVersion(raw string) string {
+	clientVersion := version.Normalize(raw)
+	if len([]rune(clientVersion)) > 50 {
+		clientVersion = string([]rune(clientVersion)[:50])
+	}
+	return clientVersion
+}
+
+func (h *AuthHandler) recordLoginLog(c *gin.Context, userID uint, username, clientVersion, status string) {
 	if h == nil || h.db == nil {
 		return
 	}
 	username = strings.TrimSpace(username)
+	clientVersion = normalizeLoginClientVersion(clientVersion)
 	status = strings.TrimSpace(status)
 	if status == "" {
 		status = "失败"
 	}
 	_ = h.db.Create(&model.LoginLog{
-		UserID:    userID,
-		Username:  username,
-		IP:        c.ClientIP(),
-		Device:    c.GetHeader("User-Agent"),
-		Status:    status,
-		LoginTime: time.Now(),
+		UserID:        userID,
+		Username:      username,
+		IP:            c.ClientIP(),
+		Device:        c.GetHeader("User-Agent"),
+		ClientVersion: clientVersion,
+		Status:        status,
+		LoginTime:     time.Now(),
 	}).Error
 }
 
@@ -77,10 +89,14 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		})
 		return
 	}
+	clientVersion := req.ClientVersion
+	if strings.TrimSpace(clientVersion) == "" {
+		clientVersion = c.GetHeader("X-Client-Version")
+	}
 
 	var user model.User
 	if err := h.db.Where("username = ?", req.Username).First(&user).Error; err != nil {
-		h.recordLoginLog(c, 0, req.Username, "失败")
+		h.recordLoginLog(c, 0, req.Username, clientVersion, "失败")
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"code":    401,
 			"message": "账号或密码错误",
@@ -89,7 +105,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	if !utils.CheckPassword(req.Password, user.Password) {
-		h.recordLoginLog(c, user.ID, user.Username, "失败")
+		h.recordLoginLog(c, user.ID, user.Username, clientVersion, "失败")
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"code":    401,
 			"message": "账号或密码错误",
@@ -97,7 +113,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 	if user.Disabled {
-		h.recordLoginLog(c, user.ID, user.Username, "失败")
+		h.recordLoginLog(c, user.ID, user.Username, clientVersion, "失败")
 		c.JSON(http.StatusForbidden, gin.H{
 			"code":    403,
 			"message": "账号已被禁用",
@@ -119,12 +135,15 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	// 记录登录日志
-	h.recordLoginLog(c, user.ID, user.Username, "成功")
+	h.recordLoginLog(c, user.ID, user.Username, clientVersion, "成功")
+
+	serverVersion := version.Resolve()
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
-			"token": token,
+			"token":         token,
+			"serverVersion": serverVersion,
 			"user": gin.H{
 				"id":          user.ID,
 				"username":    user.Username,
@@ -169,18 +188,19 @@ func (h *AuthHandler) GetUserInfo(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
-			"id":          user.ID,
-			"username":    user.Username,
-			"nickname":    user.Nickname,
-			"avatar":      user.Avatar,
-			"role":        user.Role,
-			"email":       user.Email,
-			"phone":       user.Phone,
-			"groupId":     user.GroupID,
-			"groupIds":    groupIDs,
-			"disabled":    user.Disabled,
-			"permissions": effectivePermissions,
-			"createTime":  user.CreatedAt.Format("2006-01-02 15:04:05"),
+			"id":            user.ID,
+			"username":      user.Username,
+			"nickname":      user.Nickname,
+			"avatar":        user.Avatar,
+			"role":          user.Role,
+			"email":         user.Email,
+			"phone":         user.Phone,
+			"groupId":       user.GroupID,
+			"groupIds":      groupIDs,
+			"disabled":      user.Disabled,
+			"permissions":   effectivePermissions,
+			"serverVersion": version.Resolve(),
+			"createTime":    user.CreatedAt.Format("2006-01-02 15:04:05"),
 		},
 		"message": "success",
 	})
@@ -291,16 +311,17 @@ func (h *AuthHandler) GetLoginLogs(c *gin.Context) {
 	query.Session(&gorm.Session{}).Count(&total)
 
 	var logs []struct {
-		ID        uint
-		UserID    uint
-		Username  string
-		IP        string
-		Device    string
-		Status    string
-		LoginTime time.Time
+		ID            uint
+		UserID        uint
+		Username      string
+		IP            string
+		Device        string
+		ClientVersion string
+		Status        string
+		LoginTime     time.Time
 	}
 	query.Session(&gorm.Session{}).
-		Select("login_logs.id, login_logs.user_id, COALESCE(NULLIF(login_logs.username, ''), users.username, '-') as username, login_logs.ip, login_logs.device, login_logs.status, login_logs.login_time").
+		Select("login_logs.id, login_logs.user_id, COALESCE(NULLIF(login_logs.username, ''), users.username, '-') as username, login_logs.ip, login_logs.device, COALESCE(login_logs.client_version, '') as client_version, login_logs.status, login_logs.login_time").
 		Order("login_logs.login_time DESC, login_logs.id DESC").
 		Offset((page - 1) * pageSize).
 		Limit(pageSize).
@@ -309,13 +330,14 @@ func (h *AuthHandler) GetLoginLogs(c *gin.Context) {
 	list := make([]gin.H, 0)
 	for _, log := range logs {
 		list = append(list, gin.H{
-			"id":        log.ID,
-			"userId":    log.UserID,
-			"username":  log.Username,
-			"ip":        log.IP,
-			"device":    log.Device,
-			"status":    log.Status,
-			"loginTime": log.LoginTime.Format("2006-01-02 15:04:05"),
+			"id":            log.ID,
+			"userId":        log.UserID,
+			"username":      log.Username,
+			"ip":            log.IP,
+			"device":        log.Device,
+			"clientVersion": log.ClientVersion,
+			"status":        log.Status,
+			"loginTime":     log.LoginTime.Format("2006-01-02 15:04:05"),
 		})
 	}
 

@@ -409,11 +409,11 @@
         :show-file-list="false"
         :on-change="handleFileChange"
         :on-remove="handleFileRemove"
-        accept=".ntp,.mtp,.slw,.sdg,.sdt,.nsp,.vdt"
+        :accept="supportedPatternFileExtensions.join(',')"
       >
         <i class="el-icon-upload"></i>
         <div class="el-upload__text">将花型文件拖到此处，或<em>点击上传</em></div>
-        <div class="el-upload__tip" slot="tip">支持 .ntp, .mtp, .slw, .sdg, .sdt, .nsp, .vdt 格式</div>
+        <div class="el-upload__tip" slot="tip">支持 .SLW, .XDG, .NSP, .NTP, .MTP, .SDT, .VDT 格式</div>
       </el-upload>
 
       <div v-if="uploadFileList.length" class="upload-file-list">
@@ -915,7 +915,9 @@ const defaultUploadConflictForm = () => ({
   renameNames: {}
 })
 
-const patternFileExtensions = ['.ntp', '.mtp', '.slw', '.sdg', '.sdt', '.nsp', '.vdt', '.dst']
+const supportedPatternFileExtensions = ['.slw', '.xdg', '.nsp', '.ntp', '.mtp', '.sdt', '.vdt']
+const legacyPatternFileExtensions = ['.sdg', '.dst']
+const patternFileExtensions = [...supportedPatternFileExtensions, ...legacyPatternFileExtensions]
 
 const connectedDeviceStatuses = ['idle', 'working']
 
@@ -1005,7 +1007,8 @@ export default {
       },
       serverTableHeight: 320,
       deviceFileTableHeight: 320,
-      uploadQueueTableMaxHeight: 460
+      uploadQueueTableMaxHeight: 460,
+      supportedPatternFileExtensions
     }
   },
   computed: {
@@ -2010,7 +2013,7 @@ export default {
         const { filename, saved } = await saveResponseWithDialog(response, fallbackName, {
           description: '花型文件',
           mimeType: 'application/octet-stream',
-          extensions: ['ntp', 'mtp', 'slw', 'sdg', 'sdt', 'nsp', 'vdt']
+          extensions: supportedPatternFileExtensions.map(ext => ext.slice(1))
         })
         if (saved === null) {
           return

@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Boer-LAN-Server",
+  "productName": "博尔物联网管理软件服务端",
   "version": "1.0.25",
   "identifier": "com.boer.lan-server",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "博尔局域网服务器管理 V1.0.25",
+        "title": "博尔物联网管理软件服务端 V1.0.25",
         "width": 1600,
         "height": 1000,
         "minWidth": 1280,

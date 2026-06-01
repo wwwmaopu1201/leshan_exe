@@ -54,7 +54,7 @@ export default {
     manual: 'Operation Guide'
   },
   login: {
-    title: 'Boer LAN Management',
+    title: 'Bohr IoT Management Client',
     subtitle: 'Industrial Device Management Platform',
     serverIp: 'Server IP Address',
     serverIpPlaceholder: 'Please enter IP address',
@@ -71,16 +71,18 @@ export default {
     usernameRequired: 'Please enter account',
     passwordRequired: 'Please enter password',
     accountDisabled: 'Your account has been disabled. Please contact the administrator.',
-    companyName: 'Suzhou Boer Technology Co., Ltd.',
-    companyNameEn: 'Research Suzhou Boer Technology Co., Ltd.',
+    companyName: 'Bohr IoT Management Client',
+    companyNameEn: 'Research Suzhou Bohr Technology Co., Ltd.',
     loginSuccess: 'Login successful',
     loginFailed: 'Login failed'
   },
   layout: {
-    appTitle: 'LAN Management Client',
+    appTitle: 'Bohr IoT Management Client',
     logout: 'Logout',
     logoutConfirm: 'Are you sure you want to log out?',
-    languageSwitch: 'Language Switch'
+    languageSwitch: 'Language Switch',
+    serverVersion: 'Server Version',
+    serverVersionUnknown: 'Unknown'
   },
   home: {
     deviceStatus: 'Device Status',

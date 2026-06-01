@@ -262,13 +262,14 @@ type SalaryRecord struct {
 
 // LoginLog 登录记录
 type LoginLog struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	UserID    uint      `gorm:"index;default:0" json:"userId"`
-	Username  string    `gorm:"size:50;index" json:"username"`
-	IP        string    `gorm:"size:50" json:"ip"`
-	Device    string    `gorm:"size:200" json:"device"`
-	Status    string    `gorm:"size:20" json:"status"`
-	LoginTime time.Time `gorm:"type:timestamp;not null;default:CURRENT_TIMESTAMP" json:"loginTime"`
+	ID            uint      `gorm:"primaryKey" json:"id"`
+	UserID        uint      `gorm:"index;default:0" json:"userId"`
+	Username      string    `gorm:"size:50;index" json:"username"`
+	IP            string    `gorm:"size:50" json:"ip"`
+	Device        string    `gorm:"size:200" json:"device"`
+	ClientVersion string    `gorm:"size:50;default:''" json:"clientVersion"`
+	Status        string    `gorm:"size:20" json:"status"`
+	LoginTime     time.Time `gorm:"type:timestamp;not null;default:CURRENT_TIMESTAMP" json:"loginTime"`
 }
 
 // ServerConfig 服务器配置

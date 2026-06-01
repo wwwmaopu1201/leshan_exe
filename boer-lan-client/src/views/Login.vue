@@ -100,6 +100,7 @@
             />
           </el-form-item>
 
+          <!-- 端口固定使用默认 8088，不在登录页展示输入框。
           <el-form-item prop="serverPort">
             <el-input
               v-model="loginForm.serverPort"
@@ -108,6 +109,7 @@
               maxlength="5"
             />
           </el-form-item>
+          -->
 
           <el-form-item prop="username">
             <el-input
@@ -157,6 +159,7 @@
 import { mapActions } from 'vuex'
 import { login } from '@/api/auth'
 import { getDefaultAccessiblePath } from '@/utils/permission'
+import { extractServerVersion } from '@/utils/server-version'
 import loginBackground from '@/assets/images/login-background-client.png'
 
 const DEFAULT_SERVER_PORT = '8088'
@@ -168,24 +171,6 @@ export default {
       const ip = String(value || '').trim()
       if (!ip) {
         callback(new Error(this.$t('login.serverIpRequired')))
-        return
-      }
-      callback()
-    }
-
-    const validateServerPort = (rule, value, callback) => {
-      const port = String(value || '').trim()
-      if (!port) {
-        callback(new Error(this.$t('login.portRequired')))
-        return
-      }
-      if (!/^\d+$/.test(port)) {
-        callback(new Error(this.$t('login.portInvalid')))
-        return
-      }
-      const portNumber = Number(port)
-      if (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535) {
-        callback(new Error(this.$t('login.portInvalid')))
         return
       }
       callback()
@@ -210,14 +195,13 @@ export default {
     return {
       loginForm: {
         serverIp: localStorage.getItem('serverIp') || '',
-        serverPort: localStorage.getItem('serverPort') || DEFAULT_SERVER_PORT,
+        serverPort: DEFAULT_SERVER_PORT,
         username: localStorage.getItem('rememberedUsername') || '',
         password: localStorage.getItem('rememberedPassword') || '',
         remember: !!localStorage.getItem('rememberedUsername') && !!localStorage.getItem('rememberedPassword')
       },
       loginRules: {
         serverIp: [{ validator: validateServerIp, trigger: 'blur' }],
-        serverPort: [{ validator: validateServerPort, trigger: 'blur' }],
         username: [{ validator: validateUsername, trigger: 'blur' }],
         password: [{ validator: validatePassword, trigger: 'blur' }]
       },
@@ -261,7 +245,7 @@ export default {
 
       this.loading = true
       this.loginForm.serverIp = String(this.loginForm.serverIp || '').trim()
-      this.loginForm.serverPort = String(this.loginForm.serverPort || '').trim()
+      this.loginForm.serverPort = DEFAULT_SERVER_PORT
       this.loginForm.username = String(this.loginForm.username || '').trim()
 
       this.updateServerConfig({
@@ -291,7 +275,8 @@ export default {
 
         this.login({
           token: res.data.token,
-          user: res.data.user
+          user: res.data.user,
+          serverVersion: extractServerVersion(res.data)
         })
 
         this.$message.success(this.$t('login.loginSuccess'))

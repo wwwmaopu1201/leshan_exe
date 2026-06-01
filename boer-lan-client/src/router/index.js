@@ -6,6 +6,7 @@ import { checkRoutePermission, getDefaultAccessiblePath, PERMISSIONS } from '@/u
 import { Message } from 'element-ui'
 import { getUserInfo } from '@/api/auth'
 import { translateApiMessage } from '@/utils/i18n-normalizer'
+import { extractServerVersion } from '@/utils/server-version'
 
 Vue.use(VueRouter)
 
@@ -264,7 +265,12 @@ router.beforeEach((to, from, next) => {
         try {
           const res = await getUserInfo()
           if (res.code === 0 && res.data) {
-            store.commit('SET_USER', res.data)
+            const user = { ...res.data }
+            store.commit('SET_SERVER_VERSION', extractServerVersion(user))
+            delete user.serverVersion
+            delete user.server_version
+            delete user.version
+            store.commit('SET_USER', user)
           } else {
             throw new Error(translateApiMessage('获取账号信息失败'))
           }

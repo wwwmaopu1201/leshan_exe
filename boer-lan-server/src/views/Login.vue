@@ -130,7 +130,7 @@
 
     <div class="login-footer">
       <div>{{ texts.company }}</div>
-      <div>Research Suzhou Boer Technology Co., Ltd.</div>
+      <div>Research Suzhou Bohr Technology Co., Ltd.</div>
     </div>
   </div>
 </template>
@@ -147,13 +147,13 @@ const SERVER_PORT_KEY = 'server_login_server_port'
 
 const LOCALES = {
   'zh-CN': {
-    brand: '博尔局域网管理软件',
-    title: '博尔局域网管理软件',
+    brand: '博尔物联网管理软件服务端',
+    title: '博尔物联网管理软件服务端',
     usernamePlaceholder: '请输入账号',
     passwordPlaceholder: '请输入密码',
     remember: '记住密码',
     login: '登录',
-    company: '苏州博尔科技有限公司',
+    company: '博尔物联网管理软件服务端',
     usernameRequired: '请输入账号',
     passwordRequired: '请输入密码',
     loginSuccess: '登录成功',
@@ -161,13 +161,13 @@ const LOCALES = {
     loginFailed: '登录失败，请检查账号密码'
   },
   'en-US': {
-    brand: 'Boer LAN Management System',
-    title: 'Boer LAN Management System',
+    brand: 'Bohr IoT Management Server',
+    title: 'Bohr IoT Management Server',
     usernamePlaceholder: 'Enter Username',
     passwordPlaceholder: 'Enter Password',
     remember: 'Remember Password',
     login: 'Login',
-    company: 'Suzhou Boer Technology Co., Ltd.',
+    company: 'Bohr IoT Management Server',
     usernameRequired: 'Please enter username',
     passwordRequired: 'Please enter password',
     loginSuccess: 'Login successful',

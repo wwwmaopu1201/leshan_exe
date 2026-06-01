@@ -8,6 +8,8 @@
       <div class="topbar-right">
         <div class="server-tag" v-if="serverAddress">
           <i class="el-icon-link"></i>
+          <span>{{ serverVersionText }}</span>
+          <span class="server-tag__divider"></span>
           <span>{{ serverAddress }}</span>
         </div>
         <div class="lang-switch" role="group" :aria-label="$t('layout.languageSwitch')">
@@ -161,7 +163,7 @@ export default {
     }
   },
   computed: {
-    ...mapState(['user', 'language', 'serverConfig']),
+    ...mapState(['user', 'language', 'serverConfig', 'serverVersion']),
     avatarSrc() {
       const avatar = String(this.user?.avatar || '').trim()
       if (!avatar) {
@@ -203,6 +205,10 @@ export default {
         return ''
       }
       return `${ip}:${port}`
+    },
+    serverVersionText() {
+      const version = String(this.serverVersion || '').trim()
+      return `${this.$t('layout.serverVersion')}: ${version || this.$t('layout.serverVersionUnknown')}`
     },
     breadcrumbs() {
       const matched = this.$route.matched.filter(item => item.meta && item.meta.title)
@@ -408,6 +414,13 @@ export default {
   background: rgba(255, 255, 255, 0.14);
   color: #ffffff;
   font-size: 12px;
+  white-space: nowrap;
+}
+
+.server-tag__divider {
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.35);
 }
 
 .lang-switch {

@@ -54,7 +54,7 @@ export default {
     manual: '操作说明'
   },
   login: {
-    title: '博尔局域网管理软件',
+    title: '博尔物联网管理软件客户端',
     subtitle: '工业设备管理平台',
     serverIp: '服务器IP地址',
     serverIpPlaceholder: '请输入IP地址',
@@ -71,16 +71,18 @@ export default {
     usernameRequired: '请输入账号',
     passwordRequired: '请输入密码',
     accountDisabled: '您的账号已被禁用，请联系管理员',
-    companyName: '苏州博尔科技有限公司',
-    companyNameEn: 'Research Suzhou Boer Technology Co., Ltd.',
+    companyName: '博尔物联网管理软件客户端',
+    companyNameEn: 'Research Suzhou Bohr Technology Co., Ltd.',
     loginSuccess: '登录成功',
     loginFailed: '登录失败'
   },
   layout: {
-    appTitle: '局域网管理软件客户端',
+    appTitle: '博尔物联网管理软件客户端',
     logout: '退出登录',
     logoutConfirm: '确定要退出登录吗？',
-    languageSwitch: '语言切换'
+    languageSwitch: '语言切换',
+    serverVersion: '服务端版本',
+    serverVersionUnknown: '未知'
   },
   home: {
     deviceStatus: '设备状态',

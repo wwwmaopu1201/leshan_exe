@@ -1,5 +1,6 @@
 import Vue from 'vue'
 import Vuex from 'vuex'
+import { normalizeServerVersion } from '@/utils/server-version'
 
 Vue.use(Vuex)
 
@@ -106,6 +107,7 @@ export default new Vuex.Store({
       ip: localStorage.getItem('serverIp') || '',
       port: normalizeServerPort(localStorage.getItem('serverPort') || DEFAULT_SERVER_PORT)
     },
+    serverVersion: '',
 
     // Device tree
     deviceTree: [],
@@ -167,16 +169,25 @@ export default new Vuex.Store({
       state.permissionsCache = normalizePermissions(user?.permissions)
     },
 
+    SET_SERVER_VERSION(state, version) {
+      state.serverVersion = normalizeServerVersion(version)
+    },
+
     SET_PERMISSIONS_CACHE(state, permissions) {
       state.permissionsCache = permissions
     },
 
     SET_SERVER_CONFIG(state, config) {
+      const previousServer = `${state.serverConfig?.ip || ''}:${state.serverConfig?.port || ''}`
       const normalizedConfig = {
         ip: String(config.ip || '').trim(),
         port: normalizeServerPort(config.port || DEFAULT_SERVER_PORT)
       }
       state.serverConfig = normalizedConfig
+      const nextServer = `${normalizedConfig.ip}:${normalizedConfig.port}`
+      if (previousServer !== nextServer) {
+        state.serverVersion = ''
+      }
       localStorage.setItem('serverIp', normalizedConfig.ip)
       localStorage.setItem('serverPort', normalizedConfig.port)
     },
@@ -201,15 +212,17 @@ export default new Vuex.Store({
     LOGOUT(state) {
       state.token = ''
       state.user = null
+      state.serverVersion = ''
       state.permissionsCache = null
       localStorage.removeItem('token')
     }
   },
 
   actions: {
-    login({ commit }, { token, user }) {
+    login({ commit }, { token, user, serverVersion }) {
       commit('SET_TOKEN', token)
       commit('SET_USER', user)
+      commit('SET_SERVER_VERSION', serverVersion)
     },
 
     logout({ commit }) {

@@ -215,6 +215,7 @@ CREATE TABLE IF NOT EXISTS login_logs (
     user_id BIGINT UNSIGNED NOT NULL,
     ip VARCHAR(50),
     device VARCHAR(200),
+    client_version VARCHAR(50) DEFAULT '',
     status VARCHAR(20),
     login_time DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_user_id (user_id),

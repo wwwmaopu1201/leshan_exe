@@ -3,7 +3,7 @@
     <div class="page-header">
       <div class="page-title-block">
         <h2>登录日志</h2>
-        <p>查看服务端账号登录记录、登录 IP、登录状态和登录时间。</p>
+        <p>查看服务端账号登录记录、登录 IP、客户端版本、登录状态和登录时间。</p>
       </div>
     </div>
 
@@ -62,6 +62,7 @@
         </el-table-column>
         <el-table-column prop="username" label="账号" min-width="140" />
         <el-table-column prop="ip" label="登录IP" min-width="140" />
+        <el-table-column prop="clientVersion" label="客户端版本" width="120" />
         <el-table-column prop="status" label="登录状态" width="110" align="center">
           <template slot-scope="{ row }">
             <span :class="['status-pill', row.status === '成功' ? 'success' : 'danger']">

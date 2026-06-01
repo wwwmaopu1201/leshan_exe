@@ -14,6 +14,7 @@ var knownPatternFileExtensions = map[string]struct{}{
 	".sdt": {},
 	".slw": {},
 	".vdt": {},
+	".xdg": {},
 }
 
 func TrimKnownPatternFileExtension(fileName string) string {

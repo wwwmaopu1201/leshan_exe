@@ -1,10 +1,36 @@
 import request from './request'
+import { getVersion } from '@tauri-apps/api/app'
+import { isTauri } from '@tauri-apps/api/core'
+import clientPackage from '../../package.json'
 
-export function login(data) {
+const CLIENT_VERSION = clientPackage.version || ''
+let resolvedClientVersion = ''
+
+async function getClientVersion() {
+  if (resolvedClientVersion) {
+    return resolvedClientVersion
+  }
+  if (isTauri()) {
+    try {
+      resolvedClientVersion = await getVersion()
+      return resolvedClientVersion
+    } catch (error) {
+      console.warn('Failed to read Tauri app version:', error)
+    }
+  }
+  resolvedClientVersion = CLIENT_VERSION
+  return resolvedClientVersion
+}
+
+export async function login(data) {
+  const clientVersion = await getClientVersion()
   return request({
     url: '/auth/login',
     method: 'post',
-    data,
+    data: {
+      ...(data || {}),
+      clientVersion
+    },
     suppressErrorMessage: true
   })
 }

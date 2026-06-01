@@ -2,8 +2,8 @@
   <div class="app-shell">
     <header class="app-topbar">
       <div class="app-topbar__left">
-        <i class="el-icon-office-building"></i>
-        <span class="app-topbar__title">局域网管理软件服务端</span>
+        <img src="@/assets/images/logo-server.png" alt="Logo" class="app-topbar__logo" />
+        <span class="app-topbar__title">{{ formatText('博尔物联网管理软件服务端') }}</span>
       </div>
 
       <div class="app-topbar__actions">
@@ -166,6 +166,12 @@ export default {
 .app-topbar__title {
   font-size: 13px;
   font-weight: 700;
+}
+
+.app-topbar__logo {
+  width: 18px;
+  height: 18px;
+  display: block;
 }
 
 .app-body {

@@ -33,7 +33,7 @@
           <section id="overview" class="manual-section">
             <h3>1. 软件概述</h3>
             <p>
-              博尔局域网管理软件是一款面向工业绣花设备的局域网客户端，
+              博尔物联网管理软件客户端是一款面向工业绣花设备的物联网客户端，
               用于设备状态监控、花型文件管理、统计分析和日常维护。
             </p>
             <div class="manual-points">
