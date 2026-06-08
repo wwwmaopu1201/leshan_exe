@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	trialDuration      = 24 * 24 * time.Hour
+	trialDuration      = 30 * 24 * time.Hour
 	rollbackLeeway     = 10 * time.Minute
 	trialPolicyVersion = 5
 	stateFolderName    = "BoerLAN"

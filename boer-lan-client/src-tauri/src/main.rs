@@ -17,7 +17,7 @@ use tauri_plugin_dialog::DialogExt;
 const STARTUP_API_HOST: &str = "47.92.226.92";
 const STARTUP_API_PORT: u16 = 56;
 const STARTUP_API_PATH: &str = "/api.php";
-const TRIAL_DURATION_SECONDS: u64 = 7 * 24 * 60 * 60;
+const TRIAL_DURATION_SECONDS: u64 = 30 * 24 * 60 * 60;
 const ROLLBACK_LEEWAY_SECONDS: u64 = 10 * 60;
 const TRIAL_POLICY_VERSION: u32 = 3;
 
