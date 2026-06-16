@@ -22,7 +22,7 @@
             <p>帮助安装、登录、设备管理和日常排查快速上手。</p>
           </div>
           <div class="header-actions">
-            <div class="version">{{ $t('support.version') }}: v1.0.27</div>
+            <div class="version">{{ $t('support.version') }}: v1.0.28</div>
             <el-button size="small" type="primary" icon="el-icon-download" @click="downloadManual">
               下载说明
             </el-button>
@@ -166,7 +166,7 @@ export default {
           throw new Error(`HTTP ${response.status}`)
         }
         const blob = await response.blob()
-        const saved = await saveBlobWithDialog(blob, '局域网客户端操作说明-v1.0.27.pdf', {
+        const saved = await saveBlobWithDialog(blob, '局域网客户端操作说明-v1.0.28.pdf', {
           mimeType: 'application/pdf',
           description: 'PDF 文件',
           extensions: ['pdf']

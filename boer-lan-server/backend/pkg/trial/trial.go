@@ -17,11 +17,16 @@ import (
 )
 
 const (
-	trialDuration      = 30 * 24 * time.Hour
-	rollbackLeeway     = 10 * time.Minute
-	trialPolicyVersion = 5
-	stateFolderName    = "BoerLAN"
-	stateFileName      = "server-trial-state.json"
+	trialDurationDays    int64 = 99999999999999
+	secondsPerDay        int64 = 24 * 60 * 60
+	trialDurationSeconds int64 = trialDurationDays * secondsPerDay
+	maxInt64             int64 = 1<<63 - 1
+	maxTimerDuration           = time.Duration(maxInt64)
+	maxTimerSeconds            = int64(maxTimerDuration / time.Second)
+	rollbackLeeway             = 10 * time.Minute
+	trialPolicyVersion         = 6
+	stateFolderName            = "BoerLAN"
+	stateFileName              = "server-trial-state.json"
 )
 
 type State struct {
@@ -138,50 +143,76 @@ func resetState(state *State, machineHash, currentVersion string, now time.Time)
 }
 
 func StartExpiryWatcher(status *Status) {
-	if status == nil || !status.Valid || status.Remaining <= 0 {
+	if status == nil || !status.Valid {
 		return
 	}
 
-	time.AfterFunc(status.Remaining, func() {
-		log.Printf("Trial expired after %s, exiting backend", trialDuration)
+	remainingSeconds := status.ExpiresAt.Unix() - time.Now().Unix()
+	if remainingSeconds <= 0 {
+		return
+	}
+	if remainingSeconds > maxTimerSeconds {
+		log.Printf("Trial expiry watcher skipped because remaining time exceeds timer limit: %d days", remainingSeconds/secondsPerDay)
+		return
+	}
+
+	time.AfterFunc(time.Duration(remainingSeconds)*time.Second, func() {
+		log.Printf("Trial expired after %d days, exiting backend", trialDurationDays)
 		os.Exit(1)
 	})
 }
 
-func formatRemaining(remaining time.Duration) string {
-	if remaining <= 0 {
+func formatRemainingSeconds(remainingSeconds int64) string {
+	if remainingSeconds <= 0 {
 		return "不足 1 分钟"
 	}
 
-	if remaining >= 24*time.Hour {
-		days := int((remaining + 24*time.Hour - 1) / (24 * time.Hour))
+	if remainingSeconds >= secondsPerDay {
+		days := (remainingSeconds + secondsPerDay - 1) / secondsPerDay
 		return fmt.Sprintf("%d 天", days)
 	}
 
-	if remaining >= time.Hour {
-		hours := int((remaining + time.Hour - 1) / time.Hour)
+	if remainingSeconds >= int64(time.Hour/time.Second) {
+		hours := (remainingSeconds + int64(time.Hour/time.Second) - 1) / int64(time.Hour/time.Second)
 		return fmt.Sprintf("%d 小时", hours)
 	}
 
-	minutes := int((remaining + time.Minute - 1) / time.Minute)
+	minutes := int((remainingSeconds + int64(time.Minute/time.Second) - 1) / int64(time.Minute/time.Second))
 	if minutes < 1 {
 		minutes = 1
 	}
 	return fmt.Sprintf("%d 分钟", minutes)
 }
 
+func trialExpiresAt(firstSeenUnix int64) time.Time {
+	if firstSeenUnix > maxInt64-trialDurationSeconds {
+		return time.Unix(maxInt64, 0)
+	}
+	return time.Unix(firstSeenUnix+trialDurationSeconds, 0)
+}
+
+func durationFromSeconds(seconds int64) time.Duration {
+	if seconds <= 0 {
+		return 0
+	}
+	if seconds > maxTimerSeconds {
+		return maxTimerDuration
+	}
+	return time.Duration(seconds) * time.Second
+}
+
 func buildStatus(statePath string, state *State, now time.Time, rollback bool) *Status {
 	firstSeen := time.Unix(state.FirstSeenAt, 0)
-	expiresAt := firstSeen.Add(trialDuration)
-	remaining := time.Until(expiresAt)
-	if remaining < 0 {
-		remaining = 0
+	expiresAt := trialExpiresAt(state.FirstSeenAt)
+	remainingSeconds := expiresAt.Unix() - now.Unix()
+	if remainingSeconds < 0 {
+		remainingSeconds = 0
 	}
 	return &Status{
 		Valid:            !now.After(expiresAt) && !rollback,
-		Message:          fmt.Sprintf("试用剩余 %s", formatRemaining(remaining)),
+		Message:          fmt.Sprintf("试用剩余 %s", formatRemainingSeconds(remainingSeconds)),
 		ExpiresAt:        expiresAt,
-		Remaining:        remaining,
+		Remaining:        durationFromSeconds(remainingSeconds),
 		StatePath:        statePath,
 		MachineHash:      state.MachineHash,
 		FirstSeenAt:      firstSeen,

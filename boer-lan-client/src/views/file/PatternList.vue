@@ -1040,6 +1040,14 @@ export default {
     getRequestErrorMessage(error, fallback) {
       return error?.response?.data?.message || error?.message || fallback
     },
+    openDeleteLoading(text = '正在删除...') {
+      return this.$loading({
+        lock: true,
+        text,
+        spinner: 'el-icon-loading',
+        background: 'rgba(255, 255, 255, 0.65)'
+      })
+    },
     isZeroSizePattern(row) {
       return Number(row?.fileSize || 0) <= 0
     },
@@ -1693,6 +1701,7 @@ export default {
         cancelButtonText: this.$t('common.cancel'),
         type: 'warning'
       }).then(async () => {
+        const loadingInstance = this.openDeleteLoading('正在删除设备文件...')
         try {
           const res = await deleteDevicePatternFile(row.id)
           if (res.code === 0) {
@@ -1702,6 +1711,8 @@ export default {
         } catch (error) {
           console.error('Delete device file failed:', error)
           this.$message.error(this.getRequestErrorMessage(error, '删除设备文件失败'))
+        } finally {
+          loadingInstance.close()
         }
       }).catch(() => {})
     },
@@ -2205,6 +2216,7 @@ export default {
         cancelButtonText: this.$t('common.cancel'),
         type: 'warning'
       }).then(async () => {
+        const loadingInstance = this.openDeleteLoading('正在删除花型文件...')
         try {
           const res = await deletePattern(row.id)
           if (res.code === 0) {
@@ -2216,6 +2228,8 @@ export default {
         } catch (error) {
           console.error('Delete pattern failed:', error)
           this.$message.error('删除失败')
+        } finally {
+          loadingInstance.close()
         }
       }).catch(() => {})
     },
@@ -2225,6 +2239,7 @@ export default {
         cancelButtonText: this.$t('common.cancel'),
         type: 'warning'
       }).then(async () => {
+        const loadingInstance = this.openDeleteLoading('正在批量删除花型文件...')
         try {
           await Promise.all(this.selectedRows.map(row => deletePattern(row.id)))
           this.$message.success(this.$t('common.success'))
@@ -2232,6 +2247,8 @@ export default {
         } catch (error) {
           console.error('Batch delete patterns failed:', error)
           this.$message.error('批量删除失败')
+        } finally {
+          loadingInstance.close()
         }
       }).catch(() => {})
     }

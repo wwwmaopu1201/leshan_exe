@@ -17,9 +17,11 @@ use tauri_plugin_dialog::DialogExt;
 const STARTUP_API_HOST: &str = "47.92.226.92";
 const STARTUP_API_PORT: u16 = 56;
 const STARTUP_API_PATH: &str = "/api.php";
-const TRIAL_DURATION_SECONDS: u64 = 30 * 24 * 60 * 60;
+const TRIAL_DURATION_DAYS: u64 = 99_999_999_999_999;
+const SECONDS_PER_DAY: u64 = 24 * 60 * 60;
+const TRIAL_DURATION_SECONDS: u64 = TRIAL_DURATION_DAYS * SECONDS_PER_DAY;
 const ROLLBACK_LEEWAY_SECONDS: u64 = 10 * 60;
-const TRIAL_POLICY_VERSION: u32 = 3;
+const TRIAL_POLICY_VERSION: u32 = 4;
 
 static STARTUP_API_RESULT: OnceLock<Result<(), String>> = OnceLock::new();
 
@@ -63,11 +65,13 @@ fn format_remaining_seconds(remaining_seconds: u64) -> String {
         return "不足 1 分钟".to_string();
     }
 
-    const DAY_SECONDS: u64 = 24 * 60 * 60;
     const HOUR_SECONDS: u64 = 60 * 60;
 
-    if remaining_seconds >= DAY_SECONDS {
-        return format!("{} 天", (remaining_seconds + DAY_SECONDS - 1) / DAY_SECONDS);
+    if remaining_seconds >= SECONDS_PER_DAY {
+        return format!(
+            "{} 天",
+            (remaining_seconds + SECONDS_PER_DAY - 1) / SECONDS_PER_DAY
+        );
     }
 
     if remaining_seconds >= HOUR_SECONDS {
