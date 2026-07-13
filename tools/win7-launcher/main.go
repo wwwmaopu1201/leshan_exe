@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"embed"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -32,6 +34,9 @@ var (
 	defaultMode  = "client"
 	defaultTitle = "Boer LAN"
 )
+
+//go:embed embedded-dist
+var embeddedDist embed.FS
 
 func main() {
 	cfg := parseFlags()
@@ -65,8 +70,9 @@ func run(cfg appConfig, baseDir string) error {
 	if cfg.mode != "client" && cfg.mode != "server" {
 		return fmt.Errorf("invalid mode %q", cfg.mode)
 	}
-	if info, err := os.Stat(cfg.distDir); err != nil || !info.IsDir() {
-		return fmt.Errorf("dist directory not found: %s", cfg.distDir)
+	frontendFS, err := resolveFrontendFS(cfg.distDir)
+	if err != nil {
+		return err
 	}
 
 	dataDir := filepath.Join(baseDir, "data")
@@ -95,7 +101,7 @@ func run(cfg appConfig, baseDir string) error {
 	mux.HandleFunc("/__boerlan_win7/backend-port", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]int{"port": resolveBackendPort(portFile, cfg.backendPort)})
 	})
-	mux.Handle("/", noCache(http.FileServer(http.Dir(cfg.distDir))))
+	mux.Handle("/", noCache(http.FileServer(frontendFS)))
 
 	server := &http.Server{Handler: mux}
 	serverErr := make(chan error, 1)
@@ -139,6 +145,30 @@ func run(cfg appConfig, baseDir string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	return server.Shutdown(ctx)
+}
+
+func resolveFrontendFS(distDir string) (http.FileSystem, error) {
+	if hasIndexFile(distDir) {
+		log.Printf("Serving external frontend assets: %s", distDir)
+		return http.Dir(distDir), nil
+	}
+
+	sub, err := fs.Sub(embeddedDist, "embedded-dist")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := fs.Stat(sub, "index.html"); err != nil {
+		return nil, fmt.Errorf("frontend assets not found: embedded index.html missing and external dist unavailable: %s", distDir)
+	}
+	log.Printf("Serving embedded frontend assets")
+	return http.FS(sub), nil
+}
+
+func hasIndexFile(distDir string) bool {
+	if info, err := os.Stat(filepath.Join(distDir, "index.html")); err == nil && !info.IsDir() {
+		return true
+	}
+	return false
 }
 
 func executableDir() string {

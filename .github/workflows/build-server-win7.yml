@@ -47,9 +47,12 @@ jobs:
         run: |
           $version = (Get-Content boer-lan-server/package.json | ConvertFrom-Json).version
           $packageDir = "artifacts/server-win7-shell"
-          New-Item -ItemType Directory -Force -Path "$packageDir/dist" | Out-Null
+          $embeddedDist = "tools/win7-launcher/embedded-dist"
+          New-Item -ItemType Directory -Force -Path $packageDir | Out-Null
           New-Item -ItemType Directory -Force -Path "$packageDir/config" | Out-Null
-          Copy-Item -Recurse -Force "boer-lan-server/dist/*" "$packageDir/dist/"
+          New-Item -ItemType Directory -Force -Path $embeddedDist | Out-Null
+          Remove-Item -Recurse -Force "$embeddedDist/*"
+          Copy-Item -Recurse -Force "boer-lan-server/dist/*" "$embeddedDist/"
           Copy-Item -Force "boer-lan-server/src-tauri/backend-server.exe" "$packageDir/backend-server.exe"
           Copy-Item -Recurse -Force "boer-lan-server/src-tauri/config/*" "$packageDir/config/"
           go build -ldflags='-s -w -X main.defaultMode=server -X "main.defaultTitle=Boer LAN Server"' -o "$packageDir/Boer-LAN-Server-Win7.exe" ./tools/win7-launcher/main.go
@@ -61,6 +64,7 @@ jobs:
              browser\chrome.exe
           2. Run Boer-LAN-Server-Win7.exe.
           3. If browser\chrome.exe is missing, the launcher opens the system default browser.
+          4. Frontend assets are embedded in Boer-LAN-Server-Win7.exe.
           "@ | Set-Content -Encoding UTF8 "$packageDir/使用说明.txt"
           Compress-Archive -Force -Path "$packageDir/*" -DestinationPath "artifacts/bohr-server-$version-win7-browser-shell.zip"
 

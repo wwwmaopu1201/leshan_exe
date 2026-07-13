@@ -1,0 +1,1 @@
+This directory is populated with frontend build output during Windows 7 packaging.

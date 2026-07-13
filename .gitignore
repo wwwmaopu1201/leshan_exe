@@ -9,6 +9,8 @@ build/
 */build/
 target/
 */target/
+tools/win7-launcher/embedded-dist/*
+!tools/win7-launcher/embedded-dist/placeholder.txt
 
 # Logs
 *.log
