@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -51,10 +50,7 @@ type Config struct {
 	} `yaml:"jwt"`
 }
 
-const (
-	appIdentifier = "com.boer.lan-server"
-	startupAPIURL = "http://47.92.226.92:56/api.php"
-)
+const appIdentifier = "com.boer.lan-server"
 
 var (
 	config             Config
@@ -116,49 +112,6 @@ func shouldSkipTrialValidation() bool {
 		strings.EqualFold(strings.TrimSpace(os.Getenv("APP_ENV")), "development")
 }
 
-func ensureStartupAPIAllowed() error {
-	client := &http.Client{Timeout: 5 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, startupAPIURL, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create startup api request: %w", err)
-	}
-	req.Header.Set("User-Agent", "BoerLAN-Backend")
-	req.Header.Set("Accept", "application/json,text/plain,*/*")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to request startup api: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf("startup api returned status %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read startup api response: %w", err)
-	}
-
-	value := strings.TrimPrefix(strings.TrimSpace(string(body)), "\ufeff")
-	var allowed bool
-	if err := json.Unmarshal([]byte(value), &allowed); err == nil {
-		if allowed {
-			return nil
-		}
-		return fmt.Errorf("startup api disabled startup")
-	}
-
-	switch strings.ToLower(value) {
-	case "true":
-		return nil
-	case "false":
-		return fmt.Errorf("startup api disabled startup")
-	default:
-		return fmt.Errorf("startup api returned invalid value %q", value)
-	}
-}
-
 func parseGORMLogLevel(value string, fallback logger.LogLevel) logger.LogLevel {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "silent":
@@ -213,10 +166,6 @@ func main() {
 	logFile := setupLogging(runtimeLogSettings)
 	if logFile != nil {
 		defer logFile.Close()
-	}
-
-	if err := ensureStartupAPIAllowed(); err != nil {
-		log.Fatalf("网络错误，请检查网络连接: %v", err)
 	}
 
 	if shouldSkipTrialValidation() {

@@ -1,0 +1,61 @@
+name: Build Client Windows 7 Installer
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: boer-lan-client/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.85.1
+        with:
+          targets: x86_64-win7-windows-msvc
+
+      - name: Install dependencies
+        working-directory: boer-lan-client
+        run: npm ci
+
+      - name: Build Tauri app for Windows 7
+        working-directory: boer-lan-client
+        run: npm run tauri:build:win7
+
+      - name: Verify no ProcessPrng import
+        working-directory: boer-lan-client
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem "src-tauri/target/x86_64-win7-windows-msvc/release/*.exe"
+          foreach ($file in $files) {
+            $text = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($file.FullName))
+            if ($text -match "ProcessPrng") {
+              throw "ProcessPrng found in $($file.FullName); this build is not Windows 7 compatible."
+            }
+          }
+
+      - name: Rename installer
+        working-directory: boer-lan-client
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $installer = Get-ChildItem "src-tauri/target/x86_64-win7-windows-msvc/release/bundle/nsis/*.exe" | Select-Object -First 1
+          Rename-Item -LiteralPath $installer.FullName -NewName "bohr-client-$version-win7-x64-setup.exe"
+
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-win7-nsis
+          path: boer-lan-client/src-tauri/target/x86_64-win7-windows-msvc/release/bundle/nsis/*.exe
+          if-no-files-found: error
