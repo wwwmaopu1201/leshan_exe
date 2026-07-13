@@ -45,6 +45,7 @@ jobs:
           Copy-Item -Recurse -Force "boer-lan-client/dist/*" "$embeddedDist/"
           go build -ldflags='-s -w -X main.defaultMode=client -X "main.defaultTitle=Boer LAN Client"' -o "$packageDir/Boer-LAN-Client-Win7.exe" ./tools/win7-launcher/main.go
           New-Item -ItemType Directory -Force -Path "$packageDir/browser" | Out-Null
+          "Put Windows 7 compatible Chrome/Chromium 109 chrome.exe in this folder." | Set-Content -Encoding UTF8 "$packageDir/browser/put-chrome-here.txt"
           @"
           Win7 browser shell package.
 
@@ -53,7 +54,7 @@ jobs:
           2. Run Boer-LAN-Client-Win7.exe.
           3. If browser\chrome.exe is missing, the launcher opens the system default browser.
           4. Frontend assets are embedded in Boer-LAN-Client-Win7.exe.
-          "@ | Set-Content -Encoding UTF8 "$packageDir/使用说明.txt"
+          "@ | Set-Content -Encoding UTF8 "$packageDir/README-Win7.txt"
           Compress-Archive -Force -Path "$packageDir/*" -DestinationPath "artifacts/bohr-client-$version-win7-browser-shell.zip"
 
       - name: Verify no ProcessPrng in package executables
