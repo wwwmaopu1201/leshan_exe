@@ -6,11 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:win7": "vite build --mode win7",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "tauri:build:win7": "tauri build --target x86_64-pc-windows-msvc --bundles nsis",
     "tauri:build:portable": "tauri build --no-bundle",
     "package:portable:win": "powershell -ExecutionPolicy Bypass -File scripts/package-portable.ps1"
   },

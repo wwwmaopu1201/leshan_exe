@@ -1,4 +1,4 @@
-name: Build Client Windows 7 Installer
+name: Build Client Windows 7 Browser Shell
 
 on:
   workflow_dispatch:
@@ -20,24 +20,42 @@ jobs:
           cache: 'npm'
           cache-dependency-path: boer-lan-client/package-lock.json
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.88.0
+      - name: Setup Go 1.20 for Windows 7
+        uses: actions/setup-go@v5
         with:
-          targets: x86_64-pc-windows-msvc
+          go-version: '1.20.14'
 
       - name: Install dependencies
         working-directory: boer-lan-client
         run: npm ci
 
-      - name: Build Tauri app for Windows 7
+      - name: Build frontend for Windows 7 shell
         working-directory: boer-lan-client
-        run: npm run tauri:build:win7
+        run: npm run build:win7
 
-      - name: Verify no ProcessPrng import
-        working-directory: boer-lan-client
+      - name: Package Windows 7 browser shell
         shell: pwsh
         run: |
-          $files = Get-ChildItem "src-tauri/target/x86_64-pc-windows-msvc/release/*.exe"
+          $version = (Get-Content boer-lan-client/package.json | ConvertFrom-Json).version
+          $packageDir = "artifacts/client-win7-shell"
+          New-Item -ItemType Directory -Force -Path "$packageDir/dist" | Out-Null
+          Copy-Item -Recurse -Force "boer-lan-client/dist/*" "$packageDir/dist/"
+          go build -ldflags='-s -w -X main.defaultMode=client -X "main.defaultTitle=Boer LAN Client"' -o "$packageDir/Boer-LAN-Client-Win7.exe" ./tools/win7-launcher/main.go
+          New-Item -ItemType Directory -Force -Path "$packageDir/browser" | Out-Null
+          @"
+          Win7 browser shell package.
+
+          1. Put a Windows 7 compatible Chrome/Chromium 109 portable runtime at:
+             browser\chrome.exe
+          2. Run Boer-LAN-Client-Win7.exe.
+          3. If browser\chrome.exe is missing, the launcher opens the system default browser.
+          "@ | Set-Content -Encoding UTF8 "$packageDir/使用说明.txt"
+          Compress-Archive -Force -Path "$packageDir/*" -DestinationPath "artifacts/bohr-client-$version-win7-browser-shell.zip"
+
+      - name: Verify no ProcessPrng in package executables
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem "artifacts/client-win7-shell" -Recurse -Filter "*.exe"
           foreach ($file in $files) {
             $text = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($file.FullName))
             if ($text -match "ProcessPrng") {
@@ -45,17 +63,9 @@ jobs:
             }
           }
 
-      - name: Rename installer
-        working-directory: boer-lan-client
-        shell: pwsh
-        run: |
-          $version = (Get-Content package.json | ConvertFrom-Json).version
-          $installer = Get-ChildItem "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe" | Select-Object -First 1
-          Rename-Item -LiteralPath $installer.FullName -NewName "bohr-client-$version-win7-x64-setup.exe"
-
-      - name: Upload installer artifacts
+      - name: Upload package artifact
         uses: actions/upload-artifact@v4
         with:
-          name: client-win7-nsis
-          path: boer-lan-client/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          name: client-win7-browser-shell
+          path: artifacts/bohr-client-*-win7-browser-shell.zip
           if-no-files-found: error

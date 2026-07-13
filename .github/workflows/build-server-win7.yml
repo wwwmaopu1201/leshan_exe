@@ -1,4 +1,4 @@
-name: Build Server Windows 7 Installer
+name: Build Server Windows 7 Browser Shell
 
 on:
   workflow_dispatch:
@@ -26,11 +26,6 @@ jobs:
           go-version: '1.20.14'
           cache-dependency-path: boer-lan-server/backend/go.sum
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.88.0
-        with:
-          targets: x86_64-pc-windows-msvc
-
       - name: Install dependencies
         working-directory: boer-lan-server
         run: npm ci
@@ -43,17 +38,36 @@ jobs:
           go version
           go build -ldflags="-s -w" -o ../src-tauri/backend-server.exe cmd/server/main.go
 
-      - name: Build Tauri app for Windows 7
+      - name: Build frontend for Windows 7 shell
         working-directory: boer-lan-server
-        run: npm run tauri:build:win7
+        run: npm run build:win7
 
-      - name: Verify no ProcessPrng import
-        working-directory: boer-lan-server
+      - name: Package Windows 7 browser shell
         shell: pwsh
         run: |
-          $files = @()
-          $files += Get-ChildItem "src-tauri/backend-server.exe"
-          $files += Get-ChildItem "src-tauri/target/x86_64-pc-windows-msvc/release/*.exe"
+          $version = (Get-Content boer-lan-server/package.json | ConvertFrom-Json).version
+          $packageDir = "artifacts/server-win7-shell"
+          New-Item -ItemType Directory -Force -Path "$packageDir/dist" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$packageDir/config" | Out-Null
+          Copy-Item -Recurse -Force "boer-lan-server/dist/*" "$packageDir/dist/"
+          Copy-Item -Force "boer-lan-server/src-tauri/backend-server.exe" "$packageDir/backend-server.exe"
+          Copy-Item -Recurse -Force "boer-lan-server/src-tauri/config/*" "$packageDir/config/"
+          go build -ldflags='-s -w -X main.defaultMode=server -X "main.defaultTitle=Boer LAN Server"' -o "$packageDir/Boer-LAN-Server-Win7.exe" ./tools/win7-launcher/main.go
+          New-Item -ItemType Directory -Force -Path "$packageDir/browser" | Out-Null
+          @"
+          Win7 browser shell package.
+
+          1. Put a Windows 7 compatible Chrome/Chromium 109 portable runtime at:
+             browser\chrome.exe
+          2. Run Boer-LAN-Server-Win7.exe.
+          3. If browser\chrome.exe is missing, the launcher opens the system default browser.
+          "@ | Set-Content -Encoding UTF8 "$packageDir/使用说明.txt"
+          Compress-Archive -Force -Path "$packageDir/*" -DestinationPath "artifacts/bohr-server-$version-win7-browser-shell.zip"
+
+      - name: Verify no ProcessPrng in package executables
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem "artifacts/server-win7-shell" -Recurse -Filter "*.exe"
           foreach ($file in $files) {
             $text = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($file.FullName))
             if ($text -match "ProcessPrng") {
@@ -61,17 +75,9 @@ jobs:
             }
           }
 
-      - name: Rename installer
-        working-directory: boer-lan-server
-        shell: pwsh
-        run: |
-          $version = (Get-Content package.json | ConvertFrom-Json).version
-          $installer = Get-ChildItem "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe" | Select-Object -First 1
-          Rename-Item -LiteralPath $installer.FullName -NewName "bohr-server-$version-win7-x64-setup.exe"
-
-      - name: Upload installer artifacts
+      - name: Upload package artifact
         uses: actions/upload-artifact@v4
         with:
-          name: server-win7-nsis
-          path: boer-lan-server/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          name: server-win7-browser-shell
+          path: artifacts/bohr-server-*-win7-browser-shell.zip
           if-no-files-found: error
