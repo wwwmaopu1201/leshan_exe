@@ -40,6 +40,9 @@
       "config/*"
     ],
     "windows": {
+      "webviewInstallMode": {
+        "type": "offlineInstaller"
+      },
       "nsis": {
         "installMode": "currentUser",
         "installerHooks": "installer-hooks.nsh"

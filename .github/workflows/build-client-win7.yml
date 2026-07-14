@@ -44,18 +44,29 @@ jobs:
           Remove-Item -Recurse -Force "$embeddedDist/*"
           Copy-Item -Recurse -Force "boer-lan-client/dist/*" "$embeddedDist/"
           go build -ldflags='-s -w -X main.defaultMode=client -X "main.defaultTitle=Boer LAN Client"' -o "$packageDir/Boer-LAN-Client-Win7.exe" ./tools/win7-launcher/main.go
-          New-Item -ItemType Directory -Force -Path "$packageDir/browser" | Out-Null
-          "Put Windows 7 compatible Chrome/Chromium 109 chrome.exe in this folder." | Set-Content -Encoding UTF8 "$packageDir/browser/put-chrome-here.txt"
+          & ".github/scripts/prepare-win7-chromium.ps1" -Destination "$packageDir/browser"
           @"
-          Win7 browser shell package.
+          Win7 browser shell package with bundled Chromium 109.
 
-          1. Put a Windows 7 compatible Chrome/Chromium 109 portable runtime at:
-             browser\chrome.exe
-          2. Run Boer-LAN-Client-Win7.exe.
-          3. If browser\chrome.exe is missing, the launcher opens the system default browser.
-          4. Frontend assets are embedded in Boer-LAN-Client-Win7.exe.
+          1. Run Boer-LAN-Client-Win7.exe.
+          2. The compatible browser runtime is included in browser\.
+          3. Frontend assets are embedded in Boer-LAN-Client-Win7.exe.
+          4. Keep all files and directories together when moving the package.
           "@ | Set-Content -Encoding UTF8 "$packageDir/README-Win7.txt"
           Compress-Archive -Force -Path "$packageDir/*" -DestinationPath "artifacts/bohr-client-$version-win7-browser-shell.zip"
+
+      - name: Verify bundled Chromium runtime
+        shell: pwsh
+        run: |
+          $chrome = "artifacts/client-win7-shell/browser/chrome.exe"
+          if (-not (Test-Path -LiteralPath $chrome)) {
+            throw "Bundled Chromium chrome.exe is missing."
+          }
+          $version = (Get-Item -LiteralPath $chrome).VersionInfo.ProductVersion
+          if (-not $version.StartsWith("109.0.5414.120")) {
+            throw "Unexpected Chromium version: $version"
+          }
+          Write-Host "Verified bundled Chromium $version"
 
       - name: Verify no ProcessPrng in package executables
         shell: pwsh
