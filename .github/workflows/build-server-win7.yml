@@ -1,4 +1,4 @@
-name: Build Server Windows 7 Browser Shell
+name: Build Server Windows 7 Installer
 
 on:
   workflow_dispatch:
@@ -42,7 +42,7 @@ jobs:
         working-directory: boer-lan-server
         run: npm run build:win7
 
-      - name: Package Windows 7 browser shell
+      - name: Prepare Windows 7 application files
         shell: pwsh
         run: |
           $version = (Get-Content boer-lan-server/package.json | ConvertFrom-Json).version
@@ -58,14 +58,13 @@ jobs:
           go build -ldflags='-s -w -X main.defaultMode=server -X "main.defaultTitle=Boer LAN Server"' -o "$packageDir/Boer-LAN-Server-Win7.exe" ./tools/win7-launcher/main.go
           & ".github/scripts/prepare-win7-chromium.ps1" -Destination "$packageDir/browser"
           @"
-          Win7 browser shell package with bundled Chromium 109.
+          Win7 installed application with bundled Chromium 109.
 
-          1. Run Boer-LAN-Server-Win7.exe.
-          2. The compatible browser runtime is included in browser\.
-          3. Frontend assets are embedded in Boer-LAN-Server-Win7.exe.
-          4. Keep all files and directories together when moving the package.
+          Application data is stored under:
+          %APPDATA%\com.boer.lan-server
+
+          Uninstalling the application keeps the database and user data.
           "@ | Set-Content -Encoding UTF8 "$packageDir/README-Win7.txt"
-          Compress-Archive -Force -Path "$packageDir/*" -DestinationPath "artifacts/bohr-server-$version-win7-browser-shell.zip"
 
       - name: Verify bundled Chromium runtime
         shell: pwsh
@@ -91,9 +90,43 @@ jobs:
             }
           }
 
-      - name: Upload package artifact
+      - name: Install NSIS
+        shell: pwsh
+        run: choco install nsis --yes --no-progress
+
+      - name: Build Windows 7 installer
+        shell: pwsh
+        run: |
+          $version = (Get-Content boer-lan-server/package.json | ConvertFrom-Json).version
+          $sourceDir = (Resolve-Path "artifacts/server-win7-shell").Path
+          $outputDir = (Resolve-Path "artifacts").Path
+          $outputFile = Join-Path $outputDir "bohr-server-$version-win7-x64-setup.exe"
+          $iconFile = (Resolve-Path "boer-lan-server/src-tauri/icons/icon.ico").Path
+          $installerScript = (Resolve-Path ".github/installer/win7-browser-shell.nsi").Path
+          $makensis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          if (-not (Test-Path -LiteralPath $makensis)) {
+            $makensis = (Get-Command makensis.exe -ErrorAction Stop).Source
+          }
+
+          & $makensis `
+            "/DPRODUCT_NAME=Boer LAN Server Win7" `
+            "/DPRODUCT_VERSION=$version" `
+            "/DPRODUCT_EXE=Boer-LAN-Server-Win7.exe" `
+            "/DINSTALL_DIR_NAME=BoerLANServerWin7" `
+            "/DAPP_ID=com.boer.lan-server.win7" `
+            "/DBACKEND_PROCESS=backend-server.exe" `
+            "/DSOURCE_DIR=$sourceDir" `
+            "/DOUTPUT_FILE=$outputFile" `
+            "/DICON_FILE=$iconFile" `
+            $installerScript
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $outputFile)) {
+            throw "Failed to build Windows 7 server installer."
+          }
+          Get-Item -LiteralPath $outputFile | Format-List FullName, Length
+
+      - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: server-win7-browser-shell
-          path: artifacts/bohr-server-*-win7-browser-shell.zip
+          name: server-win7-nsis
+          path: artifacts/bohr-server-*-win7-x64-setup.exe
           if-no-files-found: error

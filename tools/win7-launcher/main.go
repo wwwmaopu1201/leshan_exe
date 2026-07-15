@@ -25,6 +25,7 @@ type appConfig struct {
 	mode        string
 	title       string
 	distDir     string
+	dataDir     string
 	backendPath string
 	backendPort int
 	listenPort  int
@@ -44,6 +45,9 @@ func main() {
 	if !filepath.IsAbs(cfg.distDir) {
 		cfg.distDir = filepath.Join(baseDir, cfg.distDir)
 	}
+	if cfg.dataDir != "" && !filepath.IsAbs(cfg.dataDir) {
+		cfg.dataDir = filepath.Join(baseDir, cfg.dataDir)
+	}
 	if cfg.backendPath != "" && !filepath.IsAbs(cfg.backendPath) {
 		cfg.backendPath = filepath.Join(baseDir, cfg.backendPath)
 	}
@@ -58,6 +62,7 @@ func parseFlags() appConfig {
 	flag.StringVar(&cfg.mode, "mode", defaultMode, "client or server")
 	flag.StringVar(&cfg.title, "title", defaultTitle, "browser window title")
 	flag.StringVar(&cfg.distDir, "dist", "dist", "frontend dist directory")
+	flag.StringVar(&cfg.dataDir, "data-dir", "", "application data directory; defaults to AppData on Windows")
 	flag.StringVar(&cfg.backendPath, "backend", "backend-server.exe", "backend executable path for server mode")
 	flag.IntVar(&cfg.backendPort, "backend-port", 8088, "fallback backend port")
 	flag.IntVar(&cfg.listenPort, "listen-port", 0, "local shell HTTP port; 0 picks a free port")
@@ -75,7 +80,7 @@ func run(cfg appConfig, baseDir string) error {
 		return err
 	}
 
-	dataDir := filepath.Join(baseDir, "data")
+	dataDir := resolveDataDir(cfg, baseDir)
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		return err
 	}
@@ -117,7 +122,7 @@ func run(cfg appConfig, baseDir string) error {
 	url := fmt.Sprintf("http://127.0.0.1:%d/", listener.Addr().(*net.TCPAddr).Port)
 	log.Printf("%s started: %s", cfg.title, url)
 
-	browserCmd, err := openBrowser(baseDir, cfg.title, url)
+	browserCmd, err := openBrowser(baseDir, dataDir, cfg.title, url)
 	if err != nil {
 		log.Printf("Failed to open browser automatically: %v", err)
 	}
@@ -179,6 +184,30 @@ func executableDir() string {
 	return filepath.Dir(exe)
 }
 
+func resolveDataDir(cfg appConfig, baseDir string) string {
+	if strings.TrimSpace(cfg.dataDir) != "" {
+		return cfg.dataDir
+	}
+
+	// Preserve data created by an older portable package when it exists.
+	legacyDataDir := filepath.Join(baseDir, "data")
+	if info, err := os.Stat(legacyDataDir); err == nil && info.IsDir() {
+		return legacyDataDir
+	}
+
+	if runtime.GOOS == "windows" {
+		if appData := strings.TrimSpace(os.Getenv("APPDATA")); appData != "" {
+			identifier := "com.boer.lan-client"
+			if cfg.mode == "server" {
+				identifier = "com.boer.lan-server"
+			}
+			return filepath.Join(appData, identifier)
+		}
+	}
+
+	return legacyDataDir
+}
+
 func startBackend(cfg appConfig, dataDir, portFile string) (*exec.Cmd, error) {
 	if _, err := os.Stat(cfg.backendPath); err != nil {
 		return nil, fmt.Errorf("backend executable not found: %s", cfg.backendPath)
@@ -238,10 +267,10 @@ func noCache(next http.Handler) http.Handler {
 	})
 }
 
-func openBrowser(baseDir, title, url string) (*exec.Cmd, error) {
+func openBrowser(baseDir, dataDir, title, url string) (*exec.Cmd, error) {
 	if runtime.GOOS == "windows" {
 		if browser := findBundledBrowser(baseDir); browser != "" {
-			profileDir := filepath.Join(baseDir, "browser-profile")
+			profileDir := filepath.Join(dataDir, "browser-profile")
 			_ = os.MkdirAll(profileDir, 0755)
 			cmd := exec.Command(browser,
 				"--app="+url,
