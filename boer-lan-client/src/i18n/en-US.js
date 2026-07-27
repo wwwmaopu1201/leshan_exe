@@ -74,7 +74,11 @@ export default {
     companyName: 'Bohr IoT Management Client',
     companyNameEn: 'Research Suzhou Bohr Technology Co., Ltd.',
     loginSuccess: 'Login successful',
-    loginFailed: 'Login failed'
+    loginFailed: 'Login failed',
+    connectionHelp: 'Cannot connect?',
+    connectionHelpTitle: 'Server not reachable',
+    connectionHelpContent: 'Check the following in order:\n1. The server application is running on the server PC.\n2. Both computers are on the same LAN.\n3. The entered address is the LAN IP shown by the server.\n4. On the server login screen, select “Repair now” to allow this application through Windows Firewall.\n\nDo not disable Windows Firewall.',
+    retryTip: 'Got it, try again'
   },
   layout: {
     appTitle: 'Bohr IoT Management Client',

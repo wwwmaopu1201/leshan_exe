@@ -25,6 +25,10 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, se
 	api.GET("/healthz", func(c *gin.Context) {
 		c.JSON(200, gin.H{"code": 0, "message": "ok"})
 	})
+	// These endpoints reject non-loopback callers so the local server console can
+	// diagnose first-run firewall setup before an administrator signs in.
+	api.GET("/system/firewall/status", systemHandler.GetFirewallStatus)
+	api.POST("/system/firewall/repair", systemHandler.RepairFirewall)
 	api.GET("/device/vnc/ws/:id", deviceHandler.ProxyVNCWebSocket)
 
 	// Protected routes

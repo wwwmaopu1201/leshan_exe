@@ -1149,7 +1149,7 @@ Object.assign(EN_TEXT, {
   '用于统一维护花型文件的订单编号。清空编号时仅移除关联花型的订单编号字段，不删除花型文件。': 'Manage order numbers for pattern files. Clearing a number only removes the order number field from related patterns and does not delete pattern files.',
   '用于统一维护设备类型。删除类型时，关联设备会清空对应字段。': 'Manage Device Type. Deleting a type clears the field on related devices.',
   '用于统一维护电控类型。删除类型时，关联设备会清空对应字段。': 'Manage Electric Control Type. Deleting a type clears the field on related devices.',
-  '局域网客户端操作说明-v1.0.28.pdf': 'LAN Client User Guide-v1.0.28.pdf',
+  '局域网客户端操作说明-v1.0.29.pdf': 'LAN Client User Guide-v1.0.29.pdf',
   '解析用户权限失败:': 'Failed to parse user permissions:'
 })
 

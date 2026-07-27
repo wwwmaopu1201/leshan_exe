@@ -17,6 +17,11 @@ $bg-card: #ffffff;
   box-sizing: border-box;
 }
 
+.connection-help-dialog .el-message-box__message p {
+  white-space: pre-line;
+  line-height: 1.7;
+}
+
 html,
 body,
 #app {

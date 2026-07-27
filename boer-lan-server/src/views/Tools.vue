@@ -62,22 +62,23 @@
         <el-card shadow="never" class="surface-card">
           <div class="section-title">
             <div>
-              <h3>防火墙快捷操作</h3>
-              <p>常用于首次部署和局域网无法接入时的快速检查。</p>
+              <h3>局域网访问设置</h3>
+              <p>只检查和放行本软件需要的端口，不会关闭 Windows 防火墙。</p>
             </div>
+          </div>
+          <div v-if="firewallStatus && firewallStatus.supported" class="soft-note">
+            <i :class="firewallStatus.needsRepair ? 'el-icon-warning-outline' : 'el-icon-circle-check'"></i>
+            <span>{{ firewallStatus.message }}（仅允许本地子网访问）</span>
           </div>
           <div class="tool-button-grid">
             <el-button :loading="commandLoading" icon="el-icon-setting" @click="openFirewallConfig">
               打开防火墙配置
             </el-button>
             <el-button :loading="commandLoading" icon="el-icon-view" @click="showFirewallStatus">
-              查看防火墙状态
+              检查放行状态
             </el-button>
-            <el-button type="success" plain :loading="commandLoading" @click="setFirewallState(true)">
-              开启防火墙
-            </el-button>
-            <el-button type="danger" plain :loading="commandLoading" @click="setFirewallState(false)">
-              关闭防火墙
+            <el-button type="primary" :loading="commandLoading" @click="repairFirewall">
+              一键修复局域网访问
             </el-button>
           </div>
         </el-card>
@@ -187,7 +188,8 @@ export default {
         title: '',
         content: ''
       },
-      latestCommandOutput: ''
+      latestCommandOutput: '',
+      firewallStatus: null
     }
   },
   mounted() {
@@ -196,6 +198,7 @@ export default {
   methods: {
     async initPage() {
       await Promise.all([this.loadServerInfo(), this.loadSettings()])
+      await this.checkFirewallStatus(false)
     },
     async loadServerInfo() {
       try {
@@ -307,37 +310,67 @@ export default {
       }
       this.executeCommand('control', ['firewall.cpl'], '打开防火墙配置')
     },
-    showFirewallStatus() {
+    async checkFirewallStatus(showResult = true) {
       if (!this.isWindowsPlatform()) {
-        this.$message.warning('当前平台暂不支持该快捷操作')
+        if (showResult) this.$message.info('当前系统不需要 Windows 防火墙规则')
         return
       }
-      this.executeCommand('netsh', ['advfirewall', 'show', 'allprofiles'], '防火墙状态')
-    },
-    async setFirewallState(enabled) {
-      if (!this.isWindowsPlatform()) {
-        this.$message.warning('当前平台暂不支持该快捷操作')
-        return
-      }
-      const actionText = enabled ? '开启' : '关闭'
+      this.commandLoading = true
       try {
-        await this.$confirm(`确定要${actionText}系统防火墙吗？`, '提示', {
-          confirmButtonText: '确定',
+        const res = await this.$axios.get('/system/firewall/status')
+        this.firewallStatus = res.data
+        if (showResult) {
+          const management = res.data?.management
+          const device = res.data?.device
+          this.openOutputDialog('局域网放行状态', [
+            res.data?.message || '-',
+            '',
+            `管理端口 ${management?.port || '-'}：${management?.exists ? '已放行' : '未放行'}`,
+            `设备端口 ${device?.port || '-'}：${device?.exists ? '已放行' : '未放行'}`,
+            '',
+            '访问范围：仅本地子网（LocalSubnet）',
+            '系统防火墙：保持开启'
+          ].join('\n'))
+        }
+      } catch (error) {
+        console.error('检查防火墙规则失败', error)
+      } finally {
+        this.commandLoading = false
+      }
+    },
+    showFirewallStatus() {
+      this.checkFirewallStatus(true)
+    },
+    async repairFirewall() {
+      if (!this.isWindowsPlatform()) {
+        this.$message.warning('当前平台暂不支持该快捷操作')
+        return
+      }
+      try {
+        await this.$confirm('系统将申请管理员权限，仅放行本软件需要的局域网端口，不会关闭防火墙。是否继续？', '一键修复局域网访问', {
+          confirmButtonText: '继续修复',
           cancelButtonText: '取消',
           type: 'warning'
         })
       } catch (error) {
-        if (error !== 'cancel') {
-          console.error(`${actionText}防火墙确认失败`, error)
-        }
         return
       }
-      const state = enabled ? 'on' : 'off'
-      await this.executeCommand(
-        'netsh',
-        ['advfirewall', 'set', 'allprofiles', 'state', state],
-        `${actionText}防火墙`
-      )
+
+      this.commandLoading = true
+      try {
+        const res = await this.$axios.post('/system/firewall/repair')
+        if (res.code !== 0) {
+          this.firewallStatus = res.data || this.firewallStatus
+          throw new Error(res.message || '防火墙修复未完成')
+        }
+        this.firewallStatus = res.data
+        this.$message.success('防火墙规则修复成功，客户端可以重新连接')
+      } catch (error) {
+        this.$message.error(error?.message || '防火墙修复未完成')
+        console.error('修复防火墙规则失败', error)
+      } finally {
+        this.commandLoading = false
+      }
     },
     async checkPortUsage() {
       const port = Number(this.portToCheck || 0)

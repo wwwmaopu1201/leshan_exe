@@ -85,6 +85,21 @@
       <section class="login-card">
         <h1 class="login-title">{{ texts.title }}</h1>
 
+        <div v-if="firewallStatus && firewallStatus.supported && firewallStatus.needsRepair" class="firewall-warning">
+          <i class="el-icon-warning-outline"></i>
+          <div class="firewall-warning__body">
+            <strong>{{ texts.firewallTitle }}</strong>
+            <span>{{ texts.firewallDescription }}</span>
+            <el-button
+              type="text"
+              :loading="firewallRepairing"
+              @click="repairFirewall"
+            >
+              {{ texts.firewallRepair }}
+            </el-button>
+          </div>
+        </div>
+
         <el-form
           ref="loginFormRef"
           :model="loginForm"
@@ -158,7 +173,12 @@ const LOCALES = {
     passwordRequired: '请输入密码',
     loginSuccess: '登录成功',
     adminOnly: '仅管理员可登录服务端',
-    loginFailed: '登录失败，请检查账号密码'
+    loginFailed: '登录失败，请检查账号密码',
+    firewallTitle: '局域网连接可能被防火墙阻止',
+    firewallDescription: '请一键允许本软件在局域网中通信，不会关闭系统防火墙。',
+    firewallRepair: '一键修复（推荐）',
+    firewallConfirm: '系统将申请管理员权限，仅放行本软件需要的局域网端口。是否继续？',
+    firewallSuccess: '防火墙规则已修复，客户端现在可以尝试重新连接。'
   },
   'en-US': {
     brand: 'Bohr IoT Management Server',
@@ -172,7 +192,12 @@ const LOCALES = {
     passwordRequired: 'Please enter password',
     loginSuccess: 'Login successful',
     adminOnly: 'Only administrators can access the server console',
-    loginFailed: 'Login failed. Check username and password'
+    loginFailed: 'Login failed. Check username and password',
+    firewallTitle: 'The firewall may block LAN connections',
+    firewallDescription: 'Allow this application on the LAN without disabling Windows Firewall.',
+    firewallRepair: 'Repair now (recommended)',
+    firewallConfirm: 'Administrator permission is required to allow only the LAN ports used by this application. Continue?',
+    firewallSuccess: 'Firewall rules repaired. Clients can try connecting again.'
   }
 }
 
@@ -183,6 +208,8 @@ export default {
     const language = localStorage.getItem(LANGUAGE_KEY) || 'zh-CN'
     return {
       loading: false,
+      firewallRepairing: false,
+      firewallStatus: null,
       currentLanguage: LOCALES[language] ? language : 'zh-CN',
       loginForm: {
         username: remembered ? (localStorage.getItem(USERNAME_KEY) || '') : '',
@@ -212,8 +239,54 @@ export default {
     localStorage.removeItem(SERVER_IP_KEY)
     localStorage.removeItem(SERVER_PORT_KEY)
     this.restoreSession()
+    this.inspectFirewall()
   },
   methods: {
+    async inspectFirewall() {
+      try {
+        const res = await this.$axios.get('/system/firewall/status', {
+          skipAuthRedirect: true,
+          suppressErrorMessage: true,
+          timeout: 5000
+        })
+        if (res.code === 0) {
+          this.firewallStatus = res.data
+        }
+      } catch (error) {
+        console.log('防火墙状态检查不可用', error)
+      }
+    },
+    async repairFirewall() {
+      try {
+        await this.$confirm(this.texts.firewallConfirm, this.texts.firewallTitle, {
+          confirmButtonText: this.texts.firewallRepair,
+          cancelButtonText: this.currentLanguage === 'en-US' ? 'Cancel' : '取消',
+          type: 'warning'
+        })
+      } catch (error) {
+        return
+      }
+
+      this.firewallRepairing = true
+      try {
+        const res = await this.$axios.post('/system/firewall/repair', {}, {
+          skipAuthRedirect: true,
+          suppressErrorMessage: true
+        })
+        if (res.code !== 0) {
+          this.firewallStatus = res.data || this.firewallStatus
+          throw new Error(res.message || '防火墙修复未完成')
+        }
+        this.firewallStatus = res.data
+        this.$message.success(this.texts.firewallSuccess)
+      } catch (error) {
+        this.firewallStatus = error?.response?.data?.data || this.firewallStatus
+        const message = this.$translateApiMessage(error?.userMessage || error?.response?.data?.message || error?.message)
+        this.$message.error(message)
+      } finally {
+        this.firewallRepairing = false
+      }
+    },
     applyRules() {
       this.rules = {
         username: [{ required: true, message: this.texts.usernameRequired, trigger: 'blur' }],
@@ -826,6 +899,41 @@ export default {
   color: #4c8bd8;
   font-weight: 700;
   letter-spacing: 0.08em;
+}
+
+.firewall-warning {
+  display: flex;
+  gap: 8px;
+  margin: -8px 0 16px;
+  padding: 9px 10px;
+  border: 1px solid #f5d8a8;
+  background: #fff8eb;
+  color: #9b6214;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.firewall-warning > i {
+  margin-top: 2px;
+  font-size: 15px;
+}
+
+.firewall-warning__body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.firewall-warning__body strong {
+  color: #7d4d0d;
+}
+
+.firewall-warning__body ::v-deep .el-button {
+  min-height: 22px;
+  padding: 3px 0 0;
+  font-size: 11px;
 }
 
 .login-form ::v-deep .el-form-item {

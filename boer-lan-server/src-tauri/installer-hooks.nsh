@@ -37,3 +37,13 @@
   Pop $1
   Pop $0
 !macroend
+
+!macro NSIS_HOOK_POSTINSTALL
+  DetailPrint "Configuring Boer LAN firewall rules (LocalSubnet only)..."
+  ExecShellWait "runas" "$SYSDIR\cmd.exe" '/d /s /c ""$SYSDIR\netsh.exe" advfirewall firewall delete rule name="Boer LAN Server - Management TCP" >nul 2>&1 & "$SYSDIR\netsh.exe" advfirewall firewall add rule name="Boer LAN Server - Management TCP" dir=in action=allow protocol=TCP localport=8088 remoteip=LocalSubnet profile=any enable=yes & "$SYSDIR\netsh.exe" advfirewall firewall delete rule name="Boer LAN Server - Device TCP" >nul 2>&1 & "$SYSDIR\netsh.exe" advfirewall firewall add rule name="Boer LAN Server - Device TCP" dir=in action=allow protocol=TCP localport=38400 remoteip=LocalSubnet profile=any enable=yes"' SW_HIDE
+!macroend
+
+!macro NSIS_HOOK_PREUNINSTALL
+  DetailPrint "Removing Boer LAN firewall rules..."
+  ExecShellWait "runas" "$SYSDIR\cmd.exe" '/d /s /c ""$SYSDIR\netsh.exe" advfirewall firewall delete rule name="Boer LAN Server - Management TCP" >nul 2>&1 & "$SYSDIR\netsh.exe" advfirewall firewall delete rule name="Boer LAN Server - Device TCP" >nul 2>&1"' SW_HIDE
+!macroend

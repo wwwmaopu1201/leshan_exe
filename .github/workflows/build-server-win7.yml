@@ -115,6 +115,7 @@ jobs:
             "/DINSTALL_DIR_NAME=BoerLANServerWin7" `
             "/DAPP_ID=com.boer.lan-server.win7" `
             "/DBACKEND_PROCESS=backend-server.exe" `
+            "/DSERVER_FIREWALL=1" `
             "/DSOURCE_DIR=$sourceDir" `
             "/DOUTPUT_FILE=$outputFile" `
             "/DICON_FILE=$iconFile" `

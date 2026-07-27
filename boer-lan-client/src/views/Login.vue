@@ -143,6 +143,9 @@
             <el-checkbox v-model="loginForm.remember">
               {{ $t('login.rememberPassword') }}
             </el-checkbox>
+            <el-button type="text" class="connection-help" @click="showConnectionHelp">
+              {{ $t('login.connectionHelp') }}
+            </el-button>
           </div>
         </el-form>
       </section>
@@ -236,6 +239,19 @@ export default {
       ]
       return styles[index - 1] || {}
     },
+    isConnectivityError(error) {
+      if (error?.response) return false
+      const code = String(error?.code || '').toUpperCase()
+      const message = String(error?.message || '').toLowerCase()
+      return code === 'ERR_NETWORK' || code === 'ECONNABORTED' ||
+        message.includes('network') || message.includes('timeout')
+    },
+    showConnectionHelp() {
+      this.$alert(this.$t('login.connectionHelpContent'), this.$t('login.connectionHelpTitle'), {
+        confirmButtonText: this.$t('login.retryTip'),
+        customClass: 'connection-help-dialog'
+      })
+    },
     async handleLogin() {
       try {
         await this.$refs.loginForm.validate()
@@ -282,6 +298,10 @@ export default {
         this.$message.success(this.$t('login.loginSuccess'))
         this.$router.push(getDefaultAccessiblePath())
       } catch (error) {
+        if (this.isConnectivityError(error)) {
+          this.showConnectionHelp()
+          return
+        }
         const message = this.$translateApiMessage(error.userMessage || error.response?.data?.message) || this.$t('login.loginFailed')
         this.$message.error(message)
       } finally {
@@ -829,9 +849,14 @@ export default {
 
 .login-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
   margin-top: -2px;
   margin-bottom: 0;
+}
+
+.connection-help {
+  padding: 0;
+  font-size: 12px;
 }
 
 .login-actions ::v-deep .el-checkbox {

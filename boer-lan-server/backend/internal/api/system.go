@@ -3,6 +3,7 @@ package api
 import (
 	"boer-lan-server/internal/model"
 	"boer-lan-server/internal/service"
+	"boer-lan-server/pkg/firewall"
 	appversion "boer-lan-server/pkg/version"
 	"context"
 	"encoding/json"
@@ -16,6 +17,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -27,6 +29,7 @@ import (
 type SystemHandler struct {
 	db         *gorm.DB
 	serverPort int
+	firewallMu sync.Mutex
 }
 
 type ExternalDBConfig struct {
@@ -51,6 +54,75 @@ func NewSystemHandler(db *gorm.DB, serverPort int) *SystemHandler {
 		db:         db,
 		serverPort: serverPort,
 	}
+}
+
+func requestIsLoopback(c *gin.Context) bool {
+	host, _, err := net.SplitHostPort(c.Request.RemoteAddr)
+	if err != nil {
+		host = c.Request.RemoteAddr
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip != nil && ip.IsLoopback()
+}
+
+func requestIsLocalConsole(c *gin.Context) bool {
+	if !requestIsLoopback(c) {
+		return false
+	}
+	origin := strings.TrimSpace(c.GetHeader("Origin"))
+	if origin == "" {
+		return true
+	}
+	parsed, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if host == "localhost" || host == "tauri.localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// GetFirewallStatus reports only the dedicated Boer LAN rules. It never disables
+// or weakens the Windows firewall and is intentionally limited to the server PC.
+func (h *SystemHandler) GetFirewallStatus(c *gin.Context) {
+	if !requestIsLoopback(c) {
+		c.JSON(http.StatusForbidden, gin.H{"code": 1, "message": "仅允许在服务端电脑上检查防火墙"})
+		return
+	}
+
+	status := firewall.Inspect(h.serverPort, service.TCPPort)
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": status})
+}
+
+// RepairFirewall requests UAC elevation and recreates the two inbound TCP rules.
+// The rules are restricted to LocalSubnet and do not expose the ports to Internet hosts.
+func (h *SystemHandler) RepairFirewall(c *gin.Context) {
+	if !requestIsLocalConsole(c) {
+		c.JSON(http.StatusForbidden, gin.H{"code": 1, "message": "仅允许在服务端电脑上修复防火墙"})
+		return
+	}
+
+	h.firewallMu.Lock()
+	defer h.firewallMu.Unlock()
+
+	status, err := firewall.Repair(h.serverPort, service.TCPPort)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    1,
+			"message": fmt.Sprintf("防火墙修复未完成：%v", err),
+			"data":    status,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    0,
+		"message": "防火墙规则修复成功",
+		"data":    status,
+	})
 }
 
 // GetServerInfo 获取服务器信息
@@ -369,7 +441,6 @@ func (h *SystemHandler) ExecuteCommand(c *gin.Context) {
 		"ping":     true,
 		"netstat":  true,
 		"hostname": true,
-		"netsh":    true,
 		"control":  true,
 		"tasklist": true,
 	}

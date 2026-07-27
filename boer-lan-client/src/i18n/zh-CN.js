@@ -74,7 +74,11 @@ export default {
     companyName: '博尔物联网管理软件客户端',
     companyNameEn: 'Research Suzhou Bohr Technology Co., Ltd.',
     loginSuccess: '登录成功',
-    loginFailed: '登录失败'
+    loginFailed: '登录失败',
+    connectionHelp: '无法连接？',
+    connectionHelpTitle: '未连接到服务端',
+    connectionHelpContent: '请按顺序检查：\n1. 服务端电脑上的服务端程序正在运行；\n2. 两台电脑连接同一个局域网；\n3. 输入的是服务端电脑显示的局域网 IP；\n4. 在服务端登录页点击“一键修复”，允许本软件通过 Windows 防火墙。\n\n不需要关闭系统防火墙。',
+    retryTip: '我知道了，重新尝试'
   },
   layout: {
     appTitle: '博尔物联网管理软件客户端',

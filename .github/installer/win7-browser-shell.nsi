@@ -87,6 +87,11 @@ Section "Install" SEC_MAIN
   WriteRegStr HKCU "${UNINSTALL_REG_KEY}" "UninstallString" '$"$INSTDIR\Uninstall.exe$"'
   WriteRegDWORD HKCU "${UNINSTALL_REG_KEY}" "NoModify" 1
   WriteRegDWORD HKCU "${UNINSTALL_REG_KEY}" "NoRepair" 1
+
+!ifdef SERVER_FIREWALL
+  DetailPrint "Configuring Boer LAN firewall rules (LocalSubnet only)..."
+  ExecShellWait "runas" "$SYSDIR\cmd.exe" '/d /s /c ""$SYSDIR\netsh.exe" advfirewall firewall delete rule name="Boer LAN Server - Management TCP" >nul 2>&1 & "$SYSDIR\netsh.exe" advfirewall firewall add rule name="Boer LAN Server - Management TCP" dir=in action=allow protocol=TCP localport=8088 remoteip=LocalSubnet profile=any enable=yes & "$SYSDIR\netsh.exe" advfirewall firewall delete rule name="Boer LAN Server - Device TCP" >nul 2>&1 & "$SYSDIR\netsh.exe" advfirewall firewall add rule name="Boer LAN Server - Device TCP" dir=in action=allow protocol=TCP localport=38400 remoteip=LocalSubnet profile=any enable=yes"' SW_HIDE
+!endif
 SectionEnd
 
 Section "Uninstall"
@@ -95,6 +100,11 @@ Section "Uninstall"
   nsExec::ExecToLog 'taskkill /F /T /IM "${PRODUCT_EXE}"'
 !ifdef BACKEND_PROCESS
   nsExec::ExecToLog 'taskkill /F /T /IM "${BACKEND_PROCESS}"'
+!endif
+
+!ifdef SERVER_FIREWALL
+  DetailPrint "Removing Boer LAN firewall rules..."
+  ExecShellWait "runas" "$SYSDIR\cmd.exe" '/d /s /c ""$SYSDIR\netsh.exe" advfirewall firewall delete rule name="Boer LAN Server - Management TCP" >nul 2>&1 & "$SYSDIR\netsh.exe" advfirewall firewall delete rule name="Boer LAN Server - Device TCP" >nul 2>&1"' SW_HIDE
 !endif
 
   Delete "$DESKTOP\${PRODUCT_NAME}.lnk"

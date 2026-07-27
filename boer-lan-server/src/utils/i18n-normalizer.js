@@ -230,6 +230,13 @@ const EN_TEXT = {
   '端口占用总览': 'Port Usage Overview',
   '防火墙状态': 'Firewall Status',
   '打开防火墙配置': 'Open Firewall Settings',
+  '局域网访问设置': 'LAN Access Settings',
+  '只检查和放行本软件需要的端口，不会关闭 Windows 防火墙。': 'Checks and allows only the ports required by this application without disabling Windows Firewall.',
+  '检查放行状态': 'Check Allowed Ports',
+  '一键修复局域网访问': 'Repair LAN Access',
+  '仅本地子网（LocalSubnet）': 'Local subnet only (LocalSubnet)',
+  '系统防火墙：保持开启': 'System firewall: remains enabled',
+  '防火墙规则修复成功，客户端可以重新连接': 'Firewall rules repaired. Clients can reconnect now.',
   '当前平台暂不支持该快捷操作': 'This shortcut is not supported on the current platform',
   '数据库类型': 'Database Type',
   '数据库地址': 'Database Host',
@@ -1151,7 +1158,7 @@ Object.assign(EN_TEXT, {
   '用于统一维护花型文件的订单编号。清空编号时仅移除关联花型的订单编号字段，不删除花型文件。': 'Manage order numbers for pattern files. Clearing a number only removes the order number field from related patterns and does not delete pattern files.',
   '用于统一维护设备类型。删除类型时，关联设备会清空对应字段。': 'Manage Device Type. Deleting a type clears the field on related devices.',
   '用于统一维护电控类型。删除类型时，关联设备会清空对应字段。': 'Manage Electric Control Type. Deleting a type clears the field on related devices.',
-  '局域网客户端操作说明-v1.0.28.pdf': 'LAN Client User Guide-v1.0.28.pdf',
+  '局域网客户端操作说明-v1.0.29.pdf': 'LAN Client User Guide-v1.0.29.pdf',
   '解析用户权限失败:': 'Failed to parse user permissions:'
 })
 
