@@ -9,6 +9,7 @@ build/
 */build/
 target/
 */target/
+artifacts/
 tools/win7-launcher/embedded-dist/*
 !tools/win7-launcher/embedded-dist/placeholder.txt
 
