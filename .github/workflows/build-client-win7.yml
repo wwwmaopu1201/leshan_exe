@@ -1,6 +1,8 @@
 name: Build Client Windows 7 Installer
 
 on:
+  push:
+    tags: [ 'v*' ]
   workflow_dispatch:
 
 jobs:
@@ -117,3 +119,9 @@ jobs:
           name: client-win7-nsis
           path: artifacts/bohr-client-*-win7-x64-setup.exe
           if-no-files-found: error
+
+      - name: Add installer to GitHub Release (tag only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/bohr-client-*-win7-x64-setup.exe
