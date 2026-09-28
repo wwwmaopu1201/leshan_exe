@@ -45,9 +45,9 @@
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" width="48" />
-        <el-table-column prop="username" label="账号" min-width="140" />
-        <el-table-column prop="nickname" label="操作员姓名" min-width="130" />
-        <el-table-column prop="createTime" label="创建时间" width="170" />
+        <el-table-column prop="username" label="账号" min-width="140"  show-overflow-tooltip />
+        <el-table-column prop="nickname" label="操作员姓名" min-width="130"  show-overflow-tooltip />
+        <el-table-column prop="createTime" label="创建时间" width="170"  show-overflow-tooltip />
         <el-table-column label="所属分组" min-width="180">
           <template slot-scope="{ row }">
             {{ formatGroupName(row) }}
@@ -74,7 +74,7 @@
       :visible.sync="dialogVisible"
       width="560px"
       @close="resetForm"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <el-form ref="operatorFormRef" :model="form" :rules="rules" label-width="110px">
         <el-form-item label="账号" prop="username">
           <el-input v-model="form.username" :disabled="!!form.id" placeholder="请输入账号" />
@@ -123,7 +123,7 @@
       title="批量导入操作员"
       :visible.sync="importDialogVisible"
       width="640px"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <div style="margin-bottom: 8px; color: #606266;">
         每行一个操作员，格式：`账号,密码,操作员姓名,分组ID(可选)`
       </div>
@@ -143,7 +143,7 @@
       title="批量移动操作员分组"
       :visible.sync="moveDialogVisible"
       width="420px"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <el-form label-width="90px">
         <el-form-item label="目标分组" required>
           <el-select v-model="moveTargetGroupId" style="width: 100%;" placeholder="请选择分组">

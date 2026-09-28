@@ -71,7 +71,7 @@ export function getRequestBaseURL() {
 }
 
 request.interceptors.request.use(config => {
-  const token = localStorage.getItem('token')
+  const token = sessionStorage.getItem('token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
@@ -84,7 +84,7 @@ request.interceptors.response.use(
   error => {
     const message = translateApiMessage(error.response?.data?.message || error.response?.data?.error || '请求失败')
     if (error.response?.status === 401) {
-      localStorage.removeItem('token')
+      sessionStorage.removeItem('token')
       if (!error.config?.skipAuthRedirect) {
         redirectToLogin()
       }

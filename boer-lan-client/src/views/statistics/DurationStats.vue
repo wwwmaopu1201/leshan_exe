@@ -125,13 +125,13 @@
             empty-text="暂无数据"
           >
             <el-table-column type="index" label="序号" width="60" align="center" />
-            <el-table-column prop="deviceName" label="设备名称" min-width="120" />
-            <el-table-column prop="employeeCode" label="员工工号" width="100" />
-            <el-table-column prop="employeeName" label="员工姓名" width="110" />
-            <el-table-column prop="date" label="日期" width="110" />
-            <el-table-column prop="patternName" label="花型名称" min-width="150" />
-            <el-table-column prop="startTime" label="开始时间" width="160" />
-            <el-table-column prop="endTime" label="结束时间" width="160" />
+            <el-table-column prop="deviceName" label="设备名称" min-width="120"  show-overflow-tooltip />
+            <el-table-column prop="employeeCode" label="员工工号" width="100"  show-overflow-tooltip />
+            <el-table-column prop="employeeName" label="员工姓名" width="110"  show-overflow-tooltip />
+            <el-table-column prop="date" label="日期" width="110"  show-overflow-tooltip />
+            <el-table-column prop="patternName" label="花型名称" min-width="150"  show-overflow-tooltip />
+            <el-table-column prop="startTime" label="开始时间" width="160"  show-overflow-tooltip />
+            <el-table-column prop="endTime" label="结束时间" width="160"  show-overflow-tooltip />
             <el-table-column prop="sewDuration" label="缝纫时长" width="120" align="right">
               <template slot-scope="scope">
                 <span class="text-success">{{ formatSewDuration(scope.row) }}</span>
@@ -242,6 +242,7 @@ export default {
       this.loading = true
       try {
         const res = await getDurationStats({
+          deviceName: this.searchForm.deviceKeyword,
           startDate: this.searchForm.dateRange?.[0],
           endDate: this.searchForm.dateRange?.[1],
           deviceId: this.searchForm.deviceFilter.deviceId,
@@ -254,6 +255,7 @@ export default {
           const rawList = res.data.list || []
           this.tableData = this.applyLocalFilters(rawList)
           this.pagination.total = this.tableData.length
+          this.pagination.page = Math.min(this.pagination.page, Math.max(1, Math.ceil(this.pagination.total / this.pagination.pageSize)))
           this.chartData = {
             durationPie: res.data.durationPie || [],
             durationTrend: res.data.durationTrend || []
@@ -288,6 +290,7 @@ export default {
     },
     handleSizeChange(size) {
       this.pagination.pageSize = size
+      this.pagination.page = 1
       this.syncTableHeight()
     },
     handlePageChange(page) {
@@ -296,6 +299,7 @@ export default {
     async handleExport() {
       try {
         const response = await exportStatistics('duration', {
+          deviceName: this.searchForm.deviceKeyword,
           startDate: this.searchForm.dateRange?.[0],
           endDate: this.searchForm.dateRange?.[1],
           deviceId: this.searchForm.deviceFilter.deviceId,
@@ -349,9 +353,9 @@ export default {
       const pieData = this.chartData.durationPie?.length > 0
         ? this.chartData.durationPie
         : [
-            { name: '加工时长', value: this.summary.runningTime },
-            { name: '空闲时长', value: this.summary.idleTime },
-            { name: '报警时长', value: this.summary.alarmTime }
+            { name: this.$translateApiMessage('加工时长'), value: this.summary.runningTime },
+            { name: this.$translateApiMessage('空闲时长'), value: this.summary.idleTime },
+            { name: this.$translateApiMessage('报警时长'), value: this.summary.alarmTime }
           ]
       chart.setOption({
         tooltip: {
@@ -359,6 +363,7 @@ export default {
           formatter: (params) => `${params.name}: ${this.formatDurationFromHours(params.value)} (${params.percent}%)`
         },
         legend: {
+          type: 'scroll',
           orient: 'vertical',
           left: 0,
           top: 'middle',
@@ -401,7 +406,7 @@ export default {
         },
         yAxis: {
           type: 'value',
-          name: '时长',
+          name: this.$translateApiMessage('时长'),
           axisLabel: {
             color: '#6a7f9d',
             formatter: value => this.formatDurationFromHours(value)
@@ -410,7 +415,7 @@ export default {
         },
         series: [
           {
-            name: '加工',
+            name: this.$translateApiMessage('加工'),
             type: 'bar',
             stack: 'total',
             barWidth: 34,
@@ -418,7 +423,7 @@ export default {
             itemStyle: { color: '#2fb46e' }
           },
           {
-            name: '空闲',
+            name: this.$translateApiMessage('空闲'),
             type: 'bar',
             stack: 'total',
             barWidth: 34,
@@ -426,7 +431,7 @@ export default {
             itemStyle: { color: '#f0b037' }
           },
           {
-            name: '报警',
+            name: this.$translateApiMessage('报警'),
             type: 'bar',
             stack: 'total',
             barWidth: 34,

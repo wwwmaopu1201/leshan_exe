@@ -125,23 +125,23 @@
             empty-text="暂无数据"
           >
             <el-table-column type="index" label="序号" width="60" align="center" />
-            <el-table-column prop="deviceName" label="设备名称" min-width="120" />
-            <el-table-column prop="employeeCode" label="员工工号" width="100" />
-            <el-table-column prop="employeeName" label="员工姓名" width="110" />
-            <el-table-column prop="date" label="日期" width="110" />
-            <el-table-column prop="patternName" label="花型名称" min-width="150" />
-            <el-table-column prop="patternStitches" label="花型针数" width="100" align="right" />
-            <el-table-column prop="sewSpeed" label="缝纫速度(针/分钟)" width="140" align="right" />
-            <el-table-column prop="startTime" label="开始时间" width="160" />
-            <el-table-column prop="processCount" label="加工次数" width="90" align="right" />
+            <el-table-column prop="deviceName" label="设备名称" min-width="120"  show-overflow-tooltip />
+            <el-table-column prop="employeeCode" label="员工工号" width="100"  show-overflow-tooltip />
+            <el-table-column prop="employeeName" label="员工姓名" width="110"  show-overflow-tooltip />
+            <el-table-column prop="date" label="日期" width="110"  show-overflow-tooltip />
+            <el-table-column prop="patternName" label="花型名称" min-width="150"  show-overflow-tooltip />
+            <el-table-column prop="patternStitches" label="花型针数" width="100" align="right"  show-overflow-tooltip />
+            <el-table-column prop="sewSpeed" label="缝纫速度(针/分钟)" width="140" align="right"  show-overflow-tooltip />
+            <el-table-column prop="startTime" label="开始时间" width="160"  show-overflow-tooltip />
+            <el-table-column prop="processCount" label="加工次数" width="90" align="right"  show-overflow-tooltip />
             <el-table-column prop="avgProcessDuration" label="平均加工时长" width="170" align="right">
               <template slot-scope="scope">
                 {{ formatDurationPerCountFromMinutes(scope.row.avgProcessDuration) }}
               </template>
             </el-table-column>
-            <el-table-column prop="patternSewCount" label="花型缝纫次数" width="120" align="right" />
-            <el-table-column prop="alarmInfo" label="报警信息" min-width="140" />
-            <el-table-column prop="alarmTime" label="报警时间" width="160" />
+            <el-table-column prop="patternSewCount" label="花型缝纫次数" width="120" align="right"  show-overflow-tooltip />
+            <el-table-column prop="alarmInfo" label="报警信息" min-width="140"  show-overflow-tooltip />
+            <el-table-column prop="alarmTime" label="报警时间" width="160"  show-overflow-tooltip />
             <el-table-column prop="cumulativeUpTime" label="累计开机时长" width="150" align="right">
               <template slot-scope="scope">
                 {{ formatDurationFromHours(scope.row.cumulativeUpTime) }}
@@ -246,6 +246,7 @@ export default {
       this.loading = true
       try {
         const res = await getProcessOverview({
+          deviceName: this.searchForm.deviceKeyword,
           startDate: this.searchForm.dateRange?.[0],
           endDate: this.searchForm.dateRange?.[1],
           deviceId: this.searchForm.deviceFilter.deviceId,
@@ -258,6 +259,7 @@ export default {
           const rawList = res.data.list || []
           this.tableData = this.applyLocalFilters(rawList)
           this.pagination.total = this.tableData.length
+          this.pagination.page = Math.min(this.pagination.page, Math.max(1, Math.ceil(this.pagination.total / this.pagination.pageSize)))
           this.chartData = {
             productionTrend: res.data.productionTrend || [],
             deviceDistribution: res.data.deviceDistribution || []
@@ -292,6 +294,7 @@ export default {
     },
     handleSizeChange(size) {
       this.pagination.pageSize = size
+      this.pagination.page = 1
       this.syncTableHeight()
     },
     handlePageChange(page) {
@@ -300,6 +303,7 @@ export default {
     async handleExport() {
       try {
         const response = await exportStatistics('process', {
+          deviceName: this.searchForm.deviceKeyword,
           startDate: this.searchForm.dateRange?.[0],
           endDate: this.searchForm.dateRange?.[1],
           deviceId: this.searchForm.deviceFilter.deviceId,
@@ -357,7 +361,7 @@ export default {
         yAxis: [
           {
             type: 'value',
-            name: '产量(件)',
+            name: this.$translateApiMessage('产量(件)'),
             axisTick: { show: false },
             axisLine: { show: false },
             axisLabel: { color: '#6f7b8c', fontSize: 11 },
@@ -365,7 +369,7 @@ export default {
           },
           {
             type: 'value',
-            name: '效率(%)',
+            name: this.$translateApiMessage('效率(%)'),
             max: 100,
             axisTick: { show: false },
             axisLine: { show: false },
@@ -375,14 +379,14 @@ export default {
         ],
         series: [
           {
-            name: '产量',
+            name: this.$translateApiMessage('产量'),
             type: 'bar',
             barWidth: 34,
             data: trendData.map(item => item.pieces ?? item.value ?? 0),
             itemStyle: { color: '#2f6df6', borderRadius: [10, 10, 0, 0] }
           },
           {
-            name: '效率',
+            name: this.$translateApiMessage('效率'),
             type: 'line',
             yAxisIndex: 1,
             smooth: true,

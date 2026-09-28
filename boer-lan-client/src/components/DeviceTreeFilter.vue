@@ -48,7 +48,7 @@
                 <i :class="['tree-node-icon', getNodeIcon(data)]"></i>
                 <span class="tree-node-label" :title="node.label">{{ node.label }}</span>
               </div>
-              <span v-if="data.type === 'device'" :class="['status-dot', data.status]"></span>
+              <span v-if="data.type === 'device'" :class="['status-dot', data.status]" :title="$translateApiMessage({idle: '空闲', working: '缝纫', offline: '关机'}[data.status] || '未知状态')"></span>
             </div>
           </el-tree>
         </div>
@@ -156,7 +156,7 @@ export default {
       const isTotal = node => {
         const label = String(node?.label || node?.name || '').trim()
         const id = String(node?.id || '')
-        return label === '总分组' || label === '全部设备' || id === 'all'
+        return label === '全部分组' || label === '总分组' || label === '全部设备' || id === 'all'
       }
       const cloneNode = node => ({
         ...node,
@@ -193,7 +193,7 @@ export default {
         ? groupNodes[0]
         : {
             id: 'all',
-            label: '总分组',
+            label: '全部分组',
             type: 'group',
             children: groupNodes,
             isVirtual: true
@@ -203,7 +203,7 @@ export default {
         ungroupedNode,
         {
           ...totalNode,
-          label: '总分组',
+          label: '全部分组',
           type: 'group'
         }
       ]
@@ -234,7 +234,7 @@ export default {
     isTotalGroupNode(data) {
       const label = String(data?.label || data?.name || '').trim()
       const id = String(data?.id || '')
-      return label === '总分组' || label === '全部设备' || id === 'all'
+      return label === '全部分组' || label === '总分组' || label === '全部设备' || id === 'all'
     },
     collectDeviceIds(node) {
       if (!node) return []

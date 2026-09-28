@@ -74,3 +74,5 @@ export function exportStatistics(type, params) {
     responseType: 'blob'
   })
 }
+
+export function getProductionTrend(params) { return request({ url: '/statistics/production-trend', method: 'get', params }) }

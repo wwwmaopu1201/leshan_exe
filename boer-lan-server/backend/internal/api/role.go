@@ -243,6 +243,10 @@ func (h *RoleHandler) DeleteRole(c *gin.Context) {
 		return
 	}
 
+	if isAdminRole(role.Name) || role.Name == "user" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "系统默认角色不能删除"})
+		return
+	}
 	var userCount int64
 	if err := h.db.Model(&model.User{}).Where("role = ?", role.Name).Count(&userCount).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

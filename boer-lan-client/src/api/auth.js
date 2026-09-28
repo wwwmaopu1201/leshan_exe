@@ -27,6 +27,7 @@ export async function login(data) {
   return request({
     url: '/auth/login',
     method: 'post',
+    timeout: 10000,
     data: {
       ...(data || {}),
       clientVersion

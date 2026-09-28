@@ -84,6 +84,12 @@ func Ensure() (*Status, error) {
 	}
 
 	if state.MachineHash != "" && state.MachineHash != machineHash {
+		legacy, legacyErr := LegacyMachineHash()
+		if legacyErr == nil && state.MachineHash == legacy {
+			state.MachineHash = machineHash
+		}
+	}
+	if state.MachineHash != "" && state.MachineHash != machineHash {
 		status := buildStatus(statePath, state, now, false)
 		status.Valid = false
 		status.Message = "试用授权已绑定到其他设备，无法继续使用"

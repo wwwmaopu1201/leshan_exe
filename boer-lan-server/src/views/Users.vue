@@ -92,7 +92,7 @@
 
           <el-table
             ref="userTableRef"
-            :data="filteredUsers"
+            :data="pagedRows"
             v-loading="loading"
             border
             style="width: 100%; margin-top: 18px;"
@@ -102,14 +102,14 @@
             <el-table-column type="selection" width="48" />
             <el-table-column label="序号" width="70" align="center">
               <template slot-scope="{ $index }">
-                {{ $index + 1 }}
+                {{ (tablePage - 1) * tablePageSize + $index + 1 }}
               </template>
             </el-table-column>
-            <el-table-column prop="username" label="账号" min-width="130" />
-            <el-table-column prop="nickname" label="账号姓名" min-width="120" />
-            <el-table-column prop="phone" label="手机号" width="130" />
-            <el-table-column prop="role" label="角色" width="100" />
-            <el-table-column prop="createTime" label="创建时间" width="170" />
+            <el-table-column prop="username" label="账号" min-width="130"  show-overflow-tooltip />
+            <el-table-column prop="nickname" label="账号姓名" min-width="120"  show-overflow-tooltip />
+            <el-table-column prop="phone" label="手机号" width="130"  show-overflow-tooltip />
+            <el-table-column prop="role" label="角色" width="100"  show-overflow-tooltip />
+            <el-table-column prop="createTime" label="创建时间" width="170"  show-overflow-tooltip />
             <el-table-column label="可见分组" min-width="200">
               <template slot-scope="{ row }">
                 {{ formatGroupName(row) }}
@@ -142,6 +142,7 @@
               </template>
             </el-table-column>
           </el-table>
+<el-pagination :current-page.sync="tablePage" :page-size="tablePageSize" :total="filteredUsers.length" :page-sizes="[10, 20, 50, 100]" layout="total, sizes, prev, pager, next" @size-change="size => { tablePageSize = size; tablePage = 1 }" />
         </el-card>
       </div>
     </div>
@@ -151,7 +152,7 @@
       :visible.sync="dialogVisible"
       width="660px"
       @close="resetForm"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <el-form ref="userFormRef" :model="form" :rules="rules" label-width="110px">
         <el-form-item label="账号" prop="username">
           <el-input v-model="form.username" :disabled="!!form.id" placeholder="请输入账号">
@@ -170,8 +171,11 @@
           />
         </el-form-item>
 
+        <el-form-item v-if="!form.id || form.password" label="确认密码" prop="confirmPassword">
+          <el-input v-model="form.confirmPassword" type="password" show-password maxlength="32" />
+        </el-form-item>
         <el-form-item label="账号姓名" prop="nickname">
-          <el-input v-model.trim="form.nickname" placeholder="请输入账号姓名" />
+          <el-input v-model.trim="form.nickname" maxlength="50" show-word-limit placeholder="请输入账号姓名" />
         </el-form-item>
 
         <el-form-item label="角色" prop="role">
@@ -185,8 +189,8 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="邮箱">
-          <el-input v-model.trim="form.email" placeholder="可选" />
+        <el-form-item label="邮箱" prop="email">
+          <el-input v-model.trim="form.email" maxlength="100" placeholder="可选" />
         </el-form-item>
 
         <el-form-item label="手机号" prop="phone">
@@ -226,8 +230,10 @@
         <el-form-item label="账号状态">
           <el-switch
             v-model="form.disabled"
-            active-text="禁用"
-            inactive-text="启用"
+            :active-value="false"
+            :inactive-value="true"
+            active-text="启用"
+            inactive-text="禁用"
           />
         </el-form-item>
 
@@ -257,7 +263,7 @@
       title="批量移动账号分组"
       :visible.sync="moveDialogVisible"
       width="420px"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <el-form label-width="90px">
         <el-form-item label="目标分组" required>
           <el-select v-model="moveTargetGroupId" style="width: 100%;" placeholder="请选择分组">
@@ -291,6 +297,8 @@ export default {
   },
   data() {
     return {
+      tablePage: 1,
+      tablePageSize: 20,
       loading: false,
       saving: false,
       moving: false,
@@ -324,6 +332,7 @@ export default {
         id: null,
         username: '',
         password: '',
+        confirmPassword: '',
         nickname: '',
         role: '',
         email: '',
@@ -334,6 +343,11 @@ export default {
         permissionKeys: [...DEFAULT_PERMISSION_KEYS]
       },
       rules: {
+        confirmPassword: [{ validator: (rule, value, callback) => {
+          if ((!this.form.id || this.form.password) && value !== this.form.password) callback(new Error('两次输入的密码不一致'))
+          else callback()
+        }, trigger: 'blur' }],
+        email: [{ type: 'email', message: '请输入有效的邮箱地址', trigger: 'blur' }, { max: 100, message: '邮箱不能超过100个字符', trigger: 'blur' }],
         username: [
           { required: true, message: '请输入账号', trigger: 'blur' },
           { pattern: /^[a-zA-Z0-9]+$/, message: '账号仅支持字母数字', trigger: 'blur' },
@@ -347,7 +361,7 @@ export default {
         role: [{ required: true, message: '请选择角色', trigger: 'change' }],
         phone: [{
           validator: (rule, value, callback) => {
-            const normalized = String(value || '').trim()
+            const normalized = String(value || '').replace(/\s/g, '')
             if (!normalized) return callback()
             if (!/^1[3-9]\d{9}$/.test(normalized)) return callback(new Error('手机号格式不正确'))
             return callback()
@@ -358,6 +372,11 @@ export default {
     }
   },
   computed: {
+    pagedRows() {
+      const page = Math.min(this.tablePage, Math.max(1, Math.ceil(this.filteredUsers.length / this.tablePageSize)))
+      return this.filteredUsers.slice((page - 1) * this.tablePageSize, page * this.tablePageSize)
+    },
+
     scopeLabel() {
       if (this.groupFilter.mode === 'group') {
         return this.groupFilter.label || '指定分组'
@@ -394,6 +413,7 @@ export default {
   },
   methods: {
     async loadData() {
+      this.tablePage = 1
       this.loading = true
       try {
         const params = {
@@ -644,11 +664,13 @@ export default {
     },
     openCreateDialog() {
       const defaultRole = this.roles.find(item => item.name === 'user') || this.roles[0]
+      this.$nextTick(() => this.$refs.userFormRef?.clearValidate())
       this.dialogVisible = true
       this.form = {
         id: null,
         username: '',
         password: '',
+        confirmPassword: '',
         nickname: '',
         role: defaultRole ? defaultRole.name : '',
         email: '',
@@ -680,16 +702,19 @@ export default {
         tries++
       }
       this.form.username = candidate
+      this.$nextTick(() => this.$refs.userFormRef?.validateField('username'))
     },
     openEditDialog(row) {
       const groupIds = this.normalizeGroupIds(row.groupIds, row.groupId)
       const currentPermissionKeys = row.permissions ? this.toPermissionKeys(row.permissions) : []
       const rolePermissionKeys = this.toPermissionKeys(this.getRoleByName(row.role || 'user')?.permissions)
+      this.$nextTick(() => this.$refs.userFormRef?.clearValidate())
       this.dialogVisible = true
       this.form = {
         id: row.id || row.ID,
         username: row.username,
         password: '',
+        confirmPassword: '',
         nickname: row.nickname || '',
         role: row.role || 'user',
         email: row.email || '',
@@ -704,6 +729,7 @@ export default {
       this.$refs.userFormRef?.clearValidate()
     },
     async saveUser() {
+      if (this.saving) return
       const valid = await this.$refs.userFormRef.validate().catch(() => false)
       if (!valid) {
         return
@@ -717,7 +743,7 @@ export default {
           nickname: this.form.nickname,
           role: this.form.role,
           email: this.form.email,
-          phone: String(this.form.phone || '').trim(),
+          phone: String(this.form.phone || '').replace(/\s/g, ''),
           disabled: this.form.disabled,
           permissions: this.resolvePermissionsPayload()
         }

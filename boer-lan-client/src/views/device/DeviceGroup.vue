@@ -123,17 +123,17 @@
                     {{ scope.$index + 1 }}
                   </template>
                 </el-table-column>
-                <el-table-column prop="code" label="设备编码" width="120" />
+                <el-table-column prop="code" label="设备编码" width="120"  show-overflow-tooltip />
                 <el-table-column label="设备名称">
                   <template slot-scope="scope">
                     <span>{{ formatDeviceName(scope.row) }}</span>
                   </template>
                 </el-table-column>
-                <el-table-column prop="initialName" label="初始名称" width="130" />
-                <el-table-column prop="employeeCode" label="员工工号" width="120" />
-                <el-table-column prop="employeeName" label="员工姓名" width="120" />
-                <el-table-column prop="type" label="设备类型" width="100" />
-                <el-table-column prop="mainboardSn" label="主板编号" width="140" />
+                <el-table-column prop="initialName" label="初始名称" width="130"  show-overflow-tooltip />
+                <el-table-column prop="employeeCode" label="员工工号" width="120"  show-overflow-tooltip />
+                <el-table-column prop="employeeName" label="员工姓名" width="120"  show-overflow-tooltip />
+                <el-table-column prop="type" label="设备类型" width="100"  show-overflow-tooltip />
+                <el-table-column prop="mainboardSn" label="主板编号" width="140"  show-overflow-tooltip />
                 <el-table-column prop="group" label="所属分组" width="120">
                   <template slot-scope="scope">
                     <span v-if="getDeviceGroupName(scope.row)">{{ getDeviceGroupName(scope.row) }}</span>
@@ -154,8 +154,8 @@
                     <span v-else class="text-muted">-</span>
                   </template>
                 </el-table-column>
-                <el-table-column prop="ip" label="IP地址" width="140" />
-                <el-table-column prop="createTime" label="添加时间" width="160" />
+                <el-table-column prop="ip" label="IP地址" width="140"  show-overflow-tooltip />
+                <el-table-column prop="createTime" label="添加时间" width="160"  show-overflow-tooltip />
                 <el-table-column prop="status" label="状态" width="100">
                   <template slot-scope="scope">
                     <el-tag :type="getStatusType(scope.row.status)" size="small">
@@ -210,7 +210,7 @@
       :visible.sync="showGroupDialog"
       width="400px"
       @close="resetGroupForm"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <el-form ref="groupFormRef" :model="groupForm" :rules="groupRules" label-width="80px">
         <el-form-item label="分组名称" prop="name">
           <el-input v-model="groupForm.name" placeholder="请输入分组名称" />
@@ -240,7 +240,7 @@
       title="批量移动设备分组"
       :visible.sync="showMoveDevicesDialog"
       width="420px"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <el-form label-width="90px">
         <el-form-item label="目标分组">
           <el-select v-model="moveTargetGroupId" style="width: 100%;">
@@ -266,7 +266,7 @@
       :visible.sync="showQuickAssignDialog"
       width="420px"
       @close="resetQuickAssignForm"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <el-form label-width="90px">
         <el-form-item label="设备编码">
           <span>{{ quickAssignForm.code || '-' }}</span>

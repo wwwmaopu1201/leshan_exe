@@ -86,7 +86,7 @@
             :row-class-name="getRowClassName"
             empty-text="暂无数据"
             @selection-change="handleSelectionChange"
-            @row-dblclick="handleRowDoubleClick"
+
           >
             <el-table-column type="selection" width="50" align="center" />
             <el-table-column label="序号" width="70" align="center">
@@ -94,20 +94,20 @@
                 {{ (pagination.page - 1) * pagination.pageSize + scope.$index + 1 }}
               </template>
             </el-table-column>
-            <el-table-column prop="code" :label="$t('device.deviceCode')" width="120" />
+            <el-table-column prop="code" :label="$t('device.deviceCode')" width="120"  show-overflow-tooltip />
             <el-table-column :label="$t('device.deviceName')" min-width="200">
               <template slot-scope="scope">
                 <span>{{ formatDeviceName(scope.row) }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="initialName" :label="$t('device.initialName')" width="130" />
-            <el-table-column prop="type" :label="$t('device.deviceType')" width="100" />
-            <el-table-column prop="electricControlType" :label="$t('device.electricControlType')" width="120" />
-            <!-- <el-table-column prop="model" :label="$t('device.deviceModel')" width="110" /> -->
-            <el-table-column prop="employeeCode" :label="$t('employee.employeeCode')" width="120" />
-            <el-table-column prop="employeeName" :label="$t('employee.employeeName')" width="120" />
-            <el-table-column prop="mainboardSn" :label="$t('device.mainboardSn')" width="150" />
-            <el-table-column prop="ip" :label="$t('device.ipAddress')" width="140" />
+            <el-table-column prop="initialName" :label="$t('device.initialName')" width="130"  show-overflow-tooltip />
+            <el-table-column prop="type" :label="$t('device.deviceType')" width="100"  show-overflow-tooltip />
+            <el-table-column prop="electricControlType" :label="$t('device.electricControlType')" width="120"  show-overflow-tooltip />
+            <!-- <el-table-column prop="model" :label="$t('device.deviceModel')" width="110"  show-overflow-tooltip /> -->
+            <el-table-column prop="employeeCode" :label="$t('employee.employeeCode')" width="120"  show-overflow-tooltip />
+            <el-table-column prop="employeeName" :label="$t('employee.employeeName')" width="120"  show-overflow-tooltip />
+            <el-table-column prop="mainboardSn" :label="$t('device.mainboardSn')" width="150"  show-overflow-tooltip />
+            <el-table-column prop="ip" :label="$t('device.ipAddress')" width="140"  show-overflow-tooltip />
             <el-table-column prop="group" :label="$t('device.group')" width="130">
               <template slot-scope="scope">
                 <span v-if="getDeviceGroupName(scope.row)">{{ getDeviceGroupName(scope.row) }}</span>
@@ -115,7 +115,7 @@
               </template>
             </el-table-column>
             <el-table-column prop="remark" :label="$t('common.remark')" min-width="180" show-overflow-tooltip />
-            <el-table-column prop="createTime" :label="$t('common.createTime')" width="170" />
+            <el-table-column prop="createTime" :label="$t('common.createTime')" width="170"  show-overflow-tooltip />
             <el-table-column prop="status" :label="$t('device.deviceStatus')" width="110" align="center">
               <template slot-scope="scope">
                 <span class="status-dot" :class="'status-' + scope.row.status"></span>
@@ -129,7 +129,7 @@
                 <el-button type="text" size="small" @click="handleEdit(scope.row)">
                   {{ $t('common.edit') }}
                 </el-button>
-                <el-button type="text" size="small" @click="handleMonitor(scope.row)">
+                <el-button v-if="$store.getters.hasPermission('remoteMonitoring')" type="text" size="small" @click="handleMonitor(scope.row)">
                   监控
                 </el-button>
                 <el-button
@@ -163,13 +163,13 @@
       :visible.sync="showEditDialog"
       width="620px"
       @close="resetEditForm"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <el-form ref="editFormRef" :model="editForm" :rules="currentEditRules" label-width="110px">
         <el-form-item :label="$t('device.deviceCode')" prop="code">
           <el-input v-model="editForm.code" :disabled="isEditingExistingDevice" />
         </el-form-item>
         <el-form-item :label="$t('device.deviceName')" prop="name">
-          <el-input v-model="editForm.name" />
+          <el-input v-model="editForm.name" maxlength="100" show-word-limit />
         </el-form-item>
         <el-form-item :label="$t('device.initialName')" prop="initialName">
           <el-input v-model="editForm.initialName" :disabled="isEditingExistingDevice" />
@@ -224,7 +224,7 @@
           <el-input v-model="editForm.mainboardSn" :disabled="isEditingExistingDevice" />
         </el-form-item>
         <el-form-item :label="$t('common.remark')" prop="remark">
-          <el-input v-model="editForm.remark" type="textarea" :rows="3" />
+          <el-input v-model="editForm.remark" type="textarea" :rows="3" maxlength="255" show-word-limit />
         </el-form-item>
         <el-form-item :label="$t('device.group')" prop="groupId">
           <el-select v-model="editForm.groupId" clearable placeholder="未分组">
@@ -248,7 +248,7 @@
       :visible.sync="showDeviceTypeDialog"
       width="420px"
       @closed="resetDeviceTypeForm"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <el-form label-width="92px">
         <el-form-item label="类型名称">
           <el-input
@@ -271,7 +271,7 @@
       :visible.sync="showElectricControlTypeDialog"
       width="420px"
       @closed="resetElectricControlTypeForm"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <el-form label-width="92px">
         <el-form-item label="类型名称">
           <el-input
@@ -293,7 +293,7 @@
       :title="$t('device.moveToGroup')"
       :visible.sync="showMoveDialog"
       width="420px"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <el-form label-width="80px">
         <el-form-item :label="$t('device.group')">
           <el-select
@@ -385,7 +385,7 @@ export default {
         originalGroupId: null
       },
       editRules: {
-        code: [{ required: true, message: '请输入设备编码', trigger: 'blur' }],
+        code: [{ required: true, message: '请输入设备编号', trigger: 'blur' }],
         name: [{ required: true, message: '请输入设备名称', trigger: 'blur' }],
         ip: [{ required: true, message: '请输入IP地址', trigger: 'blur' }]
       },
@@ -429,7 +429,7 @@ export default {
     currentScopeTypeText() {
       if (this.treeFilter.nodeType === 'device') return '单台设备'
       if (this.treeFilter.nodeType === 'group') return '设备分组'
-      return '总分组'
+      return '全部分组'
     },
     pagedTableData() {
       const start = (this.pagination.page - 1) * this.pagination.pageSize
@@ -447,9 +447,11 @@ export default {
     this.fetchDeviceTypes()
     this.fetchElectricControlTypes()
     this.fetchData()
+    this.refreshTimer = setInterval(() => { if (!this.loading && !this.showEditDialog && !this.selectedRows.length) this.fetchData() }, 5000)
     window.addEventListener('resize', this.syncTableHeight)
   },
   beforeDestroy() {
+    clearInterval(this.refreshTimer)
     window.removeEventListener('resize', this.syncTableHeight)
   },
   methods: {
@@ -503,7 +505,9 @@ export default {
       this.loading = true
       try {
         const res = await getDeviceList({
-          keyword: this.searchForm.keyword,
+          name: this.searchForm.keyword,
+          type: this.$route.query.type,
+          electricControlType: this.$route.query.electricControlType,
           status: this.searchForm.status,
           groupId: this.getRequestGroupId(),
           startDate: this.searchForm.dateRange?.[0] || '',
@@ -515,6 +519,7 @@ export default {
           const rawList = Array.isArray(res.data) ? res.data : (res.data?.list || [])
           this.tableData = this.applyTreeFilter(rawList)
           this.pagination.total = this.tableData.length
+          this.pagination.page = Math.min(this.pagination.page, Math.max(1, Math.ceil(this.pagination.total / this.pagination.pageSize)))
           this.$nextTick(() => {
             this.syncTableHeight()
           })
@@ -633,6 +638,7 @@ export default {
     },
     handleSizeChange(size) {
       this.pagination.pageSize = size
+      this.pagination.page = 1
       this.syncTableHeight()
     },
     handlePageChange(page) {

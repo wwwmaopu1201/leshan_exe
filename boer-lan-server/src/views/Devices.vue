@@ -152,14 +152,14 @@
                 {{ formatDeviceName(row) }}
               </template>
             </el-table-column>
-            <el-table-column prop="initialName" label="初始名称" min-width="130" />
-            <el-table-column prop="employeeCode" label="员工工号" width="110" />
-            <el-table-column prop="employeeName" label="员工姓名" width="110" />
-            <el-table-column prop="code" label="设备编号" min-width="130" />
-            <el-table-column prop="type" label="设备类型" width="110" />
-            <el-table-column prop="electricControlType" label="电控类型" width="130" />
-            <!-- <el-table-column prop="model" label="机型" width="110" /> -->
-            <el-table-column prop="mainboardSn" label="主板编号" min-width="140" />
+            <el-table-column prop="initialName" label="初始名称" min-width="130"  show-overflow-tooltip />
+            <el-table-column prop="employeeCode" label="员工工号" width="110"  show-overflow-tooltip />
+            <el-table-column prop="employeeName" label="员工姓名" width="110"  show-overflow-tooltip />
+            <el-table-column prop="code" label="设备编号" min-width="130"  show-overflow-tooltip />
+            <el-table-column prop="type" label="设备类型" width="110"  show-overflow-tooltip />
+            <el-table-column prop="electricControlType" label="电控类型" width="130"  show-overflow-tooltip />
+            <!-- <el-table-column prop="model" label="机型" width="110"  show-overflow-tooltip /> -->
+            <el-table-column prop="mainboardSn" label="主板编号" min-width="140"  show-overflow-tooltip />
             <el-table-column prop="identifiedBy" label="识别方式" width="110">
               <template slot-scope="{ row }">
                 {{ formatIdentifiedBy(row.identifiedBy) }}
@@ -173,7 +173,7 @@
               </template>
             </el-table-column>
             <el-table-column prop="currentPatternName" label="当前花型" min-width="160" show-overflow-tooltip />
-            <el-table-column prop="alarmCode" label="报警码" width="90" align="center" />
+            <el-table-column prop="alarmCode" label="报警码" width="90" align="center"  show-overflow-tooltip />
             <el-table-column label="速度" width="120" align="center">
               <template slot-scope="{ row }">
                 {{ row.currentSpeed || 0 }}/{{ row.maxSpeedValue || 0 }}
@@ -184,8 +184,8 @@
                 {{ row.productionCurrent || 0 }}/{{ row.productionTotal || 0 }}
               </template>
             </el-table-column>
-            <el-table-column prop="lastProtocolAt" label="最近协议时间" width="170" />
-            <el-table-column prop="ip" label="设备 IP" width="130" />
+            <el-table-column prop="lastProtocolAt" label="最近协议时间" width="170"  show-overflow-tooltip />
+            <el-table-column prop="ip" label="设备 IP" width="130"  show-overflow-tooltip />
             <el-table-column label="分组" min-width="150">
               <template slot-scope="{ row }">
                 <span :class="row.groupId ? '' : 'danger-text'">
@@ -193,7 +193,7 @@
                 </span>
               </template>
             </el-table-column>
-            <el-table-column prop="createTime" label="添加时间" width="170" />
+            <el-table-column prop="createTime" label="添加时间" width="170"  show-overflow-tooltip />
             <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip />
             <el-table-column label="操作" width="240" fixed="right" align="center">
               <template slot-scope="{ row }">
@@ -224,13 +224,13 @@
       title="编辑设备"
       :visible.sync="editDialogVisible"
       width="620px"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <el-form ref="editFormRef" :model="editForm" :rules="currentEditRules" label-width="110px">
         <el-form-item label="设备编号" prop="code">
           <el-input v-model="editForm.code" disabled />
         </el-form-item>
         <el-form-item label="设备名称" prop="name">
-          <el-input v-model.trim="editForm.name" />
+          <el-input v-model.trim="editForm.name" maxlength="100" show-word-limit />
         </el-form-item>
         <el-form-item label="初始名称" prop="initialName">
           <el-input v-model="editForm.initialName" disabled />
@@ -281,7 +281,7 @@
           <el-input v-model="editForm.mainboardSn" disabled />
         </el-form-item>
         <el-form-item label="备注" prop="remark">
-          <el-input v-model="editForm.remark" type="textarea" :rows="3" />
+          <el-input v-model="editForm.remark" type="textarea" :rows="3" maxlength="255" show-word-limit />
         </el-form-item>
         <el-form-item label="设备分组" prop="groupId">
           <el-select v-model="editForm.groupId" clearable placeholder="未分组" style="width: 100%;">
@@ -310,7 +310,7 @@
       :visible.sync="showDeviceTypeDialog"
       width="420px"
       @closed="resetDeviceTypeForm"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <el-form label-width="90px">
         <el-form-item label="类型名称">
           <el-input
@@ -331,7 +331,7 @@
       :visible.sync="showElectricControlTypeDialog"
       width="420px"
       @closed="resetElectricControlTypeForm"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <el-form label-width="90px">
         <el-form-item label="类型名称">
           <el-input
@@ -351,7 +351,7 @@
       title="批量移动设备分组"
       :visible.sync="moveDialogVisible"
       width="420px"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <el-form label-width="90px">
         <el-form-item label="目标分组">
           <el-select v-model="moveTargetGroupId" clearable placeholder="可选择“未分组”" style="width: 100%;">

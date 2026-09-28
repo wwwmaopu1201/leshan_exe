@@ -121,6 +121,7 @@ type DeviceRuntimeSession struct {
 
 // Pattern 花型文件
 type Pattern struct {
+	UploadedAt *time.Time `json:"uploadedAt,omitempty"`
 	gorm.Model
 	Name        string  `gorm:"size:255;not null" json:"name"`
 	PatternType string  `gorm:"size:100;index" json:"patternType"`
@@ -175,6 +176,9 @@ type DevicePatternFile struct {
 
 // UploadTask 设备文件回传任务
 type UploadTask struct {
+	ConflictMode string `gorm:"size:20" json:"-"`
+	TargetName   string `gorm:"size:255" json:"-"`
+	FileSnapshot string `gorm:"type:text" json:"-"`
 	gorm.Model
 	DeviceFileID uint   `gorm:"index;not null" json:"deviceFileId"`
 	PatternID    *uint  `gorm:"index" json:"patternId"`

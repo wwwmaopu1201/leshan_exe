@@ -1027,3 +1027,23 @@ code {
 .el-select {
   width: 100%;
 }
+
+
+// Keep controls and dialogs usable in smaller windows and in English.
+.el-dialog { max-width: calc(100vw - 32px); }
+.el-dialog__body { max-height: 65vh; overflow: auto; }
+.el-message-box { max-width: calc(100vw - 32px); }
+.el-form-item__error { position: static; padding-top: 4px; line-height: 1.3; }
+.el-form-item__label { white-space: normal; overflow-wrap: anywhere; }
+.el-date-editor--daterange.el-input__inner { max-width: 100%; }
+.el-tooltip__popper { max-width: min(600px, 85vw); overflow-wrap: anywhere; }
+.el-table .cell { overflow-wrap: anywhere; }
+.el-pagination { flex-shrink: 0; overflow-x: auto; padding-bottom: 8px; }
+.el-input input[type="text"] ~ .el-input__suffix .el-icon-view { color: #409eff; }
+.el-input input[type="password"] ~ .el-input__suffix .el-icon-view::after {
+  content: ''; position: absolute; width: 15px; border-top: 1px solid currentColor;
+  transform: rotate(-45deg); top: 50%; left: 5px;
+}
+.el-input .el-icon-view { position: relative; }
+
+.el-autocomplete { width: 100%; }

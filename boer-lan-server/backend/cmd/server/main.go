@@ -219,6 +219,9 @@ func main() {
 	downloadWorker := service.NewDownloadTaskWorker(db, patternTransfer)
 	downloadWorker.Start()
 	defer downloadWorker.Stop()
+	uploadWorker := service.NewUploadTaskWorker(db, patternTransfer)
+	uploadWorker.Start()
+	defer uploadWorker.Stop()
 
 	devicePatternSyncWorker := service.NewDevicePatternSyncWorker(db, patternTransfer)
 	devicePatternSyncWorker.Start()

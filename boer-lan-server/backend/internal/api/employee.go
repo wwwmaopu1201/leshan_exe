@@ -363,7 +363,7 @@ func (h *EmployeeHandler) CreateEmployee(c *gin.Context) {
 
 	req.Code = strings.TrimSpace(req.Code)
 	req.Name = strings.TrimSpace(req.Name)
-	req.Phone = strings.TrimSpace(req.Phone)
+	req.Phone = strings.Join(strings.Fields(req.Phone), "")
 	req.Remark = strings.TrimSpace(req.Remark)
 	if !isValidEmployeeCode(req.Code) || !isValidEmployeeName(req.Name) {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -491,7 +491,7 @@ func (h *EmployeeHandler) UpdateEmployee(c *gin.Context) {
 		updates["name"] = name
 	}
 	if req.Phone != nil {
-		phone := strings.TrimSpace(*req.Phone)
+		phone := strings.Join(strings.Fields(*req.Phone), "")
 		if !isValidEmployeePhone(phone) {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"code":    400,
@@ -632,7 +632,7 @@ func (h *EmployeeHandler) ImportEmployees(c *gin.Context) {
 	for _, item := range req.Employees {
 		code := strings.TrimSpace(item.Code)
 		name := strings.TrimSpace(item.Name)
-		phone := strings.TrimSpace(item.Phone)
+		phone := strings.Join(strings.Fields(item.Phone), "")
 		if !isValidEmployeeCode(code) || name == "" {
 			errorsList = append(errorsList, "存在工号为空/超11位或姓名为空记录")
 			continue

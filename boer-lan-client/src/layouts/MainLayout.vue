@@ -74,13 +74,13 @@
               <i class="menu-icon el-icon-monitor"></i>
               <span>{{ $t('menu.device') }}</span>
             </template>
-            <el-menu-item v-if="canAccess.deviceManagement" index="/device/list">
+            <el-menu-item v-if="$store.getters.hasPermission('deviceInfo')" index="/device/list">
               {{ $t('menu.deviceList') }}
             </el-menu-item>
-            <el-menu-item v-if="canAccess.deviceManagement" index="/device/types">
+            <el-menu-item v-if="$store.getters.hasPermission('deviceInfo')" index="/device/types">
               {{ $t('menu.deviceTypeManager') }}
             </el-menu-item>
-            <el-menu-item v-if="canAccess.deviceManagement" index="/device/electric-control-types">
+            <el-menu-item v-if="$store.getters.hasPermission('deviceInfo')" index="/device/electric-control-types">
               {{ $t('menu.electricControlTypeManager') }}
             </el-menu-item>
             <el-menu-item v-if="canAccess.remoteMonitoring" index="/device/monitor">
@@ -93,11 +93,11 @@
               <i class="menu-icon el-icon-folder"></i>
               <span>{{ $t('menu.file') }}</span>
             </template>
-            <el-menu-item index="/file/pattern">{{ $t('menu.patternList') }}</el-menu-item>
-            <el-menu-item index="/file/pattern-types">{{ $t('menu.patternTypeManager') }}</el-menu-item>
-            <el-menu-item index="/file/order-nos">{{ $t('menu.orderNoManager') }}</el-menu-item>
-            <el-menu-item index="/file/queue">{{ $t('menu.downloadQueue') }}</el-menu-item>
-            <el-menu-item index="/file/log">{{ $t('menu.downloadLog') }}</el-menu-item>
+            <el-menu-item v-if="$store.getters.hasPermission('patternFiles') || $store.getters.hasPermission('devicePatternFiles')" index="/file/pattern">{{ $t('menu.patternList') }}</el-menu-item>
+            <el-menu-item v-if="$store.getters.hasPermission('patternFiles')" index="/file/pattern-types">{{ $t('menu.patternTypeManager') }}</el-menu-item>
+            <el-menu-item v-if="$store.getters.hasPermission('patternFiles')" index="/file/order-nos">{{ $t('menu.orderNoManager') }}</el-menu-item>
+            <el-menu-item v-if="$store.getters.hasPermission('downloadLog')" index="/file/queue">{{ $t('menu.downloadQueue') }}</el-menu-item>
+            <el-menu-item v-if="$store.getters.hasPermission('downloadLog')" index="/file/log">{{ $t('menu.downloadLog') }}</el-menu-item>
           </el-submenu>
 
           <el-submenu v-if="canAccess.statistics" index="/statistics">
@@ -105,10 +105,10 @@
               <i class="menu-icon el-icon-s-data"></i>
               <span>{{ $t('menu.statistics') }}</span>
             </template>
-            <el-menu-item index="/statistics/salary">{{ $t('menu.salaryStats') }}</el-menu-item>
-            <el-menu-item index="/statistics/process">{{ $t('menu.processOverview') }}</el-menu-item>
-            <el-menu-item index="/statistics/duration">{{ $t('menu.durationStats') }}</el-menu-item>
-            <el-menu-item index="/statistics/alarm">{{ $t('menu.alarmStats') }}</el-menu-item>
+            <el-menu-item v-if="$store.getters.hasPermission('salaryStatistics')" index="/statistics/salary">{{ $t('menu.salaryStats') }}</el-menu-item>
+            <el-menu-item v-if="$store.getters.hasPermission('statusStatistics')" index="/statistics/process">{{ $t('menu.processOverview') }}</el-menu-item>
+            <el-menu-item v-if="$store.getters.hasPermission('statusStatistics')" index="/statistics/duration">{{ $t('menu.durationStats') }}</el-menu-item>
+            <el-menu-item v-if="$store.getters.hasPermission('statusStatistics')" index="/statistics/alarm">{{ $t('menu.alarmStats') }}</el-menu-item>
           </el-submenu>
 
           <el-submenu v-if="canAccess.employeeManagement" index="/employee">

@@ -136,11 +136,11 @@
             empty-text="暂无数据"
           >
             <el-table-column type="index" label="序号" width="60" align="center" />
-            <el-table-column prop="deviceName" label="设备名称" min-width="120" />
-            <el-table-column prop="employeeCode" label="员工工号" width="100" />
-            <el-table-column prop="employeeName" label="员工姓名" width="110" />
-            <el-table-column prop="alarmTime" label="报警时间" width="160" />
-            <el-table-column prop="alarmInfo" label="报警信息" min-width="200" />
+            <el-table-column prop="deviceName" label="设备名称" min-width="120"  show-overflow-tooltip />
+            <el-table-column prop="employeeCode" label="员工工号" width="100"  show-overflow-tooltip />
+            <el-table-column prop="employeeName" label="员工姓名" width="110"  show-overflow-tooltip />
+            <el-table-column prop="alarmTime" label="报警时间" width="160"  show-overflow-tooltip />
+            <el-table-column prop="alarmInfo" label="报警信息" min-width="200"  show-overflow-tooltip />
           </el-table>
 
           <el-pagination
@@ -239,6 +239,7 @@ export default {
       this.loading = true
       try {
         const res = await getAlarmStats({
+          deviceName: this.searchForm.deviceKeyword,
           startDate: this.searchForm.dateRange?.[0],
           endDate: this.searchForm.dateRange?.[1],
           deviceId: this.searchForm.deviceFilter.deviceId,
@@ -252,6 +253,7 @@ export default {
           const rawList = res.data.list || []
           this.tableData = this.applyLocalFilters(rawList)
           this.pagination.total = this.tableData.length
+          this.pagination.page = Math.min(this.pagination.page, Math.max(1, Math.ceil(this.pagination.total / this.pagination.pageSize)))
           this.chartData = {
             alarmTypePie: res.data.alarmTypePie || [],
             alarmTrend: res.data.alarmTrend || []
@@ -300,6 +302,7 @@ export default {
     },
     handleSizeChange(size) {
       this.pagination.pageSize = size
+      this.pagination.page = 1
       this.syncTableHeight()
     },
     handlePageChange(page) {
@@ -308,6 +311,7 @@ export default {
     async handleExport() {
       try {
         const response = await exportStatistics('alarm', {
+          deviceName: this.searchForm.deviceKeyword,
           startDate: this.searchForm.dateRange?.[0],
           endDate: this.searchForm.dateRange?.[1],
           deviceId: this.searchForm.deviceFilter.deviceId,
@@ -355,11 +359,12 @@ export default {
       const pieData = this.chartData.alarmTypePie.length > 0
         ? this.chartData.alarmTypePie
         : [
-            { name: '暂无报警', value: 0 }
+            { name: this.$translateApiMessage('暂无报警'), value: 0 }
           ]
       chart.setOption({
         tooltip: { trigger: 'item', formatter: '{b}: {c}次 ({d}%)' },
         legend: {
+          type: 'scroll',
           orient: 'vertical',
           left: 0,
           top: 'middle',
@@ -423,7 +428,7 @@ export default {
         yAxis: [
           {
             type: 'value',
-            name: '次数',
+            name: this.$translateApiMessage('次数'),
             minInterval: 1,
             axisTick: { show: false },
             axisLine: { show: false },
@@ -435,7 +440,7 @@ export default {
           },
           {
             type: 'value',
-            name: '时长',
+            name: this.$translateApiMessage('时长'),
             axisTick: { show: false },
             axisLine: { show: false },
             axisLabel: {
@@ -447,14 +452,14 @@ export default {
         ],
         series: [
           {
-            name: '报警次数',
+            name: this.$translateApiMessage('报警次数'),
             type: 'bar',
             barWidth: 34,
             data: counts,
             itemStyle: { color: '#ef5a5a', borderRadius: [10, 10, 0, 0] }
           },
           {
-            name: '平均时长',
+            name: this.$translateApiMessage('平均时长'),
             type: 'line',
             yAxisIndex: 1,
             smooth: true,

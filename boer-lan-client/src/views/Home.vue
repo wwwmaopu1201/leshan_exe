@@ -50,11 +50,11 @@
               stripe
               class="usage-table"
             >
-              <el-table-column prop="rank" label="序号" width="58" align="center" />
+              <el-table-column prop="rank" label="序号" width="58" align="center"  show-overflow-tooltip />
               <el-table-column prop="name" :label="usageNameLabel" min-width="134" show-overflow-tooltip />
-              <el-table-column prop="runningTimeLabel" label="运行时长" width="126" align="center" />
-              <el-table-column prop="idleTimeLabel" label="待机时长" width="126" align="center" />
-              <el-table-column prop="efficiencyLabel" label="使用率" width="104" align="center" />
+              <el-table-column prop="runningTimeLabel" label="运行时长" width="126" align="center"  show-overflow-tooltip />
+              <el-table-column prop="idleTimeLabel" label="待机时长" width="126" align="center"  show-overflow-tooltip />
+              <el-table-column prop="efficiencyLabel" label="使用率" width="104" align="center"  show-overflow-tooltip />
             </el-table>
           </el-card>
         </div>
@@ -79,7 +79,7 @@
                 :class="{ 'is-highlight': index === 0 }"
               >
                 <span class="pattern-row__rank">{{ index + 1 }}</span>
-                <span class="pattern-row__name">{{ item.name }}</span>
+                <span class="pattern-row__name" :title="item.name" data-i18n-skip>{{ item.name }}</span>
                 <span class="pattern-row__value">{{ item.value }}</span>
               </div>
             </template>
@@ -101,13 +101,14 @@
                 <span>（由高到低）</span>
               </div>
               <div class="ranking-list">
+                <div v-if="!deviceUsageRows.length" class="pattern-empty">暂无数据</div>
                 <div
                   v-for="item in highEfficiencyRows"
                   :key="`high-${item.name}`"
                   class="ranking-item"
                 >
                   <div class="ranking-item__header">
-                    <span class="ranking-item__name">{{ item.name }}</span>
+                    <span class="ranking-item__name" :title="item.name" data-i18n-skip>{{ item.name }}</span>
                     <strong class="ranking-item__value">{{ item.efficiencyLabel }}</strong>
                   </div>
                   <div class="ranking-bar">
@@ -123,13 +124,14 @@
                 <span>（由低到高）</span>
               </div>
               <div class="ranking-list">
+                <div v-if="!deviceUsageRows.length" class="pattern-empty">暂无数据</div>
                 <div
                   v-for="item in lowEfficiencyRows"
                   :key="`low-${item.name}`"
                   class="ranking-item"
                 >
                   <div class="ranking-item__header">
-                    <span class="ranking-item__name">{{ item.name }}</span>
+                    <span class="ranking-item__name" :title="item.name" data-i18n-skip>{{ item.name }}</span>
                     <strong class="ranking-item__value">{{ item.efficiencyLabel }}</strong>
                   </div>
                   <div class="ranking-bar">
@@ -189,6 +191,7 @@
                 type="date"
                 size="mini"
                 value-format="yyyy-MM-dd"
+                :picker-options="{ disabledDate: date => date > new Date() }"
                 placeholder="开始时间"
                 @change="handleProductionDateChange"
               />
@@ -198,6 +201,7 @@
                 type="date"
                 size="mini"
                 value-format="yyyy-MM-dd"
+                :picker-options="{ disabledDate: date => date > new Date() }"
                 placeholder="结束时间"
                 @change="handleProductionDateChange"
               />
@@ -214,7 +218,7 @@
 <script>
 import * as echarts from 'echarts'
 import { getDeviceGroups, getDeviceList } from '@/api/device'
-import { getHomeStats, getProcessOverview } from '@/api/statistics'
+import { getHomeStats, getProductionTrend } from '@/api/statistics'
 import { formatDurationFromHours } from '@/utils'
 
 const USAGE_TABS = [
@@ -242,6 +246,7 @@ export default {
       groupCatalog: [],
       productionTrend: [],
       charts: {},
+      pageRefreshing: false,
       refreshTimer: null,
       activeUsageTab: 'device',
       productionRange: '7d',
@@ -375,9 +380,7 @@ export default {
         .map((item, index) => this.decorateUsageRow(item, index))
     },
     productionChartRows() {
-      const source = (this.productionTrend && this.productionTrend.length > 0)
-        ? this.productionTrend
-        : (this.homeStats.productionByDay || [])
+      const source = this.productionTrend || []
 
       return source.map((item, index) => ({
         label: this.formatAxisDate(item.date, index),
@@ -389,10 +392,12 @@ export default {
     this.applyQuickRange('7d', false)
     this.fetchPageData()
     this.startAutoRefresh()
+    window.addEventListener('online', this.fetchPageData)
     window.addEventListener('resize', this.handleResize)
   },
   beforeDestroy() {
     this.stopAutoRefresh()
+    window.removeEventListener('online', this.fetchPageData)
     window.removeEventListener('resize', this.handleResize)
     Object.values(this.charts).forEach(chart => chart && chart.dispose())
   },
@@ -425,7 +430,7 @@ export default {
       }
       if (raw.includes('-') && raw.length >= 5) {
         const parts = raw.split('-')
-        return `${parts[parts.length - 2]}-${parts[parts.length - 1]}`
+        return parts.length === 3 ? `${parts[0]}/${parts[1]}/${parts[2]}` : raw
       }
       return raw
     },
@@ -523,7 +528,7 @@ export default {
     resolveLineMeta(groupId) {
       const chain = this.getVisibleGroupChain(groupId)
       if (!chain.length) {
-        return { id: 0, name: '未分线' }
+        return { id: 0, name: this.$translateApiMessage('未分线') }
       }
       return {
         id: this.toNumber(chain[0].id),
@@ -538,7 +543,7 @@ export default {
         runningTimeLabel: this.formatDuration(item.runningTime),
         idleTimeLabel: this.formatDuration(item.idleTime),
         efficiencyLabel: this.formatPercent(efficiency),
-        efficiencyBarWidth: `${Math.max(6, Math.min(100, efficiency))}%`
+        efficiencyBarWidth: `${Math.max(0, Math.min(100, efficiency))}%`
       }
     },
     decorateUsageRows(rows, limit = 0) {
@@ -548,6 +553,8 @@ export default {
       return source.map((item, index) => this.decorateUsageRow(item, index))
     },
     async fetchPageData() {
+      if (this.pageRefreshing) return
+      this.pageRefreshing = true
       try {
         await Promise.all([
           this.fetchHomeStats(),
@@ -558,7 +565,10 @@ export default {
         this.refreshCharts()
       } catch (error) {
         console.error('Failed to load home page data:', error)
-      }
+        this.homeStats = { totalDevices: 0, onlineDevices: 0, workingDevices: 0, offlineDevices: 0, alarmDevices: 0, patternUsage: [], deviceUsage: [], runningStatusByHour: [], productionByDay: [] }
+        this.productionTrend = []
+        this.refreshCharts()
+      } finally { this.pageRefreshing = false }
     },
     async fetchHomeStats() {
       const res = await getHomeStats()
@@ -608,7 +618,7 @@ export default {
         return
       }
 
-      const res = await getProcessOverview({
+      const res = await getProductionTrend({
         startDate: this.productionStartDate,
         endDate: this.productionEndDate,
         page: 1,
@@ -625,7 +635,7 @@ export default {
       this.stopAutoRefresh()
       this.refreshTimer = window.setInterval(() => {
         this.fetchPageData()
-      }, 60 * 1000)
+      }, 5000)
     },
     stopAutoRefresh() {
       if (!this.refreshTimer) {
@@ -652,7 +662,12 @@ export default {
         return
       }
       if (this.productionStartDate > this.productionEndDate) {
-        this.$message.warning('开始时间不能晚于结束时间')
+        const previousStart = this.productionStartDate
+        this.productionStartDate = this.productionEndDate
+        this.productionEndDate = previousStart
+      }
+      if ((new Date(this.productionEndDate) - new Date(this.productionStartDate)) / 86400000 > 366) {
+        this.$message.warning('查询时间跨度不能超过一年')
         return
       }
       this.productionRange = 'custom'
@@ -693,16 +708,16 @@ export default {
           data: source.map(item => item.hour),
           axisTick: { show: false },
           axisLine: { lineStyle: { color: '#cfd7e4' } },
-          axisLabel: { color: '#6f7b8c', fontSize: 11 }
+          axisLabel: { color: '#6f7b8c', fontSize: 11, hideOverlap: true, showMinLabel: true, showMaxLabel: true }
         },
         yAxis: {
           type: 'value',
-          axisLabel: { color: '#6f7b8c', fontSize: 11 },
+          axisLabel: { color: '#6f7b8c', fontSize: 11, hideOverlap: true, showMinLabel: true, showMaxLabel: true },
           splitLine: { lineStyle: { color: '#e9eef5', type: 'dashed' } }
         },
         series: [
           {
-            name: '开机数',
+            name: this.$translateApiMessage('开机数'),
             type: 'line',
             smooth: true,
             symbol: 'circle',
@@ -712,7 +727,7 @@ export default {
             itemStyle: { color: '#18c656' }
           },
           {
-            name: '关机数',
+            name: this.$translateApiMessage('关机数'),
             type: 'line',
             smooth: true,
             symbol: 'circle',
@@ -732,22 +747,22 @@ export default {
       chart.setOption({
         animationDuration: 500,
         tooltip: { trigger: 'axis' },
-        grid: { left: 36, right: 18, top: 16, bottom: 16 },
+        grid: { left: 36, right: 18, top: 16, bottom: 36, containLabel: true },
         xAxis: {
           type: 'category',
           data: source.map(item => item.label),
           axisTick: { show: false },
           axisLine: { lineStyle: { color: '#cfd7e4' } },
-          axisLabel: { color: '#6f7b8c', fontSize: 11 }
+          axisLabel: { color: '#6f7b8c', fontSize: 11, hideOverlap: true, showMinLabel: true, showMaxLabel: true }
         },
         yAxis: {
           type: 'value',
-          axisLabel: { color: '#6f7b8c', fontSize: 11 },
+          axisLabel: { color: '#6f7b8c', fontSize: 11, hideOverlap: true, showMinLabel: true, showMaxLabel: true },
           splitLine: { lineStyle: { color: '#e9eef5', type: 'dashed' } }
         },
         series: [{
           type: 'bar',
-          barWidth: 34,
+          barMaxWidth: 34,
           data: source.map(item => item.value),
           label: {
             show: true,

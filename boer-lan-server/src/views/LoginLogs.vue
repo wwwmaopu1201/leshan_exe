@@ -60,9 +60,9 @@
             {{ (pagination.page - 1) * pagination.pageSize + $index + 1 }}
           </template>
         </el-table-column>
-        <el-table-column prop="username" label="账号" min-width="140" />
-        <el-table-column prop="ip" label="登录IP" min-width="140" />
-        <el-table-column prop="clientVersion" label="客户端版本" width="120" />
+        <el-table-column prop="username" label="账号" min-width="140"  show-overflow-tooltip />
+        <el-table-column prop="ip" label="登录IP" min-width="140"  show-overflow-tooltip />
+        <el-table-column prop="clientVersion" label="客户端版本" width="120"  show-overflow-tooltip />
         <el-table-column prop="status" label="登录状态" width="110" align="center">
           <template slot-scope="{ row }">
             <span :class="['status-pill', row.status === '成功' ? 'success' : 'danger']">
@@ -70,7 +70,7 @@
             </span>
           </template>
         </el-table-column>
-        <el-table-column prop="loginTime" label="登录时间" width="180" />
+        <el-table-column prop="loginTime" label="登录时间" width="180"  show-overflow-tooltip />
         <el-table-column prop="device" label="客户端信息" min-width="260" show-overflow-tooltip />
       </el-table>
 

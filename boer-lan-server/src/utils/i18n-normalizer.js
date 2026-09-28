@@ -10,6 +10,12 @@ let storagePatched = false
 let localeGetter = () => localStorage.getItem('language') || 'zh-CN'
 
 const EN_TEXT = {
+  '全部分组': 'All Groups',
+  '名称已存在': 'Name already exists',
+  '名称不能超过100个字符': 'Name must not exceed 100 characters',
+  '配置已修改，请保存当前配置后再同步。': 'Unsaved changes. Save before syncing.',
+  '请启用连接、测试成功并保存当前配置后再同步': 'Enable, test and save this connection before syncing',
+  '外部数据库连接未启用': 'External database connection is disabled',
   '确定': 'Confirm',
   '取消': 'Cancel',
   '保存': 'Save',
@@ -1287,27 +1293,20 @@ export function translateApiMessage(message) {
 }
 
 function translateTextNode(node) {
-  if (!node.nodeValue || !/[\u4e00-\u9fff]/.test(node.nodeValue)) {
-    if (!isEnglish() && TRANSLATED_TEXT_NODES.has(node)) {
-      node.nodeValue = TRANSLATED_TEXT_NODES.get(node)
-      TRANSLATED_TEXT_NODES.delete(node)
-    }
-    return
-  }
-
+  const cached = TRANSLATED_TEXT_NODES.get(node)
+  const current = node.nodeValue || ''
+  const original = cached && current === cached.translated ? cached.original : current
   if (!isEnglish()) {
-    if (TRANSLATED_TEXT_NODES.has(node)) {
-      node.nodeValue = TRANSLATED_TEXT_NODES.get(node)
-      TRANSLATED_TEXT_NODES.delete(node)
-    }
+    if (cached && current === cached.translated) node.nodeValue = cached.original
+    TRANSLATED_TEXT_NODES.delete(node)
     return
   }
-
-  const original = TRANSLATED_TEXT_NODES.get(node) || node.nodeValue
   const translated = translateText(original)
   if (translated !== original) {
-    TRANSLATED_TEXT_NODES.set(node, original)
-    node.nodeValue = translated
+    TRANSLATED_TEXT_NODES.set(node, { original, translated })
+    if (current !== translated) node.nodeValue = translated
+  } else {
+    TRANSLATED_TEXT_NODES.delete(node)
   }
 }
 
@@ -1320,13 +1319,16 @@ function translateElementAttributes(el) {
     let originals = TRANSLATED_ATTRIBUTES.get(el)
     if (!isEnglish()) {
       if (originals?.has(name)) {
-        el.setAttribute(name, originals.get(name))
+        const cached = originals.get(name)
+        if (el.getAttribute(name) === cached.translated) el.setAttribute(name, cached.original)
         originals.delete(name)
       }
       return
     }
 
-    const value = originals?.get(name) || el.getAttribute(name)
+    const cached = originals?.get(name)
+    const current = el.getAttribute(name)
+    const value = cached && current === cached.translated ? cached.original : current
     if (!value || !/[\u4e00-\u9fff]/.test(value)) {
       return
     }
@@ -1337,8 +1339,8 @@ function translateElementAttributes(el) {
         originals = new Map()
         TRANSLATED_ATTRIBUTES.set(el, originals)
       }
-      originals.set(name, value)
-      el.setAttribute(name, translated)
+      originals.set(name, { original: value, translated })
+      if (el.getAttribute(name) !== translated) el.setAttribute(name, translated)
     }
   })
 }
@@ -1376,9 +1378,7 @@ function translateControlValue(el) {
     return
   }
 
-  const original = /[\u4e00-\u9fff]/.test(currentValue)
-    ? currentValue
-    : cached?.original
+  const original = cached && currentValue === cached.translated ? cached.original : currentValue
 
   if (!original || !/[\u4e00-\u9fff]/.test(original)) {
     return
@@ -1393,7 +1393,7 @@ function translateControlValue(el) {
 
 function shouldSkipElement(node) {
   const tag = node.tagName
-  return tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT'
+  return node.hasAttribute('data-i18n-skip') || tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT'
 }
 
 function normalizeNode(node) {

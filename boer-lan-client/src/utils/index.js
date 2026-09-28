@@ -50,6 +50,7 @@ export function formatDurationFromSeconds(value) {
   const hours = Math.floor(totalSeconds / 3600)
   const minutes = Math.floor((totalSeconds % 3600) / 60)
   const seconds = totalSeconds % 60
+  if (localStorage.getItem('language') === 'en-US') return `${hours}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`
   return `${hours}时${String(minutes).padStart(2, '0')}分${String(seconds).padStart(2, '0')}秒`
 }
 
@@ -64,7 +65,7 @@ export function formatDurationFromHours(value) {
 }
 
 export function formatDurationPerCountFromMinutes(value) {
-  return `${formatDurationFromMinutes(value)}/次`
+  return `${formatDurationFromMinutes(value)}/${localStorage.getItem('language') === 'en-US' ? 'piece' : '次'}`
 }
 
 // 防抖函数

@@ -76,7 +76,7 @@ fn format_remaining_seconds(remaining_seconds: u64) -> String {
     format!("{} 分钟", ((remaining_seconds + 59) / 60).max(1))
 }
 
-fn machine_hash() -> String {
+fn legacy_machine_hash() -> String {
     let hostname = env::var("COMPUTERNAME")
         .or_else(|_| env::var("HOSTNAME"))
         .unwrap_or_default();
@@ -90,6 +90,40 @@ fn machine_hash() -> String {
     let mut hasher = DefaultHasher::new();
     seed.hash(&mut hasher);
     format!("{:016x}", hasher.finish())
+}
+
+fn machine_hash() -> String {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        if let Ok(output) = std::process::Command::new("reg.exe")
+            .args(["query", r"HKLM\SOFTWARE\Microsoft\Cryptography", "/v", "MachineGuid", "/reg:64"])
+            .creation_flags(0x08000000).output() {
+            if output.status.success() {
+                let text = String::from_utf8_lossy(&output.stdout);
+                if let Some(guid) = text.lines().find(|line| line.contains("MachineGuid")).and_then(|line| line.split_whitespace().last()) {
+                    let mut hasher = DefaultHasher::new();
+                    format!("boer-client-machine-v2|{}", guid.to_lowercase()).hash(&mut hasher);
+                    return format!("{:016x}", hasher.finish());
+                }
+            }
+        }
+    }
+    legacy_machine_hash()
+}
+
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    if !(url.starts_with("https://") || url.starts_with("mailto:")) || url.contains(['\r', '\n']) {
+        return Err("Unsupported URL".to_string());
+    }
+    #[cfg(target_os = "windows")]
+    let result = std::process::Command::new("explorer.exe").arg(&url).spawn();
+    #[cfg(target_os = "macos")]
+    let result = std::process::Command::new("open").arg(&url).spawn();
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let result = std::process::Command::new("xdg-open").arg(&url).spawn();
+    result.map(|_| ()).map_err(|error| error.to_string())
 }
 
 fn normalize_version(raw: &str) -> String {
@@ -228,6 +262,9 @@ fn inspect_trial_status(app: &tauri::AppHandle) -> TrialStatus {
         }
     };
 
+    if state.machine_hash == legacy_machine_hash() && state.machine_hash != current_machine_hash {
+        state.machine_hash = current_machine_hash.clone();
+    }
     if !state.machine_hash.is_empty() && state.machine_hash != current_machine_hash {
         return TrialStatus {
             valid: false,
@@ -343,7 +380,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![get_trial_status, save_export_file])
+        .invoke_handler(tauri::generate_handler![get_trial_status, save_export_file, open_external_url])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

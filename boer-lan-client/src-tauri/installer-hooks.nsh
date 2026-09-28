@@ -42,3 +42,7 @@
   Pop $1
   Pop $0
 !macroend
+
+!macro NSIS_HOOK_PREUNINSTALL
+  nsExec::ExecToLog 'taskkill /F /T /IM "${MAINBINARYNAME}.exe"'
+!macroend

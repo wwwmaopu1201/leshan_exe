@@ -243,7 +243,7 @@
       :visible.sync="controlConfirm.visible"
       width="460px"
       @closed="resetControlConfirmState"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <div class="control-confirm-tip">
         切换远程控制前，请先在设备操作屏上同意远程控制，并填写设备端显示的确认口令。
       </div>

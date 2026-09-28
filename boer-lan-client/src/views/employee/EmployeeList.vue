@@ -115,11 +115,11 @@
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" width="50" align="center" />
-        <el-table-column prop="code" :label="$t('employee.employeeCode')" width="120" />
-        <el-table-column prop="name" :label="$t('employee.employeeName')" width="140" />
-        <el-table-column prop="phone" :label="$t('employee.phone')" width="150" />
+        <el-table-column prop="code" :label="$t('employee.employeeCode')" width="120"  show-overflow-tooltip />
+        <el-table-column prop="name" :label="$t('employee.employeeName')" width="140"  show-overflow-tooltip />
+        <el-table-column prop="phone" :label="$t('employee.phone')" width="150"  show-overflow-tooltip />
         <el-table-column prop="groupName" :label="$t('device.group')" width="160" show-overflow-tooltip />
-        <el-table-column prop="createTime" :label="$t('common.createTime')" width="170" />
+        <el-table-column prop="createTime" :label="$t('common.createTime')" width="170"  show-overflow-tooltip />
         <el-table-column :label="$t('common.operation')" width="160" align="center">
           <template slot-scope="scope">
             <el-button type="text" size="small" @click="handleEdit(scope.row)">
@@ -149,7 +149,7 @@
       :visible.sync="showEditDialog"
       width="520px"
       @close="resetEditForm"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <el-form ref="editFormRef" :model="editForm" :rules="editRules" label-width="84px">
         <el-form-item :label="$t('employee.employeeCode')" prop="code">
           <el-input v-model="editForm.code" placeholder="请输入11位以内员工工号" :disabled="!!editForm.id" />
@@ -202,7 +202,7 @@
       :visible.sync="showImportDialog"
       width="700px"
       @close="resetImportDialog"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <div class="import-tip">
         每行格式：`员工工号,员工姓名,手机号,备注`（前三列必填）
       </div>
@@ -256,6 +256,7 @@
 </template>
 
 <script>
+import { parseEmployeeRows, decodeEmployeeFile } from '@/utils/employee-import'
 import {
   getEmployeeGroups,
   getEmployeeList,
@@ -312,7 +313,7 @@ export default {
         ],
         phone: [
           { required: true, message: '请输入联系电话', trigger: 'blur' },
-          { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号', trigger: 'blur' }
+          { validator: (rule, value, callback) => /^1[3-9]\d{9}$/.test(String(value || '').replace(/\s/g, '')) ? callback() : callback(new Error('请输入正确的手机号')), trigger: 'blur' }
         ],
         groupId: [{ required: true, message: '请选择所属分组', trigger: 'change' }]
       },
@@ -401,6 +402,7 @@ export default {
           const rawList = Array.isArray(res.data) ? res.data : (res.data?.list || [])
           this.tableData = this.applyLocalFilters(rawList)
           this.pagination.total = this.tableData.length
+          this.pagination.page = Math.min(this.pagination.page, Math.max(1, Math.ceil(this.pagination.total / this.pagination.pageSize)))
           this.$nextTick(() => {
             this.syncTableHeight()
           })
@@ -451,6 +453,7 @@ export default {
     },
     handleSizeChange(size) {
       this.pagination.pageSize = size
+      this.pagination.page = 1
       this.syncTableHeight()
     },
     handlePageChange(page) {
@@ -534,11 +537,10 @@ export default {
       return new Promise((resolve, reject) => {
         const reader = new FileReader()
         reader.onload = () => {
-          const text = typeof reader.result === 'string' ? reader.result : ''
-          resolve(text.replace(/^\uFEFF/, ''))
+          try { resolve(decodeEmployeeFile(reader.result)) } catch (error) { reject(error) }
         }
         reader.onerror = () => reject(reader.error || new Error('读取文件失败'))
-        reader.readAsText(file, 'utf-8')
+        reader.readAsArrayBuffer(file)
       })
     },
     parseCsvLine(line) {
@@ -570,24 +572,23 @@ export default {
     },
     isImportHeader(parts) {
       const first = (parts[0] || '').replace(/\s/g, '').toLowerCase()
-      return first === '员工工号' || first === 'employeecode' || first === 'code'
+      return first === '工号' || first === '员工工号' || first === 'employeecode' || first === 'code'
     },
     parseImportText() {
-      const lines = this.importText
-        .replace(/^\uFEFF/, '')
-        .split(/\r?\n/)
-        .map(line => line.trim())
-        .filter(Boolean)
+      let lines
+      try { lines = parseEmployeeRows(this.importText) }
+      catch (error) { return { employees: [], lineErrors: [error.message] } }
 
       const employees = []
       const lineErrors = []
 
       lines.forEach((line, index) => {
-        const parts = this.parseCsvLine(line).map(part => part.trim())
+        const parts = line.map(part => part.trim())
         if (index === 0 && this.isImportHeader(parts)) {
           return
         }
-        const [code, name, phone, remark] = parts
+        const [code, name, rawPhone, remark] = parts
+        const phone = String(rawPhone || '').replace(/\s/g, '')
         const lineNo = index + 1
         if (!code || !name || !phone) {
           lineErrors.push(`第${lineNo}行格式错误: ${line}`)
@@ -635,7 +636,7 @@ export default {
         if (this.editForm.id) {
           const updatePayload = {
             name: this.editForm.name,
-            phone: this.editForm.phone,
+            phone: String(this.editForm.phone || '').replace(/\s/g, ''),
             groupId: this.editForm.groupId
           }
           res = await updateEmployee(this.editForm.id, updatePayload)
@@ -643,7 +644,7 @@ export default {
           const createPayload = {
             code: this.editForm.code,
             name: this.editForm.name,
-            phone: this.editForm.phone,
+            phone: String(this.editForm.phone || '').replace(/\s/g, ''),
             remark: this.editForm.remark || '',
             groupId: this.editForm.groupId
           }

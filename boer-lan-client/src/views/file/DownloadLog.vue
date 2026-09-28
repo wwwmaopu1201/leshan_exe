@@ -96,16 +96,16 @@
             {{ scope.row.patternName }}
           </template>
         </el-table-column>
-        <el-table-column prop="patternType" label="花型类型" width="120" />
-        <el-table-column prop="stitches" label="针数" width="90" />
-        <el-table-column prop="size" label="文件大小" width="100" />
-        <el-table-column prop="deviceName" label="下发设备" width="140" />
+        <el-table-column prop="patternType" label="花型类型" width="120"  show-overflow-tooltip />
+        <el-table-column prop="stitches" label="针数" width="90"  show-overflow-tooltip />
+        <el-table-column prop="size" label="文件大小" width="100"  show-overflow-tooltip />
+        <el-table-column prop="deviceName" label="下发设备" width="140"  show-overflow-tooltip />
         <el-table-column prop="unitPrice" label="工价" width="100" align="right">
           <template slot-scope="scope">
             {{ formatPrice(scope.row.unitPrice) }}
           </template>
         </el-table-column>
-        <el-table-column prop="orderNo" label="订单号" width="120" />
+        <el-table-column prop="orderNo" label="订单号" width="120"  show-overflow-tooltip />
         <el-table-column prop="status" label="结果" width="100" align="center">
           <template slot-scope="scope">
             <el-tag :type="scope.row.status === 'completed' ? 'success' : 'danger'" size="small">
@@ -120,7 +120,7 @@
             </span>
           </template>
         </el-table-column>
-        <el-table-column prop="createTime" label="下发时间" width="170" />
+        <el-table-column prop="createTime" label="下发时间" width="170"  show-overflow-tooltip />
       </el-table>
 
       <el-pagination
@@ -230,6 +230,7 @@ export default {
     },
     handleSizeChange(size) {
       this.pagination.pageSize = size
+      this.pagination.page = 1
       this.fetchData()
     },
     handlePageChange(page) {

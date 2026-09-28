@@ -155,17 +155,11 @@ export function getDefaultAccessiblePath() {
   if (hasPermission(PERMISSIONS.DASHBOARD)) {
     return '/dashboard'
   }
-  if (hasPermission(PERMISSIONS.DEVICE_MANAGEMENT)) {
-    return '/device/list'
-  }
-  if (hasPermission(PERMISSIONS.REMOTE_MONITORING)) {
-    return '/device/monitor'
-  }
-  if (hasPermission(PERMISSIONS.FILE_MANAGEMENT)) {
-    return '/file/pattern'
-  }
-  if (hasPermission(PERMISSIONS.STATISTICS)) {
-    return '/statistics/salary'
+  const destinations = [['deviceInfo', '/device/list'], ['remoteMonitoring', '/device/monitor'],
+    ['patternFiles', '/file/pattern'], ['devicePatternFiles', '/file/pattern'], ['downloadLog', '/file/queue'],
+    ['salaryStatistics', '/statistics/salary'], ['statusStatistics', '/statistics/process']]
+  for (const [permission, path] of destinations) {
+    if (hasPermission(permission)) return path
   }
   if (hasPermission(PERMISSIONS.EMPLOYEE_MANAGEMENT)) {
     return '/employee/list'

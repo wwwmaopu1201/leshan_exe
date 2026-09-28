@@ -39,7 +39,7 @@ type LoginRequest struct {
 
 func encodeEffectivePermissionsJSON(db *gorm.DB, user model.User) string {
 	permissionMap, err := loadUserPermissionMap(db, user.ID, user.Role)
-	if err != nil || len(permissionMap) == 0 {
+	if err != nil || permissionMap == nil {
 		return user.Permissions
 	}
 
@@ -293,6 +293,9 @@ func (h *AuthHandler) GetLoginLogs(c *gin.Context) {
 
 	query := h.db.Model(&model.LoginLog{}).
 		Joins("LEFT JOIN users ON users.id = login_logs.user_id")
+	if !isAdminRole(c.GetString("role")) {
+		query = query.Where("login_logs.user_id = ?", c.GetUint("userId"))
+	}
 	if keyword != "" {
 		like := "%" + keyword + "%"
 		query = query.Where("(login_logs.username LIKE ? OR users.username LIKE ? OR login_logs.ip LIKE ?)", like, like, like)
@@ -369,6 +372,12 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 		return
 	}
 
+	req.Nickname = strings.TrimSpace(req.Nickname)
+	req.Phone = strings.Join(strings.Fields(req.Phone), "")
+	if req.Nickname == "" || len([]rune(req.Nickname)) > 50 || !isValidUserPhone(req.Phone) || !validOptionalEmail(strings.TrimSpace(req.Email)) {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "请检查姓名长度、手机号和邮箱格式"})
+		return
+	}
 	userId := c.GetUint("userId")
 
 	var user model.User
@@ -391,7 +400,10 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 		updates["phone"] = req.Phone
 	}
 
-	h.db.Model(&user).Updates(updates)
+	if err := h.db.Model(&user).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "保存个人资料失败"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,

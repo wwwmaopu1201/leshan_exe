@@ -41,9 +41,7 @@ function parsePermissions(rawPermissions) {
 
     if (permissions && typeof permissions === 'object') {
       return Object.keys(permissions).reduce((acc, key) => {
-        if (permissions[key] === true) {
-          acc[key] = true
-        }
+        acc[key] = permissions[key] === true
         return acc
       }, {})
     }
@@ -60,29 +58,20 @@ function normalizePermissions(rawPermissions) {
     return getDefaultPermissions()
   }
 
-  const normalizedPermissions = {
-    ...parsedPermissions
+  const normalizedPermissions = { ...parsedPermissions }
+  const children = {
+    deviceManagement: ['deviceInfo', 'remoteMonitoring'],
+    fileManagement: ['patternFiles', 'devicePatternFiles', 'downloadLog'],
+    statistics: ['salaryStatistics', 'statusStatistics']
   }
-
-  normalizedPermissions.home = parsedPermissions.home === true
-  normalizedPermissions.dashboard = parsedPermissions.dashboard === true
-  normalizedPermissions.employeeManagement = parsedPermissions.employeeManagement === true
-  normalizedPermissions.deviceManagement =
-    parsedPermissions.deviceManagement === true ||
-    parsedPermissions.deviceInfo === true
-  normalizedPermissions.remoteMonitoring =
-    parsedPermissions.remoteMonitoring === true ||
-    parsedPermissions.deviceManagement === true ||
-    parsedPermissions.deviceInfo === true
-  normalizedPermissions.fileManagement =
-    parsedPermissions.fileManagement === true ||
-    parsedPermissions.patternFiles === true ||
-    parsedPermissions.devicePatternFiles === true ||
-    parsedPermissions.downloadLog === true
-  normalizedPermissions.statistics =
-    parsedPermissions.statistics === true ||
-    parsedPermissions.salaryStatistics === true ||
-    parsedPermissions.statusStatistics === true
+  Object.entries(children).forEach(([parent, keys]) => {
+    const detailed = keys.some(key => {
+      if (parent === 'deviceManagement' && key === 'remoteMonitoring' && parsedPermissions[key] === true && parsedPermissions[parent] === true && !Object.prototype.hasOwnProperty.call(parsedPermissions, 'deviceInfo')) return false
+      return Object.prototype.hasOwnProperty.call(parsedPermissions, key)
+    })
+    keys.forEach(key => { normalizedPermissions[key] = detailed ? parsedPermissions[key] === true : parsedPermissions[parent] === true })
+    normalizedPermissions[parent] = keys.some(key => normalizedPermissions[key])
+  })
 
   return normalizedPermissions
 }
@@ -100,7 +89,7 @@ export default new Vuex.Store({
   state: {
     // User info
     user: null,
-    token: localStorage.getItem('token') || '',
+    token: sessionStorage.getItem('token') || '',
 
     // Server connection
     serverConfig: {
@@ -143,6 +132,7 @@ export default new Vuex.Store({
 
     // 检查是否有某个权限
     hasPermission: (state, getters) => (permissionKey) => {
+      if (getters.isAdmin) return true
       const permissions = getters.userPermissions
       return permissions[permissionKey] === true
     },
@@ -161,7 +151,7 @@ export default new Vuex.Store({
   mutations: {
     SET_TOKEN(state, token) {
       state.token = token
-      localStorage.setItem('token', token)
+      sessionStorage.setItem('token', token)
     },
 
     SET_USER(state, user) {
@@ -214,7 +204,7 @@ export default new Vuex.Store({
       state.user = null
       state.serverVersion = ''
       state.permissionsCache = null
-      localStorage.removeItem('token')
+      sessionStorage.removeItem('token')
     }
   },
 

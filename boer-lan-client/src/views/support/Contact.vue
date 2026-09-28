@@ -108,6 +108,7 @@
 </template>
 
 <script>
+import { invoke, isTauri } from '@tauri-apps/api/core'
 const MESSAGE_TARGET_EMAIL = 'chengjing@bohr123.com'
 
 export default {
@@ -129,9 +130,14 @@ export default {
     }
   },
   methods: {
-    openMap() {
+    async openExternal(url) {
+      if (isTauri()) { await invoke('open_external_url', { url }); return }
+      if (url.startsWith('mailto:')) window.location.href = url
+      else window.open(url, '_blank', 'noopener,noreferrer')
+    },
+    async openMap() {
       const address = encodeURIComponent(this.$t('support.companyAddressValue'))
-      window.open(`https://uri.amap.com/search?keyword=${address}`, '_blank')
+      try { await this.openExternal(`https://uri.amap.com/search?keyword=${address}`) } catch (_) { this.$message.error(this.$i18n.locale === 'en-US' ? 'Could not open the map' : '无法打开地图，请检查默认浏览器') }
     },
     async handleSubmit() {
       try {
@@ -145,9 +151,8 @@ export default {
           `${this.$t('support.mailDescriptionLabel')}:`,
           this.form.description
         ].join('\n'))
-        window.location.href = `mailto:${MESSAGE_TARGET_EMAIL}?subject=${subject}&body=${body}`
-        this.$message.success(this.$t('support.formSubmitSuccess'))
-        this.handleReset()
+        await this.openExternal(`mailto:${MESSAGE_TARGET_EMAIL}?subject=${subject}&body=${body}`)
+        this.$message.info(this.$i18n.locale === 'en-US' ? 'Complete sending in your email app. Your message has not been sent yet.' : '请在邮件程序中完成发送，当前尚未提交留言。')
       } catch (error) {
         console.error('Validation failed:', error)
       }

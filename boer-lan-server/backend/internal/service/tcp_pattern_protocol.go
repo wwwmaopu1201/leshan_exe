@@ -293,11 +293,17 @@ func buildDownloadPatternFrames(data []byte, addr1, addr2 uint32) []*Packet {
 		}}
 	}
 
-	totalFrames := (len(data) + patternChunkSize - 1) / patternChunkSize
+	// The wire protocol uses one byte for frame count and index. Grow the
+	// payload for large files instead of wrapping frame numbers after 255.
+	chunkSize := patternChunkSize
+	if len(data) > chunkSize*255 {
+		chunkSize = ((len(data) + 255*patternChunkSize - 1) / (255 * patternChunkSize)) * patternChunkSize
+	}
+	totalFrames := (len(data) + chunkSize - 1) / chunkSize
 	frames := make([]*Packet, 0, totalFrames)
 	for index := 0; index < totalFrames; index++ {
-		start := index * patternChunkSize
-		end := start + patternChunkSize
+		start := index * chunkSize
+		end := start + chunkSize
 		if end > len(data) {
 			end = len(data)
 		}
@@ -431,4 +437,14 @@ func decodeCompatibleProtocolText(data []byte) string {
 	}
 
 	return strings.TrimSpace(trimNullBytes(data))
+}
+
+func ValidateDownloadPatternName(patternName string) error {
+	if strings.TrimSpace(patternName) == "" {
+		return fmt.Errorf("花型名称不能为空")
+	}
+	if len(utf16.Encode([]rune(patternName)))*2 > patternNameFixedBytes {
+		return fmt.Errorf("花型名称超过设备协议44字节限制，请缩短名称后下发")
+	}
+	return nil
 }

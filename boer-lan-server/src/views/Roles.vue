@@ -46,14 +46,14 @@
         </div>
       </div>
 
-      <el-table :data="roles" v-loading="loading" border class="roles-table">
+      <el-table :data="pagedRows" v-loading="loading" border class="roles-table">
         <el-table-column label="序号" width="70" align="center">
           <template slot-scope="{ $index }">
-            {{ $index + 1 }}
+            {{ (tablePage - 1) * tablePageSize + $index + 1 }}
           </template>
         </el-table-column>
-        <el-table-column prop="name" label="角色名称" min-width="140" />
-        <el-table-column prop="createTime" label="创建时间" width="170" />
+        <el-table-column prop="name" label="角色名称" min-width="140"  show-overflow-tooltip />
+        <el-table-column prop="createTime" label="创建时间" width="170"  show-overflow-tooltip />
         <el-table-column label="父子联动" width="110" align="center">
           <template slot-scope="{ row }">
             <span :class="['status-pill', row.parentChildLink ? 'success' : 'info']">
@@ -82,6 +82,7 @@
         </el-table-column>
         <el-table-column prop="remark" label="备注" min-width="200" show-overflow-tooltip />
       </el-table>
+<el-pagination :current-page.sync="tablePage" :page-size="tablePageSize" :total="roles.length" :page-sizes="[10, 20, 50, 100]" layout="total, sizes, prev, pager, next" @size-change="size => { tablePageSize = size; tablePage = 1 }" />
     </el-card>
 
     <el-dialog
@@ -89,7 +90,7 @@
       :visible.sync="dialogVisible"
       width="720px"
       @close="resetForm"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <el-form ref="roleFormRef" :model="form" :rules="rules" label-width="110px">
         <el-form-item label="角色名称" prop="name">
           <el-input v-model="form.name" maxlength="10" show-word-limit placeholder="不超过 10 个字" />
@@ -156,6 +157,8 @@ export default {
   name: 'Roles',
   data() {
     return {
+      tablePage: 1,
+      tablePageSize: 20,
       loading: false,
       saving: false,
       roles: [],
@@ -240,6 +243,11 @@ export default {
     }
   },
   computed: {
+    pagedRows() {
+      const page = Math.min(this.tablePage, Math.max(1, Math.ceil(this.roles.length / this.tablePageSize)))
+      return this.roles.slice((page - 1) * this.tablePageSize, page * this.tablePageSize)
+    },
+
     currentPermissionTree() {
       if (this.form.showDetailPermissions) {
         return this.permissionTree
@@ -325,6 +333,9 @@ export default {
         checkedKeys = this.expandModulePermissions(checkedKeys)
       }
       const permissionMap = {}
+      if (this.form.showDetailPermissions) {
+        this.permissionTree.forEach(node => (node.children || []).forEach(child => { permissionMap[child.id] = false }))
+      }
       checkedKeys.forEach(key => {
         permissionMap[key] = true
       })
@@ -333,7 +344,10 @@ export default {
     applyTreeCheckedKeys(keys) {
       this.$nextTick(() => {
         if (this.$refs.permissionTreeRef) {
-          this.$refs.permissionTreeRef.setCheckedKeys(keys)
+          const leafKeys = this.form.showDetailPermissions && this.form.parentChildLink
+            ? keys.filter(key => !this.permissionTree.some(node => node.id === key && node.children?.length))
+            : keys
+          this.$refs.permissionTreeRef.setCheckedKeys(leafKeys)
         }
       })
     },
@@ -366,6 +380,7 @@ export default {
       this.applyTreeCheckedKeys(checked)
     },
     async loadData() {
+      this.tablePage = 1
       this.loading = true
       try {
         const params = {

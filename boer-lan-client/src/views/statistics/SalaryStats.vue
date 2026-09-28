@@ -165,9 +165,9 @@
             empty-text="暂无数据"
           >
             <el-table-column type="index" label="序号" width="60" align="center" :index="getSalaryRowIndex" />
-            <el-table-column prop="employeeName" label="员工姓名" width="120" />
-            <el-table-column prop="employeeCode" label="员工工号" width="110" />
-            <el-table-column prop="deviceName" label="设备名称" width="130" />
+            <el-table-column prop="employeeName" label="员工姓名" width="120"  show-overflow-tooltip />
+            <el-table-column prop="employeeCode" label="员工工号" width="110"  show-overflow-tooltip />
+            <el-table-column prop="deviceName" label="设备名称" width="130"  show-overflow-tooltip />
             <el-table-column prop="workDays" label="工作天数" width="100" align="right">
               <template slot-scope="scope">
                 {{ scope.row.workDays || scope.row.workDayCount || '-' }}
@@ -183,8 +183,8 @@
                 {{ scope.row.orderNo || '-' }}
               </template>
             </el-table-column>
-            <el-table-column prop="totalPieces" label="加工件数" width="100" align="right" />
-            <el-table-column prop="unitPrice" label="单价(元)" width="100" align="right" />
+            <el-table-column prop="totalPieces" label="加工件数" width="100" align="right"  show-overflow-tooltip />
+            <el-table-column prop="unitPrice" label="单价(元)" width="100" align="right"  show-overflow-tooltip />
             <el-table-column prop="salary" label="工资(元)" width="120" align="right">
               <template slot-scope="scope">
                 <span class="text-primary">{{ Number(scope.row.salary || 0).toFixed(2) }}</span>
@@ -223,7 +223,7 @@
       width="980px"
       append-to-body
       @opened="syncDetailDialogTableHeight"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <el-table
         :data="detailDialog.rows"
         border
@@ -231,13 +231,13 @@
         :max-height="detailDialogTableMaxHeight"
       >
         <el-table-column type="index" label="序号" width="60" align="center" />
-        <el-table-column prop="deviceName" label="设备名称" min-width="120" />
-        <el-table-column prop="patternName" label="花型名称" min-width="150" />
-        <el-table-column prop="patternStitches" label="花型针数" width="100" align="right" />
-        <el-table-column prop="startTime" label="开始时间" width="160" />
-        <el-table-column prop="endTime" label="结束时间" width="160" />
-        <el-table-column prop="sewCount" label="缝纫次数" width="100" align="right" />
-        <el-table-column prop="unitPrice" label="单价(元)" width="100" align="right" />
+        <el-table-column prop="deviceName" label="设备名称" min-width="120"  show-overflow-tooltip />
+        <el-table-column prop="patternName" label="花型名称" min-width="150"  show-overflow-tooltip />
+        <el-table-column prop="patternStitches" label="花型针数" width="100" align="right"  show-overflow-tooltip />
+        <el-table-column prop="startTime" label="开始时间" width="160"  show-overflow-tooltip />
+        <el-table-column prop="endTime" label="结束时间" width="160"  show-overflow-tooltip />
+        <el-table-column prop="sewCount" label="缝纫次数" width="100" align="right"  show-overflow-tooltip />
+        <el-table-column prop="unitPrice" label="单价(元)" width="100" align="right"  show-overflow-tooltip />
         <el-table-column prop="orderNo" label="订单号" width="120">
           <template slot-scope="scope">
             {{ scope.row.orderNo || '-' }}
@@ -502,7 +502,8 @@ export default {
     buildSalaryParams(overrides = {}) {
       const deviceScopeParams = this.buildDeviceScopeParams()
       return {
-        startDate: this.searchForm.dateRange?.[0],
+        deviceName: this.searchForm.deviceKeyword,
+          startDate: this.searchForm.dateRange?.[0],
         endDate: this.searchForm.dateRange?.[1],
         employeeId: this.searchForm.employeeId,
         employeeKeyword: this.searchForm.employeeKeyword,
@@ -529,6 +530,7 @@ export default {
       this.tableData = rawList
       this.scopedEmployeeOptions = this.resolveScopedEmployees(this.tableData)
       this.pagination.total = this.tableData.length
+          this.pagination.page = Math.min(this.pagination.page, Math.max(1, Math.ceil(this.pagination.total / this.pagination.pageSize)))
       const maxPage = Math.max(1, Math.ceil(this.pagination.total / this.pagination.pageSize))
       if (this.pagination.page > maxPage) {
         this.pagination.page = 1
@@ -612,6 +614,7 @@ export default {
     },
     handleSizeChange(size) {
       this.pagination.pageSize = size
+      this.pagination.page = 1
       this.syncTableHeight()
     },
     handlePageChange(page) {
@@ -630,6 +633,7 @@ export default {
           employeeId: row.employeeId || this.searchForm.employeeId,
           deviceId: deviceScopeParams.deviceId,
           deviceIds: deviceScopeParams.deviceIds,
+          deviceName: this.searchForm.deviceKeyword,
           startDate: this.searchForm.dateRange?.[0],
           endDate: this.searchForm.dateRange?.[1]
         })
@@ -660,6 +664,7 @@ export default {
       try {
         const deviceScopeParams = this.buildDeviceScopeParams()
         const response = await exportStatistics('salary', {
+          deviceName: this.searchForm.deviceKeyword,
           startDate: this.searchForm.dateRange?.[0],
           endDate: this.searchForm.dateRange?.[1],
           employeeId: this.searchForm.employeeId,

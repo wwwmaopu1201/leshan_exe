@@ -157,7 +157,7 @@
       :visible.sync="outputDialog.visible"
       width="820px"
       append-to-body
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <div class="mono-output">{{ outputDialog.content }}</div>
     </el-dialog>
   </div>
@@ -267,9 +267,7 @@ export default {
           const info = res.data.map(item =>
             `${item.name}: ${item.addresses.join(', ')}`
           ).join('\n')
-          this.$alert(info, '网络信息', {
-            confirmButtonText: '确定'
-          })
+          this.openOutputDialog('网络信息', info)
         }
       } catch (error) {
         console.error('获取网络信息失败', error)
@@ -474,10 +472,7 @@ export default {
           params: { ip }
         })
         if (res.code === 0) {
-          this.$alert(`<pre>${res.data.output}</pre>`, 'Ping结果', {
-            dangerouslyUseHTMLString: true,
-            confirmButtonText: '确定'
-          })
+          this.openOutputDialog('Ping结果', String(res.data.output || ''))
         }
       } catch (error) {
         console.error('Ping失败', error)

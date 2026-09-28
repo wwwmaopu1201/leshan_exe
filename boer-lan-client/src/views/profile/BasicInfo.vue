@@ -99,9 +99,9 @@
       </div>
 
       <el-table ref="logTableRef" v-loading="logLoading" :data="loginLogs" border :height="tableHeight" empty-text="暂无登录记录">
-        <el-table-column prop="time" label="登录时间" width="180" />
-        <el-table-column prop="ip" label="IP地址" width="150" />
-        <el-table-column prop="device" label="设备" min-width="200" />
+        <el-table-column prop="time" label="登录时间" width="180"  show-overflow-tooltip />
+        <el-table-column prop="ip" label="IP地址" width="150"  show-overflow-tooltip />
+        <el-table-column prop="device" label="设备" min-width="200"  show-overflow-tooltip />
         <el-table-column prop="status" label="状态" width="110" align="center">
           <template slot-scope="scope">
             <el-tag :type="scope.row.status === '成功' ? 'success' : 'danger'" size="small" effect="plain">
@@ -131,7 +131,7 @@ export default {
         createTime: ''
       },
       rules: {
-        nickname: [{ required: true, message: '请输入账号姓名', trigger: 'blur' }],
+        nickname: [{ required: true, whitespace: true, message: '请输入账号姓名', trigger: 'blur' }, { max: 50, message: '账号姓名不能超过50个字符', trigger: 'blur' }],
         phone: [
           { required: true, message: '请输入手机号', trigger: 'blur' },
           { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号', trigger: 'blur' }

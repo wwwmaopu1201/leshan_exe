@@ -75,8 +75,8 @@
           </div>
           <div class="action-group">
             <el-button icon="el-icon-refresh" @click="loadConfig">重新加载</el-button>
-            <el-button type="warning" :loading="testing" @click="testConnection">测试连接</el-button>
-            <el-button type="success" :loading="syncing" @click="syncNow">立即同步</el-button>
+            <el-button type="warning" :loading="testing" :disabled="!form.enabled || saving || syncing" @click="testConnection">测试连接</el-button>
+            <el-button type="success" :loading="syncing" :disabled="!canSync" @click="syncNow">立即同步</el-button>
             <el-button type="primary" :loading="saving" @click="saveConfig">保存配置</el-button>
           </div>
         </div>
@@ -128,6 +128,7 @@
           </div>
         </el-form>
 
+        <div v-if="configKey !== savedConfig" class="soft-note">配置已修改，请保存当前配置后再同步。</div>
         <div class="soft-note">
           <i class="el-icon-info"></i>
           <span>同步时间显示为空时，说明当前尚未执行过同步或外部数据库连接尚未启用。</span>
@@ -142,6 +143,8 @@ export default {
   name: 'Database',
   data() {
     return {
+      savedConfig: '',
+      testedConfig: '',
       saving: false,
       testing: false,
       syncing: false,
@@ -170,7 +173,11 @@ export default {
       },
       rules: {
         dbType: [{ required: true, message: '请选择数据库类型', trigger: 'change' }],
-        host: [{ required: true, message: '请输入服务器地址', trigger: 'blur' }],
+        host: [{ required: true, message: '请输入服务器地址', trigger: 'blur' }, { validator: (rule, value, callback) => {
+          if (/\s|[/?#@\\]/.test(value || '')) return callback(new Error('请输入有效IP或主机名，不能包含空格或路径'))
+          if (/^[\d.]+$/.test(value || '')) { const parts = value.split('.'); if (parts.length !== 4 || parts.some(part => !/^\d{1,3}$/.test(part) || Number(part) > 255)) return callback(new Error('IP地址格式不正确')) }
+          callback()
+        }, trigger: 'blur' }],
         port: [{ required: true, message: '请输入端口', trigger: 'change' }],
         username: [{ required: true, message: '请输入登录名', trigger: 'blur' }],
         database: [{ required: true, message: '请输入数据库名', trigger: 'blur' }],
@@ -179,6 +186,13 @@ export default {
     }
   },
   computed: {
+    configKey() {
+      const { updatedAt, ...config } = this.form
+      return JSON.stringify(config)
+    },
+    canSync() {
+      return this.form.enabled && this.configKey === this.savedConfig && this.configKey === this.testedConfig && !this.saving && !this.testing && !this.syncing
+    },
     serverIpText() {
       const ips = Array.isArray(this.serverInfo.ips) ? this.serverInfo.ips.filter(Boolean) : []
       return ips.length ? ips.join(', ') : '-'
@@ -226,6 +240,8 @@ export default {
             ...this.form,
             ...res.data
           }
+          this.savedConfig = this.configKey
+          this.testedConfig = ''
         }
       } catch (error) {
         console.error('加载数据库配置失败', error)
@@ -254,14 +270,13 @@ export default {
       return map[status] || status || '-'
     },
     handleDBTypeChange(value) {
-      if (value === 'mssql' && this.form.port === 3306) {
-        this.form.port = 1433
-      }
-      if (value === 'mysql' && this.form.port === 1433) {
-        this.form.port = 3306
-      }
+      this.form = { ...this.form, dbType: value, host: '127.0.0.1', port: value === 'mssql' ? 1433 : 3306, username: '', password: '', database: '', charset: 'utf8mb4', syncIntervalMinutes: 30 }
+      this.testedConfig = ''
+      this.$nextTick(() => this.$refs.dbFormRef?.clearValidate())
     },
     async testConnection() {
+      if (!this.form.enabled || this.testing) return
+      this.testedConfig = ''
       const valid = await this.$refs.dbFormRef.validate().catch(() => false)
       if (!valid) {
         return
@@ -269,8 +284,10 @@ export default {
 
       try {
         this.testing = true
-        const res = await this.$axios.post('/system/database/test', this.form)
+        const testedKey = this.configKey
+        const res = await this.$axios.post('/system/database/test', { ...this.form }, { timeout: 15000 })
         if (res.code === 0) {
+          this.testedConfig = testedKey
           this.$message.success(res.message || '连接测试成功')
         } else {
           this.$message.error(res.message || '连接测试失败')
@@ -282,15 +299,17 @@ export default {
       }
     },
     async saveConfig() {
-      const valid = await this.$refs.dbFormRef.validate().catch(() => false)
+      const valid = !this.form.enabled || await this.$refs.dbFormRef.validate().catch(() => false)
       if (!valid) {
         return
       }
 
       try {
         this.saving = true
-        const res = await this.$axios.post('/system/database/config', this.form)
+        const savedKey = this.configKey
+        const res = await this.$axios.post('/system/database/config', { ...this.form })
         if (res.code === 0) {
+          this.savedConfig = savedKey
           this.form.updatedAt = res.data?.updatedAt || this.form.updatedAt
           this.loadSyncStatus()
           this.$message.success('保存成功')
@@ -304,6 +323,10 @@ export default {
       }
     },
     async syncNow() {
+      if (!this.canSync) {
+        this.$message.warning('请启用连接、测试成功并保存当前配置后再同步')
+        return
+      }
       try {
         this.syncing = true
         const res = await this.$axios.post('/system/database/sync-now')

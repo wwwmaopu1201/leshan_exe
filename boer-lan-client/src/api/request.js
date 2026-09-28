@@ -6,7 +6,7 @@ import { translateApiMessage } from '@/utils/i18n-normalizer'
 
 // 创建axios实例
 const service = axios.create({
-  timeout: 2 * 60 * 1000
+  timeout: 15000
 })
 
 function resolveErrorMessage(error) {

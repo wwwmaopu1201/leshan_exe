@@ -10,6 +10,7 @@ import (
 func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, serverPort int, patternTransfer *service.PatternTransferService, connMgr *service.ConnectionManager) {
 	// API group
 	api := r.Group("/api")
+	api.Use(ValidateStatisticsDateRange())
 
 	// Initialize handlers
 	deviceHandler := NewDeviceHandler(db, connMgr)
@@ -37,7 +38,7 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, se
 	protected.Use(EnsureActiveAccount(db))
 	{
 		permDevice := RequirePermission(db, "deviceManagement", "deviceInfo")
-		permDeviceTreeRead := RequirePermission(db, "deviceManagement", "deviceInfo", "statistics", "salaryStatistics", "statusStatistics")
+		permDeviceTreeRead := RequirePermission(db, "deviceManagement", "deviceInfo", "remoteMonitoring", "fileManagement", "patternFiles", "devicePatternFiles", "downloadLog", "statistics", "salaryStatistics", "statusStatistics", "employeeManagement", "dashboard", "home")
 		permRemoteMonitoring := RequirePermission(db, "remoteMonitoring", "deviceManagement")
 		permPatternFiles := RequirePermission(db, "fileManagement", "patternFiles")
 		permDevicePatternFiles := RequirePermission(db, "fileManagement", "devicePatternFiles")
@@ -57,11 +58,11 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, se
 		protected.PUT("/auth/password", authHandler.ChangePassword)
 		protected.PUT("/auth/profile", authHandler.UpdateProfile)
 		protected.POST("/auth/avatar", authHandler.UploadAvatar)
-		protected.GET("/auth/login-logs", permAdmin, authHandler.GetLoginLogs)
+		protected.GET("/auth/login-logs", authHandler.GetLoginLogs)
 
 		// Device
 		protected.GET("/device/tree", permDeviceTreeRead, deviceHandler.GetDeviceTree)
-		protected.GET("/device/list", permDevice, deviceHandler.GetDeviceList)
+		protected.GET("/device/list", permDeviceTreeRead, deviceHandler.GetDeviceList)
 		protected.GET("/device/types", permDevice, deviceHandler.GetDeviceTypes)
 		protected.POST("/device/type-summary", permDevice, deviceHandler.CreateDeviceType)
 		protected.GET("/device/type-summary", permDevice, deviceHandler.GetDeviceTypeSummary)
@@ -83,7 +84,7 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, se
 		protected.POST("/device/:id/control/confirm", permRemoteMonitoring, deviceHandler.ConfirmRemoteControl)
 
 		// Device Group
-		protected.GET("/device/groups", permDevice, deviceHandler.GetDeviceGroups)
+		protected.GET("/device/groups", permDeviceTreeRead, deviceHandler.GetDeviceGroups)
 		protected.POST("/device/group", permDevice, deviceHandler.CreateDeviceGroup)
 		protected.PUT("/device/group/:id", permDevice, deviceHandler.UpdateDeviceGroup)
 		protected.DELETE("/device/group/:id", permDevice, deviceHandler.DeleteDeviceGroup)
@@ -132,6 +133,7 @@ func SetupRouter(r *gin.Engine, db *gorm.DB, jwtSecret string, jwtExpire int, se
 		// Statistics
 		statsHandler := NewStatisticsHandler(db)
 		protected.GET("/statistics/home", permHome, statsHandler.GetHomeStats)
+		protected.GET("/statistics/production-trend", permHome, statsHandler.GetProductionTrend)
 		protected.GET("/statistics/dashboard", permDashboard, statsHandler.GetDashboardData)
 		protected.GET("/statistics/salary", permSalaryStats, statsHandler.GetSalaryStats)
 		protected.GET("/statistics/salary/detail", permSalaryStats, statsHandler.GetSalaryDetail)

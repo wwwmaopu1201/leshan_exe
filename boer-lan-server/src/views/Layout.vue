@@ -115,7 +115,7 @@ export default {
       localStorage.setItem('server_login_language', language)
     },
     logout() {
-      localStorage.removeItem('token')
+      sessionStorage.removeItem('token')
       this.$message.success(this.formatText('已退出登录'))
       this.$router.push('/login')
     },

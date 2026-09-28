@@ -577,7 +577,7 @@ func (h *StatisticsHandler) getTopProduction(deviceIDs []uint) []gin.H {
 }
 
 func (h *StatisticsHandler) getDeviceUsage(deviceIDs []uint) []gin.H {
-	startDate := time.Now().AddDate(0, 0, -6).Format("2006-01-02")
+	startDate := formatLocalStatsDate(time.Now())
 
 	var devices []struct {
 		DeviceID  uint
@@ -706,33 +706,34 @@ func (h *StatisticsHandler) getRunningStatusByHour(deviceIDs []uint) []gin.H {
 
 	now := time.Now()
 
-	var records []struct {
-		DeviceID   uint
-		RecordDate time.Time
-	}
-	dateExpr := h.localDateExpr("record_date")
-	hourlyQuery := h.db.Model(&model.ProductionRecord{}).
-		Select("device_id, record_date").
-		Where(fmt.Sprintf("%s = ?", dateExpr), formatLocalStatsDate(now))
+	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	var sessions []model.DeviceRuntimeSession
+	sessionQuery := h.db.Where("started_at < ? AND (ended_at IS NULL OR ended_at > ?)", now, dayStart)
 	if len(deviceIDs) > 0 {
-		hourlyQuery = hourlyQuery.Where("device_id IN ?", deviceIDs)
+		sessionQuery = sessionQuery.Where("device_id IN ?", deviceIDs)
 	}
-	hourlyQuery.Scan(&records)
-
+	sessionQuery.Find(&sessions)
 	hourDeviceMap := make(map[int]map[uint]struct{}, 24)
-	for _, record := range records {
-		hour := record.RecordDate.Hour()
-		if _, exists := hourDeviceMap[hour]; !exists {
-			hourDeviceMap[hour] = make(map[uint]struct{})
+	for hour := 0; hour <= now.Hour(); hour++ {
+		start := dayStart.Add(time.Duration(hour) * time.Hour)
+		end := start.Add(time.Hour)
+		hourDeviceMap[hour] = map[uint]struct{}{}
+		for _, session := range sessions {
+			sessionEnd := session.LastSeenAt
+			if session.EndedAt != nil {
+				sessionEnd = *session.EndedAt
+			}
+			if session.StartedAt.Before(end) && sessionEnd.After(start) {
+				hourDeviceMap[hour][session.DeviceID] = struct{}{}
+			}
 		}
-		hourDeviceMap[hour][record.DeviceID] = struct{}{}
 	}
 
 	result := make([]gin.H, 0, 24)
 	currentHour := now.Hour()
-	for hour := 0; hour < 24; hour++ {
+	for hour := 0; hour <= currentHour; hour++ {
 		online := len(hourDeviceMap[hour])
-		if hour == currentHour && online == 0 {
+		if hour == currentHour {
 			online = int(currentOnlineDevices)
 		}
 		if online < 0 {
@@ -1012,7 +1013,7 @@ func (h *StatisticsHandler) getDashboardSpindleSpeed(deviceId string, deviceIDs 
 }
 
 func (h *StatisticsHandler) getHourlyProduction(deviceId string, deviceIDs []uint) []gin.H {
-	startDate := time.Now().AddDate(0, 0, -9).Format("2006-01-02")
+	startDate := time.Now().AddDate(0, 0, -6).Format("2006-01-02")
 	recordDateExpr := h.localDateExpr("record_date")
 	query := applyDashboardDeviceFilter(h.db.Model(&model.ProductionRecord{}), deviceId, deviceIDs).
 		Select(fmt.Sprintf("%s as date, COALESCE(SUM(pieces), 0) as value", recordDateExpr)).
@@ -1031,9 +1032,9 @@ func (h *StatisticsHandler) getHourlyProduction(deviceId string, deviceIDs []uin
 		valueMap[row.Date] = row.Value
 	}
 
-	result := make([]gin.H, 0, 10)
+	result := make([]gin.H, 0, 7)
 	now := time.Now()
-	for i := 9; i >= 0; i-- {
+	for i := 6; i >= 0; i-- {
 		day := now.AddDate(0, 0, -i)
 		key := day.Format("2006-01-02")
 		value := valueMap[key]
@@ -1503,6 +1504,26 @@ func (h *StatisticsHandler) GetProcessOverview(c *gin.Context) {
 			"value":      row.Pieces,
 			"efficiency": roundFloat(efficiency, 2),
 		})
+	}
+
+	if startDate != "" && endDate != "" {
+		start, e1 := time.ParseInLocation("2006-01-02", startDate, time.Local)
+		end, e2 := time.ParseInLocation("2006-01-02", endDate, time.Local)
+		if e1 == nil && e2 == nil && !end.Before(start) && end.Sub(start) <= 366*24*time.Hour {
+			byDate := make(map[string]gin.H)
+			for _, item := range productionTrend {
+				byDate[item["date"].(string)] = item
+			}
+			productionTrend = []gin.H{}
+			for day := start; !day.After(end); day = day.AddDate(0, 0, 1) {
+				key := day.Format("2006-01-02")
+				if item, ok := byDate[key]; ok {
+					productionTrend = append(productionTrend, item)
+				} else {
+					productionTrend = append(productionTrend, gin.H{"date": key, "pieces": 0, "value": 0, "efficiency": 0})
+				}
+			}
+		}
 	}
 
 	var distributionRows []struct {
@@ -2754,6 +2775,28 @@ func (h *StatisticsHandler) buildAlarmStatsBaseQuery(startDate, endDate, deviceI
 }
 
 func (h *StatisticsHandler) scopeDeviceFilter(c *gin.Context, deviceId string, deviceIDs []uint) (string, []uint) {
+	if strings.TrimSpace(c.Query("deviceIds")) == "0" || deviceId == "0" {
+		return "", []uint{0}
+	}
+	id, ids := h.scopeDeviceFilterBase(c, deviceId, deviceIDs)
+	keyword := strings.TrimSpace(c.Query("deviceName"))
+	if keyword == "" {
+		return id, ids
+	}
+	query := h.db.Model(&model.Device{}).Where("name LIKE ? OR initial_name LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
+	if id != "" {
+		query = query.Where("id = ?", id)
+	} else if len(ids) > 0 {
+		query = query.Where("id IN ?", ids)
+	}
+	var matched []uint
+	if err := query.Pluck("id", &matched).Error; err != nil || len(matched) == 0 {
+		return "", []uint{0}
+	}
+	return "", matched
+}
+
+func (h *StatisticsHandler) scopeDeviceFilterBase(c *gin.Context, deviceId string, deviceIDs []uint) (string, []uint) {
 	scope, err := loadUserGroupScope(h.db, c.GetUint("userId"), c.GetString("role"))
 	if err != nil {
 		return "", []uint{0}

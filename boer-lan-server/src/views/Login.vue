@@ -331,7 +331,7 @@ export default {
       localStorage.removeItem(PASSWORD_KEY)
     },
     async restoreSession() {
-      const token = localStorage.getItem('token')
+      const token = sessionStorage.getItem('token')
       if (!token) {
         return
       }
@@ -349,7 +349,7 @@ export default {
         console.error('恢复登录态失败', error)
       }
 
-      localStorage.removeItem('token')
+      sessionStorage.removeItem('token')
     },
     async login() {
       const valid = await this.$refs.loginFormRef.validate().catch(() => false)
@@ -359,7 +359,7 @@ export default {
 
       this.loading = true
       try {
-        localStorage.removeItem('token')
+        sessionStorage.removeItem('token')
 
         const res = await this.$axios.post('/auth/login', {
           username: this.loginForm.username,
@@ -372,7 +372,7 @@ export default {
           throw new Error(res.message || this.texts.loginFailed)
         }
 
-        localStorage.setItem('token', res.data.token)
+        sessionStorage.setItem('token', res.data.token)
 
         const userInfo = await this.$axios.get('/auth/userinfo', {
           skipAuthRedirect: true,
@@ -380,7 +380,7 @@ export default {
         })
         const roleName = String(userInfo.data?.role || res.data?.user?.role || '').trim().toLowerCase()
         if (roleName !== 'admin') {
-          localStorage.removeItem('token')
+          sessionStorage.removeItem('token')
           this.$message.error(this.texts.adminOnly)
           return
         }
@@ -389,7 +389,7 @@ export default {
         this.$message.success(this.texts.loginSuccess)
         this.$router.push('/home')
       } catch (error) {
-        localStorage.removeItem('token')
+        sessionStorage.removeItem('token')
         const message = this.$translateApiMessage(error?.response?.data?.message || error?.message)
         if (message) {
           this.$message.error(message)

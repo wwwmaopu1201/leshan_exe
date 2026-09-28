@@ -60,7 +60,7 @@
             />
             <i :class="['tree-node-icon', getNodeIcon(data)]"></i>
             <span class="tree-node-label" :title="node.label">{{ node.label }}</span>
-            <span v-if="data.type === 'device'" :class="['status-dot', data.status]"></span>
+            <span v-if="data.type === 'device'" :class="['status-dot', data.status]" :title="$translateApiMessage({idle: '空闲', working: '缝纫', offline: '关机'}[data.status] || '未知状态')"></span>
           </div>
         </div>
       </el-tree>
@@ -115,7 +115,7 @@
       width="420px"
       append-to-body
       @closed="resetGroupDialog"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <el-form ref="groupFormRef" :model="groupDialog.form" :rules="groupRules" label-width="84px">
         <el-form-item label="分组名称" prop="name">
           <el-input v-model.trim="groupDialog.form.name" placeholder="请输入分组名称" />
@@ -399,7 +399,7 @@ export default {
         ? groupNodes[0]
         : {
             id: 'all',
-            label: '总分组',
+            label: '全部分组',
             type: 'group',
             children: groupNodes,
             isVirtual: true
@@ -409,7 +409,7 @@ export default {
         ungroupedNode,
         {
           ...totalNode,
-          label: '总分组',
+          label: '全部分组',
           type: 'group'
         }
       ]
@@ -597,6 +597,9 @@ export default {
       return this.syncCurrentSelection()
     },
     handleNodeClick(data) {
+      if (this.checkableDevices && this.isCheckableNode(data)) {
+        this.handleTreeNodeCheckboxChange(data, !this.isTreeNodeChecked(data))
+      }
       const payload = this.buildSelectionPayload(data)
       if (!payload) return
       this.$emit('input', payload)
@@ -605,6 +608,8 @@ export default {
     },
     clearSelection() {
       const payload = defaultValue()
+      this.localCheckedDeviceIds = []
+      this.emitDeviceCheckChange()
       this.$refs.deviceTree?.setCurrentKey(null)
       this.$emit('input', payload)
       this.$emit('change', payload)
@@ -618,7 +623,7 @@ export default {
     isTotalGroupNode(data) {
       const label = String(data?.label || data?.name || '').trim()
       const id = String(data?.id || '')
-      return label === '总分组' || label === '全部设备' || id === 'all'
+      return label === '全部分组' || label === '总分组' || label === '全部设备' || id === 'all'
     },
     canDeleteGroup(data) {
       return this.canModifyGroup(data)
@@ -1011,6 +1016,7 @@ export default {
         return
       }
       try {
+        await this.$confirm(`确定将设备“${this.getDevicePromptName(node)}”移到未分组设备吗？设备名称和历史数据会保留。`, this.$t('common.warning'), { type: 'warning' })
         const res = await moveToGroup([deviceId], null)
         if (res.code === 0) {
           this.$message.success('设备已移到未分组设备')
@@ -1021,7 +1027,7 @@ export default {
         }
       } catch (error) {
         console.error('Remove device from group failed:', error)
-        this.$message.error('删除设备失败')
+        if (error !== 'cancel' && error !== 'close') this.$message.error('删除设备失败')
       }
     },
     async renameDevice(node) {
@@ -1223,7 +1229,7 @@ export default {
         this.$message.warning('总分组不能删除')
         return
       }
-      this.$confirm(`确定删除分组“${node.label}”吗？`, this.$t('common.warning'), {
+      this.$confirm(`确定删除分组“${node.label}”吗？该分组下的设备将移至未分组设备。`, this.$t('common.warning'), {
         confirmButtonText: this.$t('common.confirm'),
         cancelButtonText: this.$t('common.cancel'),
         type: 'warning'
@@ -1430,7 +1436,7 @@ export default {
   }
 
   &.working {
-    background: #2f6df6;
+    background: #ef5a5a;
   }
 
   &.offline {

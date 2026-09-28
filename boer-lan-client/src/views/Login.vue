@@ -91,9 +91,13 @@
           :rules="loginRules"
           class="login-form"
           @submit.native.prevent="handleLogin"
+          @keyup.enter.native="handleLogin"
         >
           <el-form-item prop="serverIp">
-            <el-input
+            <el-autocomplete
+              :fetch-suggestions="suggestServers"
+              @select="selectServer"
+              @input="clearAccountPassword"
               v-model="loginForm.serverIp"
               :placeholder="$t('login.serverIpPlaceholder')"
               prefix-icon="el-icon-s-promotion"
@@ -112,7 +116,10 @@
           -->
 
           <el-form-item prop="username">
-            <el-input
+            <el-autocomplete
+              :fetch-suggestions="suggestAccounts"
+              @select="selectAccount"
+              @input="clearAccountPassword"
               v-model="loginForm.username"
               :placeholder="$t('login.username')"
               prefix-icon="el-icon-user"
@@ -126,7 +133,6 @@
               :placeholder="$t('login.password')"
               prefix-icon="el-icon-lock"
               show-password
-              @keyup.enter.native="handleLogin"
             />
           </el-form-item>
 
@@ -163,6 +169,8 @@ import { mapActions } from 'vuex'
 import { login } from '@/api/auth'
 import { getDefaultAccessiblePath } from '@/utils/permission'
 import { extractServerVersion } from '@/utils/server-version'
+import { isServerHost } from '@/utils/login-history'
+import { readLoginHistory, saveLoginHistory } from '@/utils/login-history'
 import loginBackground from '@/assets/images/login-background-client.png'
 
 const DEFAULT_SERVER_PORT = '8088'
@@ -174,6 +182,10 @@ export default {
       const ip = String(value || '').trim()
       if (!ip) {
         callback(new Error(this.$t('login.serverIpRequired')))
+        return
+      }
+      if (!isServerHost(ip)) {
+        callback(new Error(this.currentLang === 'en-US' ? 'Enter a valid server IP or hostname (no spaces or port)' : '请输入有效的服务器 IP 或主机名，不能包含空格或端口'))
         return
       }
       callback()
@@ -196,6 +208,7 @@ export default {
     }
 
     return {
+      loginHistory: readLoginHistory(),
       loginForm: {
         serverIp: localStorage.getItem('serverIp') || '',
         serverPort: DEFAULT_SERVER_PORT,
@@ -224,6 +237,26 @@ export default {
   },
   methods: {
     ...mapActions(['login', 'updateServerConfig']),
+    suggestServers(query, callback) {
+      const values = [...new Set(this.loginHistory.map(item => item.serverIp))]
+      callback(values.filter(value => value.includes(query || '')).map(value => ({ value })))
+    },
+    suggestAccounts(query, callback) {
+      callback(this.loginHistory.filter(item => item.serverIp === this.loginForm.serverIp && item.username.includes(query || ''))
+        .map(item => ({ value: item.username })))
+    },
+    selectServer(item) {
+      this.loginForm.serverIp = item.value
+      this.clearAccountPassword()
+    },
+    selectAccount(item) {
+      const account = this.loginHistory.find(entry => entry.serverIp === this.loginForm.serverIp && entry.username === item.value)
+      this.loginForm.password = account?.password || ''
+      this.loginForm.remember = !!account?.password
+    },
+    clearAccountPassword() {
+      this.loginForm.password = ''
+    },
     sparkStyle(index) {
       const styles = [
         { left: '6%', top: '76%' },
@@ -253,6 +286,8 @@ export default {
       })
     },
     async handleLogin() {
+      if (this.loading) return
+      this.loginForm.serverIp = String(this.loginForm.serverIp || '').trim()
       try {
         await this.$refs.loginForm.validate()
       } catch (error) {
@@ -289,6 +324,7 @@ export default {
           localStorage.removeItem('rememberedPassword')
         }
 
+        this.loginHistory = saveLoginHistory(this.loginForm)
         this.login({
           token: res.data.token,
           user: res.data.user,

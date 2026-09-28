@@ -58,11 +58,11 @@
         empty-text="暂无统计数据"
       >
         <el-table-column type="index" label="序号" width="60" align="center" />
-        <el-table-column prop="patternNo" label="花型编号" width="110" align="center" />
+        <el-table-column prop="patternNo" label="花型编号" width="110" align="center"  show-overflow-tooltip />
         <el-table-column prop="patternName" label="花型名称" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="totalPieces" label="累计件数" width="110" align="right" />
-        <el-table-column prop="totalDurationText" label="累计时长" width="150" />
-        <el-table-column prop="lastCompleted" label="最近完成" width="170" />
+        <el-table-column prop="totalPieces" label="累计件数" width="110" align="right"  show-overflow-tooltip />
+        <el-table-column prop="totalDurationText" label="累计时长" width="150"  show-overflow-tooltip />
+        <el-table-column prop="lastCompleted" label="最近完成" width="170"  show-overflow-tooltip />
         <el-table-column prop="recentInfo" label="最近信息" min-width="240" show-overflow-tooltip />
       </el-table>
     </el-card>
@@ -83,12 +83,12 @@
         empty-text="暂无明细数据"
       >
         <el-table-column type="index" label="序号" width="60" align="center" />
-        <el-table-column prop="patternNo" label="花型编号" width="110" align="center" />
+        <el-table-column prop="patternNo" label="花型编号" width="110" align="center"  show-overflow-tooltip />
         <el-table-column prop="patternName" label="花型名称" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="pieceIndex" label="第几件" width="100" align="center" />
-        <el-table-column prop="startTime" label="开始时间" width="170" />
-        <el-table-column prop="endTime" label="结束时间" width="170" />
-        <el-table-column prop="durationText" label="单件时长" width="140" />
+        <el-table-column prop="pieceIndex" label="第几件" width="100" align="center"  show-overflow-tooltip />
+        <el-table-column prop="startTime" label="开始时间" width="170"  show-overflow-tooltip />
+        <el-table-column prop="endTime" label="结束时间" width="170"  show-overflow-tooltip />
+        <el-table-column prop="durationText" label="单件时长" width="140"  show-overflow-tooltip />
       </el-table>
     </el-card>
   </div>

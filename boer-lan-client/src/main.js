@@ -1,3 +1,5 @@
+// Sessions end when the app window closes; never restore legacy persistent tokens.
+localStorage.removeItem('token')
 import Vue from 'vue'
 import App from './App.vue'
 import router from './router'
@@ -31,20 +33,7 @@ const isDevMode = import.meta.env.DEV || !import.meta.env.PROD
 
 function installInteractionGuards() {
   document.addEventListener('contextmenu', event => {
-    event.preventDefault()
-  })
-
-  document.addEventListener('copy', event => {
-    event.preventDefault()
-  })
-
-  document.addEventListener('cut', event => {
-    event.preventDefault()
-  })
-
-  document.addEventListener('keydown', event => {
-    const key = String(event.key || '').toLowerCase()
-    if ((event.ctrlKey || event.metaKey) && (key === 'c' || key === 'x')) {
+    if (!event.target.closest('input, textarea, [contenteditable="true"], pre, code, .mono-output')) {
       event.preventDefault()
     }
   })

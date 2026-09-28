@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"boer-lan-server/internal/model"
 	"boer-lan-server/internal/service"
@@ -64,7 +65,7 @@ func (h *DeviceHandler) upsertDeviceTypeCatalog(value string) error {
 	if value == "" {
 		return nil
 	}
-	return h.db.FirstOrCreate(&model.DeviceTypeCatalog{}, model.DeviceTypeCatalog{Value: value}).Error
+	return saveCatalogEntry(h.db, "device_type_catalogs", value, 50, false)
 }
 
 func (h *DeviceHandler) loadDeviceTypeCatalogValues() ([]string, error) {
@@ -97,7 +98,7 @@ func (h *DeviceHandler) upsertElectricControlTypeCatalog(value string) error {
 	if value == "" {
 		return nil
 	}
-	return h.db.FirstOrCreate(&model.ElectricControlTypeCatalog{}, model.ElectricControlTypeCatalog{Value: value}).Error
+	return saveCatalogEntry(h.db, "electric_control_type_catalogs", value, 100, false)
 }
 
 func (h *DeviceHandler) loadElectricControlTypeCatalogValues() ([]string, error) {
@@ -531,6 +532,15 @@ func (h *DeviceHandler) GetDeviceList(c *gin.Context) {
 	}
 
 	// Search
+	if value := strings.TrimSpace(c.Query("type")); value != "" {
+		query = query.Where("type = ?", value)
+	}
+	if value := strings.TrimSpace(c.Query("electricControlType")); value != "" {
+		query = query.Where("electric_control_type = ?", value)
+	}
+	if name := strings.TrimSpace(c.Query("name")); name != "" {
+		query = query.Where("name LIKE ? OR initial_name LIKE ?", "%"+name+"%", "%"+name+"%")
+	}
 	if keyword := c.Query("keyword"); keyword != "" {
 		like := "%" + strings.TrimSpace(keyword) + "%"
 		query = query.Where(
@@ -815,6 +825,7 @@ func (h *DeviceHandler) GetDeviceTypeSummary(c *gin.Context) {
 		return list[i]["value"].(string) < list[j]["value"].(string)
 	})
 
+	sortCatalogSummary(h.db, "device_type_catalogs", list)
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": list,
@@ -840,10 +851,10 @@ func (h *DeviceHandler) CreateDeviceType(c *gin.Context) {
 		})
 		return
 	}
-	if err := h.upsertDeviceTypeCatalog(value); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "新增设备类型失败",
+	if err := saveCatalogEntry(h.db, "device_type_catalogs", value, 50, true); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": err.Error(),
 		})
 		return
 	}
@@ -886,7 +897,7 @@ func (h *DeviceHandler) RenameDeviceType(c *gin.Context) {
 
 	var affected int64
 	err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.FirstOrCreate(&model.DeviceTypeCatalog{}, model.DeviceTypeCatalog{Value: newValue}).Error; err != nil {
+		if err := saveCatalogEntry(tx, "device_type_catalogs", newValue, 50, true); err != nil {
 			return err
 		}
 		result := tx.Model(&model.Device{}).Where("type = ?", oldValue).Update("type", newValue)
@@ -1079,6 +1090,7 @@ func (h *DeviceHandler) GetElectricControlTypeSummary(c *gin.Context) {
 		return list[i]["value"].(string) < list[j]["value"].(string)
 	})
 
+	sortCatalogSummary(h.db, "electric_control_type_catalogs", list)
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": list,
@@ -1104,10 +1116,10 @@ func (h *DeviceHandler) CreateElectricControlType(c *gin.Context) {
 		})
 		return
 	}
-	if err := h.upsertElectricControlTypeCatalog(value); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "新增电控类型失败",
+	if err := saveCatalogEntry(h.db, "electric_control_type_catalogs", value, 100, true); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": err.Error(),
 		})
 		return
 	}
@@ -1150,7 +1162,7 @@ func (h *DeviceHandler) RenameElectricControlType(c *gin.Context) {
 
 	var affected int64
 	err := h.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.FirstOrCreate(&model.ElectricControlTypeCatalog{}, model.ElectricControlTypeCatalog{Value: newValue}).Error; err != nil {
+		if err := saveCatalogEntry(tx, "electric_control_type_catalogs", newValue, 100, true); err != nil {
 			return err
 		}
 		result := tx.Model(&model.Device{}).Where("electric_control_type = ?", oldValue).Update("electric_control_type", newValue)
@@ -1245,7 +1257,7 @@ func (h *DeviceHandler) CreateDevice(c *gin.Context) {
 	device.Remark = strings.TrimSpace(device.Remark)
 	device.IP = strings.TrimSpace(device.IP)
 
-	if device.Code == "" || device.Name == "" {
+	if device.Code == "" || device.Name == "" || utf8.RuneCountInString(device.Name) > 100 || utf8.RuneCountInString(device.Remark) > 255 {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": "设备编码和名称不能为空",
@@ -1370,10 +1382,10 @@ func (h *DeviceHandler) UpdateDevice(c *gin.Context) {
 	}
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
-		if name == "" {
+		if name == "" || utf8.RuneCountInString(name) > 100 {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"code":    400,
-				"message": "设备名称不能为空",
+				"message": "设备名称不能为空且不能超过100个字符",
 			})
 			return
 		}
@@ -1472,7 +1484,37 @@ func (h *DeviceHandler) UpdateDevice(c *gin.Context) {
 		updates["mainboard_sn"] = strings.TrimSpace(*req.MainboardSN)
 	}
 	if req.Remark != nil {
+		if utf8.RuneCountInString(*req.Remark) > 255 {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "备注不能超过255个字符"})
+			return
+		}
 		updates["remark"] = strings.TrimSpace(*req.Remark)
+	}
+
+	if req.Name != nil && strings.TrimSpace(*req.Name) != device.Name {
+		name := strings.TrimSpace(*req.Name)
+		query := h.db.Model(&model.Device{}).Where("id <> ? AND name = ?", device.ID, name)
+		groupID, changed := updates["group_id"]
+		if changed {
+			if groupID == nil {
+				query = query.Where("group_id IS NULL")
+			} else {
+				query = query.Where("group_id = ?", groupID)
+			}
+		} else if device.GroupID == nil {
+			query = query.Where("group_id IS NULL")
+		} else {
+			query = query.Where("group_id = ?", *device.GroupID)
+		}
+		var count int64
+		if err := query.Count(&count).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "校验设备名称失败"})
+			return
+		}
+		if count > 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "同一分组下设备名称已存在"})
+			return
+		}
 	}
 
 	if len(updates) > 0 {
@@ -1535,8 +1577,6 @@ func (h *DeviceHandler) DeleteDevice(c *gin.Context) {
 	updates := map[string]interface{}{
 		"group_id":   nil,
 		"sort_order": 0,
-		// 删除设备仅移出分组并清空备注名，显示名回退为初始名（无初始名则回退到设备编码）
-		"name": gorm.Expr("COALESCE(NULLIF(initial_name, ''), code)"),
 	}
 
 	if err := h.db.Model(&device).Updates(updates).Error; err != nil {
@@ -1619,8 +1659,6 @@ func (h *DeviceHandler) BatchDeleteDevices(c *gin.Context) {
 	updates := map[string]interface{}{
 		"group_id":   nil,
 		"sort_order": 0,
-		// 批量删除与单个删除语义一致：移出分组并恢复为初始名/设备编码
-		"name": gorm.Expr("COALESCE(NULLIF(initial_name, ''), code)"),
 	}
 	result := h.db.Model(&model.Device{}).Where("id IN ?", deviceIDs).Updates(updates)
 	if result.Error != nil {
@@ -1734,7 +1772,11 @@ func (h *DeviceHandler) HardDeleteDevices(c *gin.Context) {
 }
 
 func (h *DeviceHandler) softDeleteDevices(deviceIDs []uint) error {
-	return h.db.Transaction(func(tx *gorm.DB) error {
+	var codes []string
+	if err := h.db.Model(&model.Device{}).Where("id IN ?", deviceIDs).Pluck("code", &codes).Error; err != nil {
+		return err
+	}
+	err := h.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("device_id IN ?", deviceIDs).Delete(&model.EmployeeDevice{}).Error; err != nil {
 			return err
 		}
@@ -1749,6 +1791,10 @@ func (h *DeviceHandler) softDeleteDevices(deviceIDs []uint) error {
 		}
 		return tx.Where("id IN ?", deviceIDs).Delete(&model.Device{}).Error
 	})
+	if err == nil && h.connMgr != nil {
+		h.connMgr.DisconnectCodes(codes)
+	}
+	return err
 }
 
 func (h *DeviceHandler) MoveToGroup(c *gin.Context) {

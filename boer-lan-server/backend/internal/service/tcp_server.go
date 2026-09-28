@@ -217,3 +217,22 @@ func (s *TCPServer) realtimeStatusQuerier() {
 		}
 	}
 }
+
+// DisconnectCodes releases removed device sessions so re-registration does not
+// continue writing to soft-deleted device rows until the server restarts.
+func (cm *ConnectionManager) DisconnectCodes(codes []string) {
+	var connections []*DeviceConnection
+	cm.mu.Lock()
+	for _, code := range codes {
+		if dc := cm.conns[code]; dc != nil {
+			connections = append(connections, dc)
+			delete(cm.conns, code)
+		}
+	}
+	cm.mu.Unlock()
+	for _, dc := range connections {
+		if dc.conn != nil {
+			_ = dc.conn.Close()
+		}
+	}
+}

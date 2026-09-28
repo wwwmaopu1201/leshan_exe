@@ -1,3 +1,5 @@
+// Sessions end when the app window closes; never restore legacy persistent tokens.
+localStorage.removeItem('token')
 import Vue from 'vue'
 import ElementUI from 'element-ui'
 import ElementLocale from 'element-ui/lib/locale'
@@ -35,7 +37,9 @@ let trialExpiredHandled = false
 
 function installContextMenuGuard() {
   document.addEventListener('contextmenu', event => {
-    event.preventDefault()
+    if (!event.target.closest('input, textarea, [contenteditable="true"], pre, code, .mono-output')) {
+      event.preventDefault()
+    }
   })
 }
 

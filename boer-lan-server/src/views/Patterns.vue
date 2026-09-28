@@ -91,17 +91,17 @@
           </template>
         </el-table-column>
         <el-table-column prop="name" label="花型名称" min-width="190" show-overflow-tooltip />
-        <el-table-column prop="patternType" label="花型类型" width="130" />
+        <el-table-column prop="patternType" label="花型类型" width="130"  show-overflow-tooltip />
         <el-table-column prop="fileName" label="文件名" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="size" label="文件大小" width="110" align="right" />
-        <el-table-column prop="stitches" label="针数" width="100" align="right" />
+        <el-table-column prop="size" label="文件大小" width="110" align="right"  show-overflow-tooltip />
+        <el-table-column prop="stitches" label="针数" width="100" align="right"  show-overflow-tooltip />
         <el-table-column label="工价" width="110" align="right">
           <template slot-scope="{ row }">
             {{ formatPrice(row.unitPrice) }}
           </template>
         </el-table-column>
         <el-table-column prop="orderNo" label="订单编号" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="uploadTime" label="上传时间" width="170" />
+        <el-table-column prop="uploadTime" label="上传时间" width="170"  show-overflow-tooltip />
         <el-table-column label="操作" width="250" align="center" fixed="right">
           <template slot-scope="{ row }">
             <el-button size="small" type="primary" plain @click="openDownloadDialog(row)">下发</el-button>
@@ -216,16 +216,16 @@
         <el-table-column type="selection" width="48" align="center" />
         <el-table-column type="index" label="序号" width="60" align="center" />
         <el-table-column prop="fileName" label="设备文件名" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="patternType" label="花型类型" width="130" />
-        <el-table-column prop="stitches" label="针数" width="100" align="right" />
-        <el-table-column prop="size" label="文件大小" width="100" align="right" />
+        <el-table-column prop="patternType" label="花型类型" width="130"  show-overflow-tooltip />
+        <el-table-column prop="stitches" label="针数" width="100" align="right"  show-overflow-tooltip />
+        <el-table-column prop="size" label="文件大小" width="100" align="right"  show-overflow-tooltip />
         <el-table-column label="工价" width="110" align="right">
           <template slot-scope="{ row }">
             {{ formatPrice(row.unitPrice) }}
           </template>
         </el-table-column>
         <el-table-column prop="orderNo" label="订单编号" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="updateTime" label="更新时间" width="170" />
+        <el-table-column prop="updateTime" label="更新时间" width="170"  show-overflow-tooltip />
         <el-table-column label="操作" width="90" align="center">
           <template slot-scope="{ row }">
             <el-button type="text" size="small" class="danger-text" @click="handleDeleteDeviceFile(row)">
@@ -254,7 +254,7 @@
       :visible.sync="uploadDialogVisible"
       width="620px"
       @closed="resetUploadDialog"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <el-form ref="uploadFormRef" :model="uploadForm" :rules="uploadRules" label-width="100px">
         <el-form-item label="花型名称">
           <el-input v-model.trim="uploadForm.name" placeholder="默认使用文件名" />
@@ -325,7 +325,7 @@
       :visible.sync="editDialogVisible"
       width="560px"
       @closed="resetEditDialog"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <el-form ref="editFormRef" :model="editForm" :rules="editRules" label-width="100px">
         <el-form-item label="花型名称">
           <el-input v-model.trim="editForm.name" />
@@ -381,7 +381,7 @@
       :visible.sync="downloadDialogVisible"
       width="620px"
       @closed="resetDownloadDialog"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <el-form :model="downloadForm" label-width="100px">
         <el-form-item label="花型名称">
           <el-input :value="downloadForm.patternName" disabled />
@@ -416,7 +416,7 @@
       :visible.sync="downloadQueueDialogVisible"
       width="980px"
       @opened="syncDownloadQueueTableHeight"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <div class="action-row queue-toolbar">
         <div class="soft-note">
           <i class="el-icon-s-promotion"></i>
@@ -436,9 +436,9 @@
         empty-text="暂无下发任务"
       >
         <el-table-column type="index" label="序号" width="60" align="center" />
-        <el-table-column prop="deviceName" label="设备名称" min-width="120" />
+        <el-table-column prop="deviceName" label="设备名称" min-width="120"  show-overflow-tooltip />
         <el-table-column prop="patternName" label="花型名称" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="patternType" label="花型类型" width="120" />
+        <el-table-column prop="patternType" label="花型类型" width="120"  show-overflow-tooltip />
         <el-table-column prop="status" label="状态" width="110" align="center">
           <template slot-scope="{ row }">
             <span :class="['status-pill', getDownloadStatusType(row.status)]">
@@ -446,9 +446,9 @@
             </span>
           </template>
         </el-table-column>
-        <el-table-column prop="progress" label="进度" width="80" align="center" />
+        <el-table-column prop="progress" label="进度" width="80" align="center"  show-overflow-tooltip />
         <el-table-column prop="message" label="结果信息" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="createTime" label="创建时间" width="170" />
+        <el-table-column prop="createTime" label="创建时间" width="170"  show-overflow-tooltip />
         <el-table-column label="操作" width="180" align="center">
           <template slot-scope="{ row }">
             <el-button
@@ -499,7 +499,7 @@
       :visible.sync="uploadQueueDialogVisible"
       width="980px"
       @opened="syncUploadQueueTableHeight"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <div class="action-row queue-toolbar">
         <div class="soft-note">
           <i class="el-icon-time"></i>
@@ -519,7 +519,7 @@
         empty-text="暂无上传任务"
       >
         <el-table-column type="index" label="序号" width="60" align="center" />
-        <el-table-column prop="deviceName" label="设备名称" min-width="120" />
+        <el-table-column prop="deviceName" label="设备名称" min-width="120"  show-overflow-tooltip />
         <el-table-column prop="fileName" label="设备文件" min-width="180" show-overflow-tooltip />
         <el-table-column prop="patternName" label="服务器花型" min-width="180" show-overflow-tooltip />
         <el-table-column prop="status" label="状态" width="110" align="center">
@@ -529,16 +529,16 @@
             </span>
           </template>
         </el-table-column>
-        <el-table-column prop="progress" label="进度" width="80" align="center" />
+        <el-table-column prop="progress" label="进度" width="80" align="center"  show-overflow-tooltip />
         <el-table-column prop="message" label="结果信息" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="createTime" label="创建时间" width="170" />
+        <el-table-column prop="createTime" label="创建时间" width="170"  show-overflow-tooltip />
         <el-table-column label="操作" width="180" align="center">
           <template slot-scope="{ row }">
             <el-button
               v-if="row.status === 'waiting' || row.status === 'uploading'"
               type="text"
               size="small"
-              @click="handlePauseUploadTask(row)"
+              :disabled="row.status === 'uploading'" @click="handlePauseUploadTask(row)"
             >
               暂停
             </el-button>
@@ -555,7 +555,7 @@
               type="text"
               size="small"
               class="danger-text"
-              @click="handleCancelUploadTask(row)"
+              :disabled="row.status === 'uploading'" @click="handleCancelUploadTask(row)"
             >
               取消
             </el-button>
@@ -582,7 +582,7 @@
       :visible.sync="uploadConflictDialogVisible"
       width="620px"
       @closed="handleUploadConflictDialogClosed"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <div class="conflict-dialog-intro">
         检测到服务器中已存在同名花型，请选择处理方式。
       </div>
@@ -679,6 +679,7 @@ export default {
       downloadingToDevice: false,
       uploadingFromDevice: false,
       downloadQueueLoading: false,
+      queueTimer: null,
       uploadQueueLoading: false,
       serverTableHeight: 320,
       deviceFileTableHeight: 320,
@@ -745,9 +746,11 @@ export default {
   },
   mounted() {
     this.fetchPageData()
+    this.queueTimer = setInterval(() => { if (this.uploadQueueDialogVisible && !this.uploadQueueLoading) this.fetchUploadQueue() }, 2000)
     window.addEventListener('resize', this.syncTableHeights)
   },
   beforeDestroy() {
+    clearInterval(this.queueTimer)
     window.removeEventListener('resize', this.syncTableHeights)
   },
   methods: {
@@ -963,7 +966,8 @@ export default {
         }
 
         if (res.code === 0) {
-          this.$message.success(`回传完成：成功 ${res.data.success || 0} 条，失败 ${res.data.failed || 0} 条`)
+          this.$message.success(`已加入上传队列，共 ${res.data.queued || 0} 个任务`)
+          this.uploadQueueDialogVisible = true
           await Promise.all([
             this.fetchServerPatterns(),
             this.fetchPatternTypes(),
@@ -1295,6 +1299,7 @@ export default {
     },
     async clearUploadHistory() {
       try {
+        await this.$confirm('确定清理已结束的上传任务记录吗？', '提示', { type: 'warning' })
         const res = await this.$axios.delete('/pattern/upload-queue/completed')
         if (res.code === 0) {
           this.$message.success(`已清理 ${res.data?.affected || 0} 条历史任务`)
@@ -1302,7 +1307,7 @@ export default {
         }
       } catch (error) {
         console.error('清理上传历史失败', error)
-        this.$message.error('清理上传历史失败')
+        if (error !== 'cancel' && error !== 'close') this.$message.error('清理上传历史失败')
       }
     },
     formatPrice(value) {

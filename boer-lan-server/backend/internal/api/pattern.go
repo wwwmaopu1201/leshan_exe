@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"boer-lan-server/internal/model"
 	"boer-lan-server/internal/service"
@@ -258,28 +259,38 @@ func (h *PatternHandler) validateAndBuildPatternUpdates(req PatternUpdateRequest
 	updates := make(map[string]interface{})
 
 	if req.Name != nil {
-		updates["name"] = strings.TrimSpace(*req.Name)
+		name := strings.TrimSpace(*req.Name)
+		if name == "" || utf8.RuneCountInString(name) > 255 {
+			return nil, errors.New("花型名称不能为空且不能超过255个字符")
+		}
+		updates["name"] = name
 	}
 
 	if req.PatternType != nil {
+		if utf8.RuneCountInString(*req.PatternType) > 100 {
+			return nil, errors.New("花型类型不能超过100个字符")
+		}
 		updates["pattern_type"] = strings.TrimSpace(*req.PatternType)
 	}
 
 	if req.Stitches != nil {
-		if *req.Stitches < 0 {
+		if *req.Stitches < 0 || *req.Stitches > 2147483647 {
 			return nil, errPatternFieldValue
 		}
 		updates["stitches"] = *req.Stitches
 	}
 
 	if req.UnitPrice != nil {
-		if *req.UnitPrice < 0 {
+		if *req.UnitPrice < 0 || *req.UnitPrice > 999999999.999 || math.IsNaN(*req.UnitPrice) || math.IsInf(*req.UnitPrice, 0) {
 			return nil, errPatternFieldValue
 		}
 		updates["unit_price"] = roundTo3(*req.UnitPrice)
 	}
 
 	if req.OrderNo != nil {
+		if utf8.RuneCountInString(*req.OrderNo) > 100 {
+			return nil, errors.New("订单编号不能超过100个字符")
+		}
 		updates["order_no"] = strings.TrimSpace(*req.OrderNo)
 	}
 
@@ -351,10 +362,10 @@ func (h *PatternHandler) GetPatternList(c *gin.Context) {
 	}
 
 	if startDate != nil {
-		query = query.Where("created_at >= ?", *startDate)
+		query = query.Where("COALESCE(uploaded_at, created_at) >= ?", *startDate)
 	}
 	if endDate != nil {
-		query = query.Where("created_at <= ?", *endDate)
+		query = query.Where("COALESCE(uploaded_at, created_at) <= ?", *endDate)
 	}
 
 	page, pageSize := parsePagination(c)
@@ -369,7 +380,7 @@ func (h *PatternHandler) GetPatternList(c *gin.Context) {
 		return
 	}
 
-	if err := query.Offset(offset).Limit(pageSize).Order("created_at DESC").Find(&patterns).Error; err != nil {
+	if err := query.Offset(offset).Limit(pageSize).Order("COALESCE(uploaded_at, created_at) DESC").Find(&patterns).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
 			"message": "查询花型列表失败",
@@ -393,7 +404,7 @@ func (h *PatternHandler) GetPatternList(c *gin.Context) {
 			"height":           p.Height,
 			"unitPrice":        roundTo3(p.UnitPrice),
 			"orderNo":          p.OrderNo,
-			"uploadTime":       p.CreatedAt.Format("2006-01-02 15:04:05"),
+			"uploadTime":       patternUploadTime(p).Format("2006-01-02 15:04:05"),
 		})
 	}
 
@@ -465,13 +476,13 @@ func (h *PatternHandler) DownloadPatternFiles(c *gin.Context) {
 		return
 	}
 	if startDate != nil {
-		query = query.Where("created_at >= ?", *startDate)
+		query = query.Where("COALESCE(uploaded_at, created_at) >= ?", *startDate)
 	}
 	if endDate != nil {
-		query = query.Where("created_at <= ?", *endDate)
+		query = query.Where("COALESCE(uploaded_at, created_at) <= ?", *endDate)
 	}
 
-	if err := query.Order("created_at DESC").Find(&patterns).Error; err != nil {
+	if err := query.Order("COALESCE(uploaded_at, created_at) DESC").Find(&patterns).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
 			"message": "查询花型文件失败",
@@ -508,9 +519,12 @@ func (h *PatternHandler) DownloadPatternFiles(c *gin.Context) {
 		return
 	}
 
-	archiveName := "server-pattern-files.zip"
+	archiveName := "服务器花型文件.zip"
+	if strings.HasPrefix(strings.ToLower(c.GetHeader("Accept-Language")), "en") {
+		archiveName = "server-pattern-files.zip"
+	}
 	c.Header("Content-Type", "application/zip")
-	c.Header("Content-Disposition", `attachment; filename="`+archiveName+`"`)
+	c.Header("Content-Disposition", patternContentDisposition(archiveName))
 	c.Header("Access-Control-Expose-Headers", "Content-Disposition")
 
 	zipWriter := zip.NewWriter(c.Writer)
@@ -679,6 +693,9 @@ func (h *PatternHandler) getPatternFieldSummary(c *gin.Context, fieldName, field
 		if value == "" {
 			continue
 		}
+		if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" && !strings.Contains(strings.ToLower(value), strings.ToLower(keyword)) {
+			continue
+		}
 		if _, exists := summaryMap[value]; !exists {
 			summaryMap[value] = gin.H{
 				"value":        value,
@@ -700,6 +717,12 @@ func (h *PatternHandler) getPatternFieldSummary(c *gin.Context, fieldName, field
 		}
 		return list[i]["value"].(string) < list[j]["value"].(string)
 	})
+
+	table := "pattern_type_catalogs"
+	if fieldName == "order_no" {
+		table = "order_no_catalogs"
+	}
+	sortCatalogSummary(h.db, table, list)
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
@@ -746,6 +769,24 @@ func (h *PatternHandler) renamePatternField(c *gin.Context, fieldName, fieldLabe
 		return
 	}
 
+	table := "pattern_type_catalogs"
+	if fieldName == "order_no" {
+		table = "order_no_catalogs"
+	}
+	if utf8.RuneCountInString(newValue) > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "名称不能超过100个字符"})
+		return
+	}
+	var duplicate int64
+	if err := h.db.Table(table).Where("value = ? AND deleted_at IS NULL", newValue).Count(&duplicate).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "校验名称失败"})
+		return
+	}
+	if duplicate > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "名称已存在"})
+		return
+	}
+
 	scope := h.getCurrentUserScope(c)
 	query := h.db.Model(&model.Pattern{}).Where(fieldName+" = ?", oldValue)
 	if !scope.All {
@@ -768,26 +809,32 @@ func (h *PatternHandler) renamePatternField(c *gin.Context, fieldName, fieldLabe
 		query = query.Where("id IN ?", patternIDs)
 	}
 
-	result := query.Updates(map[string]interface{}{fieldName: newValue})
-	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "更新" + fieldLabel + "失败",
-		})
+	var ids []uint
+	if err := query.Pluck("id", &ids).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "读取关联花型失败"})
 		return
 	}
-
-	if err := h.renameCatalogValue(fieldName, oldValue, newValue); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "更新" + fieldLabel + "失败",
-		})
+	var affected int64
+	err := h.db.Transaction(func(tx *gorm.DB) error {
+		if len(ids) > 0 {
+			result := tx.Model(&model.Pattern{}).Where("id IN ?", ids).Update(fieldName, newValue)
+			if result.Error != nil {
+				return result.Error
+			}
+			affected = result.RowsAffected
+		}
+		scopedHandler := *h
+		scopedHandler.db = tx
+		return scopedHandler.renameCatalogValue(fieldName, oldValue, newValue)
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "更新" + fieldLabel + "失败"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
-		"data":    gin.H{"affected": result.RowsAffected},
+		"data":    gin.H{"affected": affected},
 		"message": "success",
 	})
 }
@@ -902,10 +949,14 @@ func (h *PatternHandler) createCatalogEntry(c *gin.Context, fieldName, fieldLabe
 		return
 	}
 
-	if err := h.upsertCatalogValue(fieldName, value); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "新增" + fieldLabel + "失败",
+	table := "pattern_type_catalogs"
+	if fieldName == "order_no" {
+		table = "order_no_catalogs"
+	}
+	if err := saveCatalogEntry(h.db, table, value, 100, true); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": err.Error(),
 		})
 		return
 	}
@@ -919,9 +970,9 @@ func (h *PatternHandler) createCatalogEntry(c *gin.Context, fieldName, fieldLabe
 func (h *PatternHandler) upsertCatalogValue(fieldName, value string) error {
 	switch fieldName {
 	case "pattern_type":
-		return h.db.FirstOrCreate(&model.PatternTypeCatalog{}, model.PatternTypeCatalog{Value: value}).Error
+		return saveCatalogEntry(h.db, "pattern_type_catalogs", value, 100, false)
 	case "order_no":
-		return h.db.FirstOrCreate(&model.OrderNoCatalog{}, model.OrderNoCatalog{Value: value}).Error
+		return saveCatalogEntry(h.db, "order_no_catalogs", value, 100, false)
 	default:
 		return nil
 	}
@@ -958,6 +1009,17 @@ func (h *PatternHandler) UploadPattern(c *gin.Context) {
 		return
 	}
 
+	switch strings.ToLower(filepath.Ext(file.Filename)) {
+	case ".slw", ".xdg", ".nsp", ".ntp", ".mtp", ".sdt", ".vdt", ".sdg", ".dst":
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "不支持的花型文件格式"})
+		return
+	}
+	if file.Size <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "花型文件不能为空"})
+		return
+	}
+
 	if err := os.MkdirAll(filepath.Join("uploads", "patterns"), 0755); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -966,7 +1028,7 @@ func (h *PatternHandler) UploadPattern(c *gin.Context) {
 		return
 	}
 
-	filename := time.Now().Format("20060102150405.000") + "_" + file.Filename
+	filename := time.Now().Format("20060102150405.000000000") + "_" + filepath.Base(file.Filename)
 	savePath := filepath.Join("uploads", "patterns", filename)
 	cleanupSavedFile := func() {
 		_ = os.Remove(savePath)
@@ -990,7 +1052,7 @@ func (h *PatternHandler) UploadPattern(c *gin.Context) {
 	stitches := 0
 	if stitchesStr := strings.TrimSpace(c.PostForm("stitches")); stitchesStr != "" {
 		parsed, err := strconv.Atoi(stitchesStr)
-		if err != nil || parsed < 0 {
+		if err != nil || parsed < 0 || parsed > 2147483647 {
 			cleanupSavedFile()
 			c.JSON(http.StatusBadRequest, gin.H{
 				"code":    400,
@@ -1004,7 +1066,7 @@ func (h *PatternHandler) UploadPattern(c *gin.Context) {
 	unitPrice := 0.0
 	if unitPriceStr := strings.TrimSpace(c.PostForm("unitPrice")); unitPriceStr != "" {
 		parsed, err := strconv.ParseFloat(unitPriceStr, 64)
-		if err != nil || parsed < 0 {
+		if err != nil || parsed < 0 || parsed > 999999999.999 || math.IsNaN(parsed) || math.IsInf(parsed, 0) {
 			cleanupSavedFile()
 			c.JSON(http.StatusBadRequest, gin.H{
 				"code":    400,
@@ -1015,8 +1077,15 @@ func (h *PatternHandler) UploadPattern(c *gin.Context) {
 		unitPrice = parsed
 	}
 
+	if utf8.RuneCountInString(name) > 255 || utf8.RuneCountInString(patternType) > 100 || utf8.RuneCountInString(orderNo) > 100 {
+		cleanupSavedFile()
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "花型名称、类型或订单编号过长"})
+		return
+	}
 	userID := c.GetUint("userId")
+	uploadedAt := time.Now()
 	pattern := model.Pattern{
+		UploadedAt:  &uploadedAt,
 		Name:        name,
 		PatternType: patternType,
 		FileName:    filename,
@@ -1056,7 +1125,7 @@ func (h *PatternHandler) UploadPattern(c *gin.Context) {
 			"stitches":    pattern.Stitches,
 			"unitPrice":   roundTo3(pattern.UnitPrice),
 			"orderNo":     pattern.OrderNo,
-			"uploadTime":  pattern.CreatedAt.Format("2006-01-02 15:04:05"),
+			"uploadTime":  patternUploadTime(pattern).Format("2006-01-02 15:04:05"),
 		},
 		"message": "success",
 	})
@@ -1267,7 +1336,7 @@ func (h *PatternHandler) UpdatePattern(c *gin.Context) {
 			"stitches":    pattern.Stitches,
 			"unitPrice":   roundTo3(pattern.UnitPrice),
 			"orderNo":     pattern.OrderNo,
-			"uploadTime":  pattern.CreatedAt.Format("2006-01-02 15:04:05"),
+			"uploadTime":  patternUploadTime(pattern).Format("2006-01-02 15:04:05"),
 		},
 		"message": "success",
 	})
@@ -1527,6 +1596,11 @@ func (h *PatternHandler) DownloadToDevice(c *gin.Context) {
 		}
 	}
 
+	if err := service.ValidateDownloadPatternName(pattern.Name); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+		return
+	}
+
 	userID := c.GetUint("userId")
 	for _, deviceID := range req.DeviceIDs {
 		task := model.DownloadTask{
@@ -1664,6 +1738,18 @@ func (h *PatternHandler) BatchDownload(c *gin.Context) {
 				"code":    403,
 				"message": "包含无权下发的目标设备",
 			})
+			return
+		}
+	}
+
+	var selectedPatterns []model.Pattern
+	if err := h.db.Where("id IN ?", req.PatternIDs).Find(&selectedPatterns).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "读取花型失败"})
+		return
+	}
+	for _, pattern := range selectedPatterns {
+		if err := service.ValidateDownloadPatternName(pattern.Name); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": pattern.Name + ": " + err.Error()})
 			return
 		}
 	}
@@ -2083,8 +2169,11 @@ func (h *PatternHandler) updateDownloadTaskStatus(c *gin.Context, id string, all
 		updates["progress"] = 0
 	}
 
-	if err := h.db.Model(&task).Updates(updates).Error; err != nil {
+	if err := h.db.Model(&task).Where("status IN ?", allowedCurrent).Updates(updates).Error; err != nil {
 		return http.StatusInternalServerError, "更新任务状态失败"
+	}
+	if nextStatus == "paused" && h.transfer != nil {
+		h.transfer.InterruptDownload(task.ID)
 	}
 	return http.StatusOK, "success"
 }
@@ -2099,7 +2188,7 @@ func (h *PatternHandler) PauseDownload(c *gin.Context) {
 }
 
 func (h *PatternHandler) ResumeDownload(c *gin.Context) {
-	statusCode, message := h.updateDownloadTaskStatus(c, c.Param("id"), []string{"paused"}, "waiting", "等待下发")
+	statusCode, message := h.updateDownloadTaskStatus(c, c.Param("id"), []string{"paused", "failed"}, "waiting", "等待下发")
 	if statusCode != http.StatusOK {
 		c.JSON(statusCode, gin.H{"code": statusCode, "message": message})
 		return
@@ -2126,6 +2215,11 @@ func (h *PatternHandler) PauseAllDownloads(c *gin.Context) {
 		query = query.Where("device_id IN ?", allowedDeviceIDs)
 	}
 
+	var interruptedIDs []uint
+	if err := query.Session(&gorm.Session{}).Pluck("id", &interruptedIDs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "读取下发任务失败"})
+		return
+	}
 	result := query.Updates(map[string]interface{}{
 		"status":  "paused",
 		"message": "任务已暂停",
@@ -2136,6 +2230,12 @@ func (h *PatternHandler) PauseAllDownloads(c *gin.Context) {
 			"message": "批量暂停失败",
 		})
 		return
+	}
+
+	if h.transfer != nil {
+		for _, id := range interruptedIDs {
+			h.transfer.InterruptDownload(id)
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -2262,8 +2362,19 @@ func (h *PatternHandler) CancelDownload(c *gin.Context) {
 		return
 	}
 
+	if h.transfer != nil {
+		h.transfer.InterruptDownload(task.ID)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "success",
 	})
+}
+
+func patternUploadTime(pattern model.Pattern) time.Time {
+	if pattern.UploadedAt != nil {
+		return *pattern.UploadedAt
+	}
+	return pattern.CreatedAt
 }

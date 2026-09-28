@@ -35,12 +35,13 @@ type externalDBConfig struct {
 }
 
 // ExternalDBSyncService 周期性同步本地数据到外部数据库
-// 当前版本支持 MySQL；MSSQL 会记录提示并跳过。
+// Supports MySQL and MSSQL. Manual and scheduled syncs share one lock.
+var externalSyncMu sync.Mutex
+
 type ExternalDBSyncService struct {
 	db     *gorm.DB
 	stopCh chan struct{}
 	once   sync.Once
-	mu     sync.Mutex
 }
 
 func NewExternalDBSyncService(db *gorm.DB) *ExternalDBSyncService {
@@ -85,14 +86,17 @@ func (s *ExternalDBSyncService) loop() {
 }
 
 func (s *ExternalDBSyncService) syncOnce(force bool) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	externalSyncMu.Lock()
+	defer externalSyncMu.Unlock()
 
 	cfg, err := s.loadExternalDBConfig()
 	if err != nil {
 		return err
 	}
 	if !cfg.Enabled {
+		if force {
+			return fmt.Errorf("外部数据库连接未启用")
+		}
 		return nil
 	}
 
@@ -109,6 +113,10 @@ func (s *ExternalDBSyncService) syncOnce(force bool) error {
 		return nil
 	}
 
+	// A manual sync repairs missing rows, including data preceding the previous watermark.
+	if force {
+		lastSyncAt = time.Time{}
+	}
 	switch cfg.DBType {
 	case "mysql":
 		if err := s.syncToMySQL(cfg, lastSyncAt); err != nil {
@@ -214,6 +222,7 @@ func (s *ExternalDBSyncService) saveLastSyncAt(t time.Time) error {
 }
 
 func (s *ExternalDBSyncService) syncToMySQL(cfg externalDBConfig, lastSyncAt time.Time) error {
+	syncStartedAt := time.Now()
 	if cfg.Host == "" || cfg.Username == "" || cfg.Database == "" {
 		return fmt.Errorf("external mysql config incomplete")
 	}
@@ -233,6 +242,7 @@ func (s *ExternalDBSyncService) syncToMySQL(cfg externalDBConfig, lastSyncAt tim
 	}
 
 	if err := externalDB.AutoMigrate(
+		&model.Group{},
 		&model.Device{},
 		&model.Employee{},
 		&model.Pattern{},
@@ -243,6 +253,14 @@ func (s *ExternalDBSyncService) syncToMySQL(cfg externalDBConfig, lastSyncAt tim
 		return err
 	}
 
+	sqlDB, err := externalDB.DB()
+	if err != nil {
+		return err
+	}
+	defer sqlDB.Close()
+	if err := syncModelInBatches[model.Group](s.db, externalDB, 300, lastSyncAt); err != nil {
+		return err
+	}
 	if err := s.syncDevices(externalDB, lastSyncAt); err != nil {
 		return err
 	}
@@ -262,7 +280,7 @@ func (s *ExternalDBSyncService) syncToMySQL(cfg externalDBConfig, lastSyncAt tim
 		return err
 	}
 
-	if err := s.saveLastSyncAt(time.Now()); err != nil {
+	if err := s.saveLastSyncAt(syncStartedAt); err != nil {
 		return err
 	}
 
@@ -283,6 +301,7 @@ func buildMSSQLDSN(cfg externalDBConfig) string {
 }
 
 func (s *ExternalDBSyncService) syncToMSSQL(cfg externalDBConfig, lastSyncAt time.Time) error {
+	syncStartedAt := time.Now()
 	if cfg.Host == "" || cfg.Username == "" || cfg.Database == "" {
 		return fmt.Errorf("external mssql config incomplete")
 	}
@@ -294,6 +313,7 @@ func (s *ExternalDBSyncService) syncToMSSQL(cfg externalDBConfig, lastSyncAt tim
 	}
 
 	if err := externalDB.AutoMigrate(
+		&model.Group{},
 		&model.Device{},
 		&model.Employee{},
 		&model.Pattern{},
@@ -304,6 +324,14 @@ func (s *ExternalDBSyncService) syncToMSSQL(cfg externalDBConfig, lastSyncAt tim
 		return err
 	}
 
+	sqlDB, err := externalDB.DB()
+	if err != nil {
+		return err
+	}
+	defer sqlDB.Close()
+	if err := syncModelInBatches[model.Group](s.db, externalDB, 300, lastSyncAt); err != nil {
+		return err
+	}
 	if err := s.syncDevices(externalDB, lastSyncAt); err != nil {
 		return err
 	}
@@ -323,7 +351,7 @@ func (s *ExternalDBSyncService) syncToMSSQL(cfg externalDBConfig, lastSyncAt tim
 		return err
 	}
 
-	if err := s.saveLastSyncAt(time.Now()); err != nil {
+	if err := s.saveLastSyncAt(syncStartedAt); err != nil {
 		return err
 	}
 
@@ -342,7 +370,7 @@ func upsertBatch[T any](tx *gorm.DB, rows []T) error {
 	if len(rows) == 0 {
 		return nil
 	}
-	return tx.Clauses(clause.OnConflict{
+	return tx.Omit(clause.Associations).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "id"}},
 		UpdateAll: true,
 	}).Create(&rows).Error
@@ -352,7 +380,7 @@ func syncModelInBatches[T any](src *gorm.DB, dst *gorm.DB, batchSize int, lastSy
 	offset := 0
 	for {
 		var rows []T
-		query := applyIncrementalFilter(src.Model(new(T)), lastSyncAt).
+		query := applyIncrementalFilter(src.Unscoped().Model(new(T)), lastSyncAt).
 			Order("id ASC").
 			Offset(offset).
 			Limit(batchSize)

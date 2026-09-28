@@ -73,7 +73,7 @@
         <el-table
           ref="tableRef"
           v-loading="loading"
-          :data="queueList"
+          :data="pagedQueue"
           border
           :height="tableHeight"
           empty-text="暂无下发任务"
@@ -88,9 +88,9 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column prop="patternType" label="花型类型" width="130" />
-          <el-table-column prop="orderNo" label="订单号" width="130" />
-          <el-table-column prop="deviceName" label="目标设备" width="160" />
+          <el-table-column prop="patternType" label="花型类型" width="130"  show-overflow-tooltip />
+          <el-table-column prop="orderNo" label="订单号" width="130"  show-overflow-tooltip />
+          <el-table-column prop="deviceName" label="目标设备" width="160"  show-overflow-tooltip />
           <el-table-column prop="status" label="状态" width="110" align="center">
             <template slot-scope="scope">
               <el-tag :type="getStatusType(scope.row.status)" size="small" effect="plain">
@@ -113,7 +113,7 @@
               {{ scope.row.message || '-' }}
             </template>
           </el-table-column>
-          <el-table-column prop="createTime" label="创建时间" width="170" />
+          <el-table-column prop="createTime" label="创建时间" width="170"  show-overflow-tooltip />
           <el-table-column label="操作" width="160" align="center">
             <template slot-scope="scope">
               <template v-if="scope.row.status === 'waiting' || scope.row.status === 'downloading'">
@@ -143,7 +143,7 @@
                 </el-button>
               </template>
               <template v-else-if="scope.row.status === 'failed'">
-                <span class="text-muted">自动重试中</span>
+                <el-button type="text" size="small" @click="handleResume(scope.row)">重试</el-button>
                 <el-button
                   type="text"
                   size="small"
@@ -157,6 +157,7 @@
             </template>
           </el-table-column>
         </el-table>
+<el-pagination :current-page.sync="page" :page-size="pageSize" :total="queueList.length" :page-sizes="[10, 20, 50, 100]" layout="total, sizes, prev, pager, next" @size-change="size => { pageSize = size; page = 1 }" />
       </div>
     </div>
   </div>
@@ -179,12 +180,18 @@ export default {
     return {
       loading: false,
       queueList: [],
+      page: 1,
+      pageSize: 20,
       refreshTimer: null,
       lastUpdatedAt: '',
       tableHeight: 320
     }
   },
   computed: {
+    pagedQueue() {
+      const page = Math.min(this.page, Math.max(1, Math.ceil(this.queueList.length / this.pageSize)))
+      return this.queueList.slice((page - 1) * this.pageSize, page * this.pageSize)
+    },
     waitingCount() {
       return this.queueList.filter(q => q.status === 'waiting').length
     },
@@ -245,7 +252,7 @@ export default {
       this.$nextTick(() => {
         const card = this.$refs.tableCard
         if (!card) return
-        this.tableHeight = Math.max(240, card.clientHeight - 20)
+        this.tableHeight = Math.max(240, card.clientHeight - 65)
       })
     },
     getStatusType(status) {
@@ -344,6 +351,7 @@ export default {
     },
     async clearCompleted() {
       try {
+        await this.$confirm('确定清理已结束的下发任务记录吗？', this.$t('common.warning'), { type: 'warning' })
         const res = await clearCompletedDownloads()
         if (res.code === 0) {
           this.$message.success(`已清理 ${res.data?.affected || 0} 条历史任务`)

@@ -11,7 +11,7 @@
         />
       </aside>
       <section class="pattern-main">
-        <div class="search-bar pattern-search-bar">
+        <div v-if="canServerPatterns" class="search-bar pattern-search-bar">
           <el-form :inline="true" :model="searchForm" class="pattern-search-form">
             <el-form-item :label="$t('file.fileName')">
               <el-input
@@ -21,7 +21,7 @@
                 @keyup.enter.native="handleSearch"
               />
             </el-form-item>
-            <!-- <el-form-item label="花型类型">
+            <el-form-item label="花型类型">
               <el-select
                 v-model="searchForm.patternType"
                 placeholder="全部类型"
@@ -35,7 +35,7 @@
                   :value="item"
                 />
               </el-select>
-            </el-form-item> -->
+            </el-form-item>
             <el-form-item label="订单编号">
               <el-input
                 v-model="searchForm.orderNo"
@@ -66,7 +66,7 @@
           </el-form>
         </div>
 
-        <el-card ref="serverPatternSection" shadow="never" class="card page-table-card">
+        <el-card v-if="canServerPatterns" ref="serverPatternSection" shadow="never" class="card page-table-card">
           <div class="section-title">
             <div>
               <h3>服务器花型文件</h3>
@@ -109,7 +109,7 @@
               >
                 全部下载到本地
               </el-button>
-              <el-button icon="el-icon-upload" @click="openDeviceFileDialog">
+              <el-button v-if="canDevicePatterns" icon="el-icon-upload" @click="openDeviceFileDialog">
                 定位设备文件模块
               </el-button>
               <el-button
@@ -143,16 +143,16 @@
                 {{ scope.row.name }}
               </template>
             </el-table-column>
-            <el-table-column prop="patternType" label="花型类型" width="130" />
-            <el-table-column prop="stitches" label="针数" width="100" />
-            <el-table-column prop="size" :label="$t('file.fileSize')" width="110" />
+            <el-table-column prop="patternType" label="花型类型" width="130"  show-overflow-tooltip />
+            <el-table-column prop="stitches" label="针数" width="100"  show-overflow-tooltip />
+            <el-table-column prop="size" :label="$t('file.fileSize')" width="110"  show-overflow-tooltip />
             <el-table-column prop="unitPrice" label="工价" width="110" align="right">
               <template slot-scope="scope">
                 {{ formatPrice(scope.row.unitPrice) }}
               </template>
             </el-table-column>
-            <el-table-column prop="orderNo" label="订单编号" min-width="140" />
-            <el-table-column prop="uploadTime" :label="$t('file.uploadTime')" width="170" />
+            <el-table-column prop="orderNo" label="订单编号" min-width="140"  show-overflow-tooltip />
+            <el-table-column prop="uploadTime" :label="$t('file.uploadTime')" width="170"  show-overflow-tooltip />
             <el-table-column
               :label="$t('common.operation')"
               width="340"
@@ -196,7 +196,7 @@
           />
         </el-card>
 
-        <el-card ref="deviceFileSection" shadow="never" class="card device-file-card page-table-card">
+        <el-card v-if="canDevicePatterns" ref="deviceFileSection" shadow="never" class="card device-file-card page-table-card">
           <div class="section-title">
             <div>
               <h3>设备花型文件</h3>
@@ -276,8 +276,8 @@
           >
             <el-table-column type="selection" width="48" align="center" />
             <el-table-column type="index" label="序号" width="60" align="center" />
-            <el-table-column prop="deviceName" label="设备" min-width="150" />
-            <el-table-column prop="fileName" label="设备文件名" min-width="180" />
+            <el-table-column prop="deviceName" label="设备" min-width="150"  show-overflow-tooltip />
+            <el-table-column prop="fileName" label="设备文件名" min-width="180"  show-overflow-tooltip />
             <el-table-column prop="patternName" label="花型名称" min-width="160">
               <template slot-scope="scope">
                 <span>{{ scope.row.patternName || scope.row.fileName || '-' }}</span>
@@ -292,11 +292,11 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="patternType" label="花型类型" width="130" />
-            <el-table-column prop="stitches" label="针数" width="100" />
-            <el-table-column prop="size" label="文件大小" width="100" />
-            <el-table-column prop="orderNo" label="订单号" min-width="130" />
-            <el-table-column prop="updateTime" label="更新时间" width="170" />
+            <el-table-column prop="patternType" label="花型类型" width="130"  show-overflow-tooltip />
+            <el-table-column prop="stitches" label="针数" width="100"  show-overflow-tooltip />
+            <el-table-column prop="size" label="文件大小" width="100"  show-overflow-tooltip />
+            <el-table-column prop="orderNo" label="订单号" min-width="130"  show-overflow-tooltip />
+            <el-table-column prop="updateTime" label="更新时间" width="170"  show-overflow-tooltip />
             <el-table-column label="操作" width="90" align="center" fixed="right">
               <template slot-scope="scope">
                 <el-button
@@ -329,7 +329,7 @@
       :visible.sync="showUploadDialog"
       width="820px"
       @closed="resetUploadDialog"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <el-form :model="uploadForm" label-width="90px">
         <el-form-item label="花型名称">
           <el-input v-model.trim="uploadForm.name" placeholder="默认使用文件名" />
@@ -359,7 +359,7 @@
         <el-form-item label="花型针数">
           <el-input-number
             v-model="uploadForm.stitches"
-            :precision="0"
+            :max="2147483647" :precision="0"
             :step="1"
             :min="0"
             controls-position="right"
@@ -369,7 +369,7 @@
         <el-form-item label="工价">
           <el-input-number
             v-model="uploadForm.unitPrice"
-            :precision="3"
+            :max="999999999.999" :precision="3"
             :step="0.001"
             :min="0"
             controls-position="right"
@@ -491,7 +491,7 @@
       title="修改花型文件"
       :visible.sync="showEditDialog"
       width="520px"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <el-form :model="editForm" label-width="90px">
         <el-form-item label="花型名称">
           <el-input v-model.trim="editForm.name" />
@@ -521,7 +521,7 @@
         <el-form-item label="花型针数">
           <el-input-number
             v-model="editForm.stitches"
-            :precision="0"
+            :max="2147483647" :precision="0"
             :step="1"
             :min="0"
             controls-position="right"
@@ -531,7 +531,7 @@
         <el-form-item label="工价">
           <el-input-number
             v-model="editForm.unitPrice"
-            :precision="3"
+            :max="999999999.999" :precision="3"
             :step="0.001"
             :min="0"
             controls-position="right"
@@ -569,7 +569,7 @@
       title="批量修改"
       :visible.sync="showBatchEditDialog"
       width="560px"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <el-form :model="batchEditForm" label-width="100px">
         <el-form-item>
           <div class="batch-tip">
@@ -599,10 +599,10 @@
         </el-form-item>
         <el-form-item label="花型针数">
           <div class="batch-field-row">
-            <el-checkbox v-model="batchEditForm.enabled.stitches">修改</el-checkbox>
+            <el-checkbox v-model="batchEditForm.enabled.stitches":max="2147483647" >修改</el-checkbox>
             <el-input-number
               v-model="batchEditForm.values.stitches"
-              :disabled="!batchEditForm.enabled.stitches"
+              :max="2147483647" :disabled="!batchEditForm.enabled.stitches"
               :precision="0"
               :step="1"
               :min="0"
@@ -612,10 +612,10 @@
         </el-form-item>
         <el-form-item label="工价">
           <div class="batch-field-row">
-            <el-checkbox v-model="batchEditForm.enabled.unitPrice">修改</el-checkbox>
+            <el-checkbox v-model="batchEditForm.enabled.unitPrice":max="999999999.999" >修改</el-checkbox>
             <el-input-number
               v-model="batchEditForm.values.unitPrice"
-              :disabled="!batchEditForm.enabled.unitPrice"
+              :max="999999999.999" :disabled="!batchEditForm.enabled.unitPrice"
               :precision="3"
               :step="0.001"
               :min="0"
@@ -662,7 +662,7 @@
       :title="$t('file.selectDevice')"
       :visible.sync="showDeviceDialog"
       width="600px"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <el-tree
         ref="deviceTree"
         :data="deviceTree"
@@ -674,7 +674,7 @@
       <div class="dialog-tip">同一设备按队列顺序下发；设备缝纫中或关机时会等待，队首任务等待超过10分钟才判定失败。</div>
       <span slot="footer" class="dialog-footer">
         <el-button @click="showDeviceDialog = false">{{ $t('common.cancel') }}</el-button>
-        <el-button type="primary" @click="confirmDownload">确认下发</el-button>
+        <el-button type="primary" :loading="downloadSubmitting" @click="confirmDownload">确认下发</el-button>
       </span>
     </el-dialog>
 
@@ -683,12 +683,12 @@
       :visible.sync="showUploadQueueDialog"
       width="920px"
       @opened="syncUploadQueueDialogTableHeight"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <div class="upload-queue-actions">
         <el-button size="small" icon="el-icon-refresh" @click="fetchUploadQueue">
           刷新
         </el-button>
-        <el-button size="small" type="danger" icon="el-icon-delete" @click="clearUploadHistory">
+        <el-button size="small" type="danger" icon="el-icon-delete" :disabled="!uploadQueueList.some(row => ['completed', 'failed', 'canceled'].includes(row.status))" @click="clearUploadHistory">
           清理历史
         </el-button>
       </div>
@@ -700,9 +700,9 @@
         :max-height="uploadQueueTableMaxHeight"
       >
         <el-table-column type="index" label="序号" width="60" align="center" />
-        <el-table-column prop="deviceName" label="设备" width="140" />
-        <el-table-column prop="fileName" label="设备文件名" min-width="180" />
-        <el-table-column prop="patternName" label="回传后花型" min-width="160" />
+        <el-table-column prop="deviceName" label="设备" width="140"  show-overflow-tooltip />
+        <el-table-column prop="fileName" label="设备文件名" min-width="180"  show-overflow-tooltip />
+        <el-table-column prop="patternName" label="回传后花型" min-width="160"  show-overflow-tooltip />
         <el-table-column prop="status" label="状态" width="110" align="center">
           <template slot-scope="scope">
             <el-tag :type="getUploadStatusType(scope.row.status)" size="small">
@@ -715,15 +715,15 @@
             <el-progress :percentage="scope.row.progress" :stroke-width="14" text-inside />
           </template>
         </el-table-column>
-        <el-table-column prop="message" label="备注" min-width="130" />
-        <el-table-column prop="createTime" label="创建时间" width="170" />
+        <el-table-column prop="message" label="备注" min-width="130"  show-overflow-tooltip />
+        <el-table-column prop="createTime" label="创建时间" width="170"  show-overflow-tooltip />
         <el-table-column label="操作" width="130" align="center">
           <template slot-scope="scope">
             <el-button
               v-if="scope.row.status === 'waiting' || scope.row.status === 'uploading'"
               type="text"
               size="small"
-              @click="handlePauseUploadTask(scope.row)"
+              :disabled="scope.row.status === 'uploading'" @click="handlePauseUploadTask(scope.row)"
             >
               暂停
             </el-button>
@@ -740,7 +740,7 @@
               type="text"
               size="small"
               class="danger-text"
-              @click="handleCancelUploadTask(scope.row)"
+              :disabled="scope.row.status === 'uploading'" @click="handleCancelUploadTask(scope.row)"
             >
               取消
             </el-button>
@@ -764,7 +764,7 @@
       :visible.sync="showUploadConflictDialog"
       width="620px"
       @closed="handleUploadConflictDialogClosed"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <div class="conflict-dialog-intro">
         检测到服务器中已存在同名花型，请选择处理方式。
       </div>
@@ -806,7 +806,7 @@
       title="花型预览"
       :visible.sync="showPreviewDialog"
       width="600px"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <div class="preview-container">
         <div class="preview-placeholder">
           <i class="el-icon-picture-outline"></i>
@@ -830,7 +830,7 @@
       :visible.sync="quickCreateDialog.visible"
       width="420px"
       @closed="resetQuickCreateDialog"
-    >
+     :close-on-click-modal="false" :close-on-press-escape="false">
       <el-form label-width="92px">
         <el-form-item :label="quickCreateDialog.mode === 'patternType' ? '花型类型' : '订单编号'">
           <el-input
@@ -911,7 +911,7 @@ const defaultBatchEditForm = () => ({
 })
 
 const defaultUploadConflictForm = () => ({
-  mode: 'overwrite',
+  mode: 'rename',
   renameNames: {}
 })
 
@@ -997,6 +997,8 @@ export default {
         pageSize: 10,
         total: 0
       },
+      queueTimer: null,
+      downloadSubmitting: false,
       showPreviewDialog: false,
       previewPattern: {},
       quickCreating: false,
@@ -1012,6 +1014,8 @@ export default {
     }
   },
   computed: {
+    canServerPatterns() { return this.$store.getters.hasPermission('patternFiles') },
+    canDevicePatterns() { return this.$store.getters.hasPermission('devicePatternFiles') },
     selectedDeviceFileOptions() {
       const selected = new Set(this.selectedPatternDeviceIds.map(id => Number(id)))
       return this.deviceOptions.filter(item => selected.has(Number(item.id)))
@@ -1026,14 +1030,18 @@ export default {
     }
   },
   mounted() {
+    this.searchForm.patternType = this.$route.query.patternType || ''
+    this.searchForm.orderNo = this.$route.query.orderNo || ''
     this.fetchData()
     this.fetchPatternTypes()
     this.fetchOrderNos()
     this.fetchDeviceTree()
     this.fetchDeviceOptions()
+    this.queueTimer = setInterval(() => { if (this.showUploadQueueDialog && !this.uploadQueueLoading) this.fetchUploadQueue() }, 2000)
     window.addEventListener('resize', this.syncTableHeights)
   },
   beforeDestroy() {
+    clearInterval(this.queueTimer)
     window.removeEventListener('resize', this.syncTableHeights)
   },
   methods: {
@@ -1196,6 +1204,7 @@ export default {
       }
     },
     async fetchData() {
+      if (!this.canServerPatterns) return
       this.loading = true
       try {
         const res = await getPatternList({
@@ -1206,6 +1215,8 @@ export default {
         if (res.code === 0) {
           this.tableData = res.data.list || []
           this.pagination.total = res.data.total || 0
+          const lastPage = Math.max(1, Math.ceil(this.pagination.total / this.pagination.pageSize))
+          if (this.pagination.page > lastPage) { this.pagination.page = lastPage; return this.fetchData() }
           this.$nextTick(() => {
             this.syncTableHeights()
           })
@@ -1218,6 +1229,7 @@ export default {
       }
     },
     async fetchPatternTypes() {
+      if (!this.canServerPatterns) return
       try {
         const res = await getPatternTypes()
         if (res.code === 0) {
@@ -1228,6 +1240,7 @@ export default {
       }
     },
     async fetchOrderNos() {
+      if (!this.canServerPatterns) return
       try {
         const res = await getOrderSummary()
         if (res.code === 0) {
@@ -1317,21 +1330,11 @@ export default {
     },
     async handleDeviceTreeChange(payload) {
       this.deviceFilter = payload
-      const ids = Array.from(new Set((payload?.deviceIds || [])
-        .map(id => Number(id))
-        .filter(id => Number.isFinite(id) && id > 0)))
-      if (!ids.length) {
+      if (!payload?.nodeType) {
         this.selectedPatternDeviceIds = []
         this.syncDeviceFileQueryDeviceId()
         this.handleDeviceFileDeviceChange()
-        return
       }
-      this.selectedPatternDeviceIds = ids
-      if (!this.deviceOptions.length) {
-        await this.fetchDeviceOptions({ autoLoad: false })
-      }
-      this.syncDeviceFileQueryDeviceId(ids)
-      this.handleDeviceFileDeviceChange()
     },
     async handleDeviceTreeCheckedDevicesChange(payload = {}) {
       const ids = Array.from(new Set((payload.deviceIds || [])
@@ -1346,6 +1349,7 @@ export default {
     },
     handleSizeChange(size) {
       this.pagination.pageSize = size
+      this.pagination.page = 1
       this.fetchData()
     },
     handlePageChange(page) {
@@ -1652,6 +1656,7 @@ export default {
       return firstSelectedDeviceId ? [firstSelectedDeviceId] : []
     },
     async fetchDeviceFileList() {
+      if (!this.canDevicePatterns) return
       const deviceIds = this.getDeviceFileQueryDeviceIds()
       if (!deviceIds.length) {
         this.deviceFileList = []
@@ -1666,8 +1671,8 @@ export default {
           deviceId: deviceIds[0],
           keyword: this.deviceFileQuery.keyword,
           patternType: this.deviceFileQuery.patternType,
-          page: 1,
-          pageSize: 10000
+          page: this.deviceFilePagination.page,
+          pageSize: this.deviceFilePagination.pageSize
         })
         const rows = []
         if (res.code === 0) {
@@ -1682,9 +1687,8 @@ export default {
           })
         }
         rows.sort((a, b) => String(b.updateTime || '').localeCompare(String(a.updateTime || '')))
-        this.deviceFilePagination.total = rows.length
-        const start = (this.deviceFilePagination.page - 1) * this.deviceFilePagination.pageSize
-        this.deviceFileList = rows.slice(start, start + this.deviceFilePagination.pageSize)
+        this.deviceFilePagination.total = Number(res.data?.total || 0)
+        this.deviceFileList = rows
         this.$nextTick(() => {
           this.syncTableHeights()
         })
@@ -1785,11 +1789,12 @@ export default {
         }
 
         if (res.code === 0) {
-          this.$message.success(`回传完成：成功 ${res.data.success || 0} 条，失败 ${res.data.failed || 0} 条`)
+          this.$message.success(`已加入上传队列，共 ${res.data.queued || 0} 个任务`)
+          this.showUploadQueueDialog = true
           this.fetchData()
           this.fetchPatternTypes()
           this.fetchUploadQueue()
-          await this.refreshDeviceFilesAfterUpload(uploadDeviceId)
+
         }
       } catch (error) {
         console.error('Upload device files failed:', error)
@@ -1844,7 +1849,7 @@ export default {
       }
       this.uploadConflictDuplicates = duplicates.map(item => ({ ...item }))
       this.uploadConflictForm = {
-        mode: 'overwrite',
+        mode: 'rename',
         renameNames
       }
       this.showUploadConflictDialog = true
@@ -1879,7 +1884,7 @@ export default {
         this.resolveUploadConflict({ mode: 'rename', renameNames })
         return
       }
-      this.resolveUploadConflict({ mode: 'overwrite', renameNames: {} })
+      this.resolveUploadConflict({ mode: 'rename', renameNames: {} })
     },
     handleUploadConflictDialogClosed() {
       if (this.uploadConflictResolver) {
@@ -1985,6 +1990,7 @@ export default {
     },
     async clearUploadHistory() {
       try {
+        await this.$confirm('确定清理已结束的上传任务记录吗？', this.$t('common.warning'), { type: 'warning' })
         const res = await clearCompletedUploads()
         if (res.code === 0) {
           this.$message.success(`已清理 ${res.data.affected || 0} 条历史任务`)
@@ -1992,7 +1998,7 @@ export default {
         }
       } catch (error) {
         console.error('Clear upload history failed:', error)
-        this.$message.error('清理上传历史失败')
+        if (error !== 'cancel' && error !== 'close') this.$message.error('清理上传历史失败')
       }
     },
     handlePreview(row) {
@@ -2043,7 +2049,7 @@ export default {
       this.localDownloadingAll = true
       try {
         const response = await downloadPatternFiles(this.getPatternQueryParams())
-        const { filename, saved } = await saveResponseWithDialog(response, `server-pattern-files-${Date.now()}.zip`, {
+        const { filename, saved } = await saveResponseWithDialog(response, `${this.$i18n.locale === 'en-US' ? 'server-pattern-files' : '服务器花型文件'}-${Date.now()}.zip`, {
           description: '花型文件压缩包',
           mimeType: 'application/zip',
           extensions: ['zip']
@@ -2145,6 +2151,7 @@ export default {
         return
       }
       this.downloadPatternIds = [row.id]
+      if (this.selectedPatternDeviceIds.length) { this.confirmDownload([...this.selectedPatternDeviceIds]); return }
       this.showDeviceDialog = true
       this.$nextTick(() => {
         this.applyPreferredDownloadTargets()
@@ -2157,6 +2164,7 @@ export default {
         return
       }
       this.downloadPatternIds = this.selectedRows.map(r => r.id)
+      if (this.selectedPatternDeviceIds.length) { this.confirmDownload([...this.selectedPatternDeviceIds]); return }
       this.showDeviceDialog = true
       this.$nextTick(() => {
         this.applyPreferredDownloadTargets()
@@ -2175,22 +2183,17 @@ export default {
         treeRef.setCheckedKeys(preferredDeviceIds.map(id => `device-${id}`))
       }
     },
-    async confirmDownload() {
-      const selectedIds = this.selectedPatternDeviceIds.length
-        ? this.selectedPatternDeviceIds
-        : []
+    async confirmDownload(explicitIds = null) {
+      if (this.downloadSubmitting) return
       const checkedNodes = this.$refs.deviceTree?.getCheckedNodes?.() || []
-      const deviceIds = selectedIds.length
-        ? selectedIds
-        : checkedNodes
-          .filter(n => n.type === 'device')
-          .map(n => n.id)
+      const deviceIds = [...new Set(Array.isArray(explicitIds) ? explicitIds : checkedNodes.filter(n => n.type === 'device').map(n => n.id))]
 
       if (deviceIds.length === 0) {
         this.$message.warning('请选择要下发的设备')
         return
       }
 
+      this.downloadSubmitting = true
       try {
         let res
         if (this.downloadPatternIds.length === 1) {
@@ -2208,7 +2211,7 @@ export default {
       } catch (error) {
         console.error('Download to device failed:', error)
         this.$message.error(this.getRequestErrorMessage(error, '下发失败'))
-      }
+      } finally { this.downloadSubmitting = false }
     },
     handleDelete(row) {
       this.$confirm('确定要删除该花型文件吗？', this.$t('common.warning'), {

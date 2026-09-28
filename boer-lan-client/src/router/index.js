@@ -51,7 +51,7 @@ const routes = [
         meta: {
           title: 'menu.deviceList',
           parent: 'menu.device',
-          permission: PERMISSIONS.DEVICE_MANAGEMENT
+          permission: 'deviceInfo'
         }
       },
       {
@@ -61,7 +61,7 @@ const routes = [
         meta: {
           title: 'menu.deviceGroup',
           parent: 'menu.device',
-          permission: PERMISSIONS.DEVICE_MANAGEMENT
+          permission: 'deviceInfo'
         }
       },
       {
@@ -71,7 +71,7 @@ const routes = [
         meta: {
           title: 'menu.deviceTypeManager',
           parent: 'menu.device',
-          permission: PERMISSIONS.DEVICE_MANAGEMENT
+          permission: 'deviceInfo'
         }
       },
       {
@@ -81,7 +81,7 @@ const routes = [
         meta: {
           title: 'menu.electricControlTypeManager',
           parent: 'menu.device',
-          permission: PERMISSIONS.DEVICE_MANAGEMENT,
+          permission: 'deviceInfo',
           catalog: 'electricControl'
         }
       },
@@ -103,7 +103,7 @@ const routes = [
         meta: {
           title: 'menu.patternList',
           parent: 'menu.file',
-          permission: PERMISSIONS.FILE_MANAGEMENT
+          permission: ['patternFiles', 'devicePatternFiles']
         }
       },
       {
@@ -113,7 +113,7 @@ const routes = [
         meta: {
           title: 'menu.patternTypeManager',
           parent: 'menu.file',
-          permission: PERMISSIONS.FILE_MANAGEMENT
+          permission: 'patternFiles'
         }
       },
       {
@@ -123,7 +123,7 @@ const routes = [
         meta: {
           title: 'menu.orderNoManager',
           parent: 'menu.file',
-          permission: PERMISSIONS.FILE_MANAGEMENT
+          permission: 'patternFiles'
         }
       },
       {
@@ -133,7 +133,7 @@ const routes = [
         meta: {
           title: 'menu.downloadQueue',
           parent: 'menu.file',
-          permission: PERMISSIONS.FILE_MANAGEMENT
+          permission: 'downloadLog'
         }
       },
       {
@@ -143,7 +143,7 @@ const routes = [
         meta: {
           title: 'menu.downloadLog',
           parent: 'menu.file',
-          permission: PERMISSIONS.FILE_MANAGEMENT
+          permission: 'downloadLog'
         }
       },
       // 数据统计
@@ -154,7 +154,7 @@ const routes = [
         meta: {
           title: 'menu.salaryStats',
           parent: 'menu.statistics',
-          permission: PERMISSIONS.STATISTICS
+          permission: 'salaryStatistics'
         }
       },
       {
@@ -164,7 +164,7 @@ const routes = [
         meta: {
           title: 'menu.processOverview',
           parent: 'menu.statistics',
-          permission: PERMISSIONS.STATISTICS
+          permission: 'statusStatistics'
         }
       },
       {
@@ -174,7 +174,7 @@ const routes = [
         meta: {
           title: 'menu.durationStats',
           parent: 'menu.statistics',
-          permission: PERMISSIONS.STATISTICS
+          permission: 'statusStatistics'
         }
       },
       {
@@ -184,7 +184,7 @@ const routes = [
         meta: {
           title: 'menu.alarmStats',
           parent: 'menu.statistics',
-          permission: PERMISSIONS.STATISTICS
+          permission: 'statusStatistics'
         }
       },
       // 员工管理
@@ -249,7 +249,7 @@ const router = new VueRouter({
 
 // Navigation guard
 router.beforeEach((to, from, next) => {
-  const token = localStorage.getItem('token')
+  const token = sessionStorage.getItem('token')
 
   // 需要登录认证的路由
   if (to.matched.some(record => record.meta.requiresAuth !== false)) {

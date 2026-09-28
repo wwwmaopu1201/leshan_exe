@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"boer-lan-server/internal/model"
@@ -17,7 +18,8 @@ import (
 const (
 	transferTypeUpload             = 1
 	transferTypeDownload           = 2
-	patternTransferResponseTimeout = 10 * time.Minute
+	patternTransferResponseTimeout = 60 * time.Second
+	patternUploadTotalTimeout      = 10 * time.Minute
 	patternListResponseTimeout     = 20 * time.Second
 	patternUploadStartTimeout      = 30 * time.Second
 	patternUploadIdleTimeout       = 3 * time.Second
@@ -39,14 +41,17 @@ const (
 )
 
 type PatternTransferService struct {
-	db      *gorm.DB
-	connMgr *ConnectionManager
+	downloadMu      sync.Mutex
+	downloadCancels map[uint]context.CancelFunc
+	db              *gorm.DB
+	connMgr         *ConnectionManager
 }
 
 func NewPatternTransferService(db *gorm.DB, connMgr *ConnectionManager) *PatternTransferService {
 	return &PatternTransferService{
-		db:      db,
-		connMgr: connMgr,
+		db:              db,
+		connMgr:         connMgr,
+		downloadCancels: make(map[uint]context.CancelFunc),
 	}
 }
 
@@ -212,6 +217,10 @@ func (s *PatternTransferService) UploadPatternFromDeviceWithOptions(
 	conflictMode UploadConflictMode,
 	targetName string,
 ) (*model.Pattern, error) {
+	return s.uploadPatternWithProgress(device, file, userID, conflictMode, targetName, nil)
+}
+
+func (s *PatternTransferService) uploadPatternWithProgress(device model.Device, file model.DevicePatternFile, userID uint, conflictMode UploadConflictMode, targetName string, progress func(int)) (*model.Pattern, error) {
 	dc, err := s.getDeviceConnection(device)
 	if err != nil {
 		return nil, err
@@ -219,6 +228,7 @@ func (s *PatternTransferService) UploadPatternFromDeviceWithOptions(
 
 	if refreshed, refreshErr := s.RefreshDevicePatternFilesIfIdle(device); refreshErr == nil {
 		if resolved, ok := resolveLiveDevicePatternFile(refreshed, file); ok {
+			resolved.PatternType, resolved.Stitches, resolved.UnitPrice, resolved.OrderNo = file.PatternType, file.Stitches, file.UnitPrice, file.OrderNo
 			file = resolved
 		}
 	} else if isPatternTransferBusy(refreshErr) {
@@ -239,7 +249,7 @@ func (s *PatternTransferService) UploadPatternFromDeviceWithOptions(
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), patternTransferResponseTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), patternUploadTotalTimeout)
 	defer cancel()
 
 	totalFrames := 0
@@ -338,6 +348,9 @@ func (s *PatternTransferService) UploadPatternFromDeviceWithOptions(
 				}
 			}
 			frames[int(pkt.FrameNo)] = append([]byte(nil), pkt.Data...)
+			if progress != nil && totalFrames > 0 {
+				progress(5 + len(frames)*90/totalFrames)
+			}
 			emitTCPLog(s.db, "info", false, "[TCP] Device upload data frame: device=%s patternNo=%d frame=%d/%d size=%d", device.Code, file.PatternNo, pkt.FrameNo, pkt.TotalFrames, len(pkt.Data))
 			if err := dc.writePacket(buildUploadPatternDataAck(pkt.TotalFrames, pkt.FrameNo, 0)); err != nil {
 				return nil, err
@@ -365,10 +378,11 @@ func (s *PatternTransferService) UploadPatternFromDeviceWithOptions(
 	}
 
 	fileName := fmt.Sprintf(
-		"device_%d_%d_%s.dst",
+		"device_%d_%d_%s%s",
 		device.ID,
 		file.PatternNo,
-		time.Now().Format("20060102150405"),
+		time.Now().Format("20060102150405.000000000"),
+		KnownPatternFileExtension(file.FileName),
 	)
 	savePath := filepath.Join("uploads", "patterns", fileName)
 	if err := os.WriteFile(savePath, payload, 0644); err != nil {
@@ -453,15 +467,13 @@ func (s *PatternTransferService) saveUploadedPattern(
 		}
 		oldPath := strings.TrimSpace(existing.FilePath)
 		updates := map[string]interface{}{
-			"name":         baseName,
-			"pattern_type": file.PatternType,
-			"file_name":    file.FileName,
-			"file_path":    savePath,
-			"file_size":    int64(len(payload)),
-			"stitches":     file.Stitches,
-			"unit_price":   file.UnitPrice,
-			"order_no":     file.OrderNo,
-			"uploaded_by":  userID,
+			"name": baseName,
+			// Device metadata can be empty; overwriting bytes must preserve maintained business fields.
+			"uploaded_at": time.Now(),
+			"file_name":   file.FileName,
+			"file_path":   savePath,
+			"file_size":   int64(len(payload)),
+			"uploaded_by": userID,
 		}
 		if err := s.db.Model(&existing).Updates(updates).Error; err != nil {
 			return nil, err
@@ -485,7 +497,9 @@ func (s *PatternTransferService) createUploadedPattern(
 	userID uint,
 	patternName string,
 ) (*model.Pattern, error) {
+	uploadedAt := time.Now()
 	pattern := &model.Pattern{
+		UploadedAt:  &uploadedAt,
 		Name:        patternName,
 		PatternType: file.PatternType,
 		FileName:    file.FileName,
@@ -630,11 +644,48 @@ func (s *PatternTransferService) ExecuteDownloadTask(taskID uint) error {
 		return err
 	}
 
-	ch, cleanup, err := dc.beginPatternSession()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	interruptStopped := make(chan struct{})
+	defer close(interruptStopped)
+	go func() {
+		select {
+		case <-ctx.Done():
+			select {
+			case <-interruptStopped:
+				return
+			default:
+			}
+			if dc.conn != nil {
+				_ = dc.conn.Close()
+			}
+		case <-interruptStopped:
+		}
+	}()
+
+	s.downloadMu.Lock()
+	if s.downloadCancels == nil {
+		s.downloadCancels = make(map[uint]context.CancelFunc)
+	}
+	s.downloadCancels[task.ID] = cancel
+	s.downloadMu.Unlock()
+	defer func() { s.downloadMu.Lock(); delete(s.downloadCancels, task.ID); s.downloadMu.Unlock() }()
+	go s.watchDownloadTask(ctx, cancel, task.ID)
+	acquireCtx, releaseAcquire := context.WithTimeout(ctx, patternSessionAcquireTimeout)
+	defer releaseAcquire()
+	ch, cleanup, err := dc.beginPatternSessionContext(acquireCtx, true)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
+	// An aborted frame stream has no protocol request ID. Close it so delayed ACKs
+	// cannot complete a later file. The device can reconnect through the normal handshake.
+	finished := false
+	defer func() {
+		if !finished && dc.conn != nil {
+			_ = dc.conn.Close()
+		}
+	}()
 
 	patternName := strings.TrimSpace(pattern.Name)
 	if patternName == "" {
@@ -642,6 +693,10 @@ func (s *PatternTransferService) ExecuteDownloadTask(taskID uint) error {
 	}
 	if patternName == "" {
 		patternName = fmt.Sprintf("pattern_%d", pattern.ID)
+	}
+
+	if err := ValidateDownloadPatternName(patternName); err != nil {
+		return err
 	}
 
 	if err := s.updateDownloadTask(task.ID, map[string]interface{}{
@@ -656,7 +711,7 @@ func (s *PatternTransferService) ExecuteDownloadTask(taskID uint) error {
 		return err
 	}
 
-	commandCtx, cancelCommand := context.WithTimeout(context.Background(), patternTransferResponseTimeout)
+	commandCtx, cancelCommand := context.WithTimeout(ctx, patternTransferResponseTimeout)
 	defer cancelCommand()
 	commandAck, err := waitPatternPacket(commandCtx, ch, func(pkt *Packet) bool {
 		return pkt.ParamType == PTPattern && pkt.ParamNo == PNDownloadPatternCommand
@@ -687,7 +742,7 @@ func (s *PatternTransferService) ExecuteDownloadTask(taskID uint) error {
 		}
 
 		for {
-			frameCtx, cancelFrame := context.WithTimeout(context.Background(), patternTransferResponseTimeout)
+			frameCtx, cancelFrame := context.WithTimeout(ctx, patternTransferResponseTimeout)
 			pkt, err := waitPatternPacket(frameCtx, ch, func(pkt *Packet) bool {
 				return pkt.ParamType == PTPattern &&
 					(pkt.ParamNo == PNCommunicationError || pkt.ParamNo == PNTransferResume)
@@ -731,7 +786,7 @@ func (s *PatternTransferService) ExecuteDownloadTask(taskID uint) error {
 		return err
 	}
 
-	resultCtx, cancelResult := context.WithTimeout(context.Background(), patternTransferResponseTimeout)
+	resultCtx, cancelResult := context.WithTimeout(ctx, patternTransferResponseTimeout)
 	defer cancelResult()
 	pkt, err := waitPatternPacket(resultCtx, ch, func(pkt *Packet) bool {
 		return pkt.ParamType == PTPattern && pkt.ParamNo == PNDownloadPatternData
@@ -747,11 +802,15 @@ func (s *PatternTransferService) ExecuteDownloadTask(taskID uint) error {
 	if result != 0 {
 		return fmt.Errorf("device final download result=%d", result)
 	}
+	if echoedName != "" && TrimKnownPatternFileExtension(echoedName) != TrimKnownPatternFileExtension(patternName) {
+		return fmt.Errorf("设备返回的花型名称与当前任务不一致")
+	}
 	if echoedName != "" {
 		emitTCPLog(s.db, "info", true, "[TCP] Device download completed: device=%s pattern=%s echoed=%s",
 			device.Code, patternName, echoedName)
 	}
 
+	finished = true
 	return s.updateDownloadTask(task.ID, map[string]interface{}{
 		"status":   "completed",
 		"progress": 100,
@@ -881,5 +940,49 @@ func (s *PatternTransferService) updateDownloadTask(taskID uint, updates map[str
 	if len(updates) == 0 {
 		return nil
 	}
-	return s.db.Model(&model.DownloadTask{}).Where("id = ?", taskID).Updates(updates).Error
+	result := s.db.Model(&model.DownloadTask{}).Where("id = ? AND status = ?", taskID, "downloading").Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return context.Canceled
+	}
+	return nil
+}
+
+func (s *PatternTransferService) watchDownloadTask(ctx context.Context, cancel context.CancelFunc, id uint) {
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		var task model.DownloadTask
+		err := s.db.Select("id", "status", "device_id").First(&task, id).Error
+		if err == nil && task.Status == "completed" {
+			return
+		}
+		if err != nil || task.Status != "downloading" {
+			cancel()
+			return
+		}
+		if s.connMgr != nil {
+			var device model.Device
+			if err := s.db.First(&device, task.DeviceID).Error; err != nil || !s.IsDeviceConnected(device) {
+				cancel()
+				return
+			}
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *PatternTransferService) InterruptDownload(id uint) {
+	s.downloadMu.Lock()
+	defer s.downloadMu.Unlock()
+	if cancel := s.downloadCancels[id]; cancel != nil {
+		cancel()
+	}
 }

@@ -21,9 +21,7 @@ func parsePermissionMap(raw string) map[string]bool {
 	if err := json.Unmarshal([]byte(raw), &boolMap); err == nil {
 		result := make(map[string]bool, len(boolMap))
 		for key, enabled := range boolMap {
-			if enabled {
-				result[key] = true
-			}
+			result[key] = enabled
 		}
 		return result
 	}
@@ -46,8 +44,8 @@ func parsePermissionMap(raw string) map[string]bool {
 	}
 	result := make(map[string]bool, len(anyMap))
 	for key, value := range anyMap {
-		if enabled, ok := value.(bool); ok && enabled {
-			result[key] = true
+		if enabled, ok := value.(bool); ok {
+			result[key] = enabled
 		}
 	}
 	return result
@@ -67,14 +65,14 @@ func loadUserPermissionMap(db *gorm.DB, userID uint, roleName string) (map[strin
 		var role model.Role
 		if err := db.Select("permissions").Where("name = ?", effectiveRoleName).First(&role).Error; err == nil {
 			permissions := parsePermissionMap(role.Permissions)
-			if len(permissions) > 0 {
+			if permissions != nil {
 				return permissions, nil
 			}
 		}
 	}
 
 	permissions := parsePermissionMap(user.Permissions)
-	if len(permissions) > 0 {
+	if permissions != nil {
 		return permissions, nil
 	}
 
@@ -88,6 +86,30 @@ func loadUserPermissionMap(db *gorm.DB, userID uint, roleName string) (map[strin
 	return permissions, nil
 }
 
+var permissionChildren = map[string][]string{
+	"deviceManagement": {"deviceInfo", "remoteMonitoring"},
+	"fileManagement":   {"patternFiles", "devicePatternFiles", "downloadLog"},
+	"statistics":       {"salaryStatistics", "statusStatistics"},
+}
+
+func hasDetailedPermissions(permissions map[string]bool, parent string) bool {
+	for _, child := range permissionChildren[parent] {
+		value, exists := permissions[child]
+		if !exists {
+			continue
+		}
+		// Older releases stored remoteMonitoring as a standalone module alongside
+		// deviceManagement. Detailed new roles explicitly store deviceInfo=false.
+		if parent == "deviceManagement" && child == "remoteMonitoring" && value && permissions[parent] {
+			if _, explicitDeviceInfo := permissions["deviceInfo"]; !explicitDeviceInfo {
+				continue
+			}
+		}
+		return true
+	}
+	return false
+}
+
 func hasAnyPermission(permissionMap map[string]bool, required ...string) bool {
 	if len(required) == 0 {
 		return true
@@ -97,8 +119,23 @@ func hasAnyPermission(permissionMap map[string]bool, required ...string) bool {
 		if key == "" {
 			continue
 		}
-		if permissionMap[key] {
+		// Parent keys in a detailed selection are menu containers, not grants to siblings.
+		detailed := hasDetailedPermissions(permissionMap, key)
+		if permissionMap[key] && !detailed {
 			return true
+		}
+		for parent, children := range permissionChildren {
+			if _, explicit := permissionMap[key]; explicit {
+				continue
+			}
+			hasDetail := hasDetailedPermissions(permissionMap, parent)
+			if !hasDetail && permissionMap[parent] {
+				for _, child := range children {
+					if child == key {
+						return true
+					}
+				}
+			}
 		}
 	}
 	return false

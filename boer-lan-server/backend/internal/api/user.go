@@ -5,9 +5,11 @@ import (
 	"boer-lan-server/pkg/utils"
 	"encoding/json"
 	"net/http"
+	"net/mail"
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -182,6 +184,7 @@ func (h *UserHandler) GetAllUsers(c *gin.Context) {
 func (h *UserHandler) CreateUser(c *gin.Context) {
 	var req struct {
 		Username    string `json:"username" binding:"required"`
+		Disabled    bool   `json:"disabled"`
 		Password    string `json:"password" binding:"required"`
 		Nickname    string `json:"nickname"`
 		Email       string `json:"email"`
@@ -200,7 +203,7 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 	req.Username = strings.TrimSpace(req.Username)
 	req.Password = strings.TrimSpace(req.Password)
 	req.Nickname = strings.TrimSpace(req.Nickname)
-	req.Phone = strings.TrimSpace(req.Phone)
+	req.Phone = strings.Join(strings.Fields(req.Phone), "")
 	req.Email = strings.TrimSpace(req.Email)
 
 	if !isValidUsername(req.Username) {
@@ -211,8 +214,8 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "密码长度需在6-32位"})
 		return
 	}
-	if req.Nickname == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "账号姓名不能为空"})
+	if req.Nickname == "" || utf8.RuneCountInString(req.Nickname) > 50 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "账号姓名不能为空且不能超过50个字符"})
 		return
 	}
 	if !isValidUserPhone(req.Phone) {
@@ -220,6 +223,10 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		return
 	}
 
+	if !validOptionalEmail(req.Email) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "邮箱格式不正确或超过100个字符"})
+		return
+	}
 	// 检查账号是否已存在
 	var count int64
 	h.db.Model(&model.User{}).Where("username = ?", req.Username).Count(&count)
@@ -287,6 +294,7 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 
 	user := model.User{
 		Username:    req.Username,
+		Disabled:    req.Disabled,
 		Password:    hashedPassword,
 		Nickname:    req.Nickname,
 		Email:       req.Email,
@@ -360,19 +368,23 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 
 	if req.Nickname != nil {
 		nickname := strings.TrimSpace(*req.Nickname)
-		if nickname == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "账号姓名不能为空"})
+		if nickname == "" || utf8.RuneCountInString(nickname) > 50 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "账号姓名不能为空且不能超过50个字符"})
 			return
 		}
 		updates["nickname"] = nickname
 	}
 
 	if req.Email != nil {
+		if !validOptionalEmail(strings.TrimSpace(*req.Email)) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "邮箱格式不正确或超过100个字符"})
+			return
+		}
 		updates["email"] = strings.TrimSpace(*req.Email)
 	}
 
 	if req.Phone != nil {
-		phone := strings.TrimSpace(*req.Phone)
+		phone := strings.Join(strings.Fields(*req.Phone), "")
 		if !isValidUserPhone(phone) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "手机号格式需正确"})
 			return
@@ -580,4 +592,15 @@ func (h *UserHandler) MoveUsersToGroup(c *gin.Context) {
 		"code": 0,
 		"msg":  "移动成功",
 	})
+}
+
+func validOptionalEmail(value string) bool {
+	if value == "" {
+		return true
+	}
+	if utf8.RuneCountInString(value) > 100 {
+		return false
+	}
+	address, err := mail.ParseAddress(value)
+	return err == nil && address.Address == value && strings.Contains(value, "@")
 }

@@ -1,7 +1,6 @@
 package service
 
 import (
-	"fmt"
 	"log"
 	"strings"
 	"sync"
@@ -14,7 +13,7 @@ import (
 
 const DownloadTaskQueueTimeout = 10 * time.Minute
 
-var runnableDownloadTaskStatuses = []string{"waiting", "failed"}
+var runnableDownloadTaskStatuses = []string{"waiting"}
 
 // DownloadTaskWorker 驱动下发任务状态推进（waiting/failed -> downloading -> completed）
 type DownloadTaskWorker struct {
@@ -140,14 +139,18 @@ func (w *DownloadTaskWorker) startRunnableTasks() error {
 		if task.Status == "failed" {
 			message = "准备重新下发"
 		}
-		if err := w.db.Model(&model.DownloadTask{}).
+		claim := w.db.Model(&model.DownloadTask{}).
 			Where("id = ? AND status IN ?", task.ID, runnableDownloadTaskStatuses).
 			Updates(map[string]interface{}{
 				"status":   "downloading",
 				"progress": 0,
 				"message":  message,
-			}).Error; err != nil {
-			return err
+			})
+		if claim.Error != nil {
+			return claim.Error
+		}
+		if claim.RowsAffected == 0 {
+			continue
 		}
 
 		w.active[task.DeviceID] = task.ID
@@ -165,27 +168,10 @@ func (w *DownloadTaskWorker) runTask(taskID, deviceID uint) {
 
 	if err := w.transfer.ExecuteDownloadTask(taskID); err != nil {
 		log.Printf("download task %d failed: %v", taskID, err)
-		var task model.DownloadTask
-		queryErr := w.db.First(&task, taskID).Error
-		expired := queryErr == nil && w.hasQueueSlotExpired(task, time.Now())
-		if queryErr == nil && task.Status == "downloading" && !expired && isRetryableDownloadError(err) {
-			if updateErr := w.db.Model(&model.DownloadTask{}).
-				Where("id = ? AND status = ?", taskID, "downloading").
-				UpdateColumns(map[string]interface{}{
-					"status":   "waiting",
-					"progress": 0,
-					"message":  fmt.Sprintf("设备暂不可下发，等待重试：%v", err),
-				}).Error; updateErr != nil {
-				log.Printf("download task %d requeue error: %v", taskID, updateErr)
-			}
-			return
-		}
-		message := err.Error()
-		if expired && isRetryableDownloadError(err) {
-			message = "下发超过10分钟未完成，任务失败"
-		}
+		message := "下发失败，请检查设备连接后重试"
+
 		if updateErr := w.db.Model(&model.DownloadTask{}).
-			Where("id = ?", taskID).
+			Where("id = ? AND status = ?", taskID, "downloading").
 			Updates(map[string]interface{}{
 				"status":  "failed",
 				"message": message,

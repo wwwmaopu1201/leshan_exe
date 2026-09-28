@@ -9,16 +9,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"golang.org/x/text/encoding/simplifiedchinese"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/mysql"
@@ -380,7 +383,7 @@ func (h *SystemHandler) GetServerConfig(c *gin.Context) {
 func (h *SystemHandler) SetServerConfig(c *gin.Context) {
 	var req struct {
 		Key   string `json:"key" binding:"required"`
-		Value string `json:"value" binding:"required"`
+		Value string `json:"value"`
 		Desc  string `json:"desc"`
 	}
 
@@ -389,6 +392,17 @@ func (h *SystemHandler) SetServerConfig(c *gin.Context) {
 		return
 	}
 
+	if req.Key == "shared_folder" && strings.TrimSpace(req.Value) != "" {
+		req.Value = strings.TrimSpace(req.Value)
+		if !filepath.IsAbs(req.Value) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "请输入绝对路径"})
+			return
+		}
+		if strings.ContainsAny(req.Value, "<>\"|?*\x00") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "路径包含非法字符"})
+			return
+		}
+	}
 	config := model.ServerConfig{
 		Key:   req.Key,
 		Value: req.Value,
@@ -406,7 +420,7 @@ func (h *SystemHandler) SetServerConfig(c *gin.Context) {
 		}
 	} else if err == nil {
 		// 更新
-		if err := h.db.Model(&existing).Updates(config).Error; err != nil {
+		if err := h.db.Model(&existing).Updates(map[string]interface{}{"value": req.Value, "desc": req.Desc}).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -457,7 +471,7 @@ func (h *SystemHandler) ExecuteCommand(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"code": 1,
 			"data": gin.H{
-				"output": string(output),
+				"output": decodeCommandOutput(output),
 				"error":  err.Error(),
 			},
 		})
@@ -467,7 +481,7 @@ func (h *SystemHandler) ExecuteCommand(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
-			"output": string(output),
+			"output": decodeCommandOutput(output),
 		},
 	})
 }
@@ -529,7 +543,7 @@ func (h *SystemHandler) PingDevice(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
-			"output":  string(output),
+			"output":  decodeCommandOutput(output),
 			"success": err == nil,
 		},
 	})
@@ -604,8 +618,8 @@ func validateExternalDBConfig(cfg ExternalDBConfig, requireCredential bool) erro
 	if cfg.DBType != "mysql" && cfg.DBType != "mssql" {
 		return errors.New("数据库类型仅支持 mysql 或 mssql")
 	}
-	if cfg.Host == "" {
-		return errors.New("数据库地址不能为空")
+	if cfg.Host == "" || strings.ContainsAny(cfg.Host, " /\\?#@\t\n") {
+		return errors.New("数据库地址不能为空且不能包含空格或URL路径")
 	}
 	if cfg.Port < 1 || cfg.Port > 65535 {
 		return errors.New("数据库端口不合法")
@@ -937,4 +951,15 @@ func (h *SystemHandler) TestExternalDBConnection(c *gin.Context) {
 			"message": "不支持的数据库类型",
 		})
 	}
+}
+
+func decodeCommandOutput(output []byte) string {
+	if utf8.Valid(output) {
+		return string(output)
+	}
+	decoded, err := simplifiedchinese.GBK.NewDecoder().Bytes(output)
+	if err == nil {
+		return string(decoded)
+	}
+	return strings.ToValidUTF8(string(output), "�")
 }

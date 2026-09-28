@@ -19,3 +19,5 @@ func MachineHash() (string, error) {
 	}
 	return hashParts(runtime.GOOS, hostname, username, homeDir), nil
 }
+
+func LegacyMachineHash() (string, error) { return MachineHash() }

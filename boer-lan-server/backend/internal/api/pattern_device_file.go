@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -84,6 +85,11 @@ func (h *PatternHandler) loadAccessibleDeviceForPatternFiles(c *gin.Context, raw
 func (h *PatternHandler) GetDevicePatternFiles(c *gin.Context) {
 	device, ok := h.loadAccessibleDeviceForPatternFiles(c, c.Query("deviceId"))
 	if !ok {
+		return
+	}
+
+	if h.transfer != nil && !h.transfer.IsDeviceConnected(*device) {
+		c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"list": []gin.H{}, "total": 0, "offline": true}, "message": "设备未连接"})
 		return
 	}
 
@@ -495,58 +501,21 @@ func (h *PatternHandler) UploadDeviceFilesToServer(c *gin.Context) {
 	}
 
 	userID := c.GetUint("userId")
-	successCount := 0
-	failedCount := 0
-
+	tasks := make([]model.UploadTask, 0, len(files))
 	for _, file := range files {
-		task := model.UploadTask{
-			DeviceFileID: file.ID,
-			DeviceID:     req.DeviceID,
-			Status:       "uploading",
-			Progress:     5,
-			Message:      "正在从设备回传",
-			OperatorID:   userID,
-		}
-		if err := h.db.Create(&task).Error; err != nil {
-			failedCount++
-			continue
-		}
-
-		renameName := strings.TrimSpace(req.RenameNames[strconv.FormatUint(uint64(file.ID), 10)])
-		pattern, err := h.transfer.UploadPatternFromDeviceWithOptions(device, file, userID, conflictMode, renameName)
+		snapshot, err := json.Marshal(file)
 		if err != nil {
-			_ = h.db.Model(&task).Updates(map[string]interface{}{
-				"status":   "failed",
-				"progress": 0,
-				"message":  "回传失败: " + err.Error(),
-			}).Error
-			failedCount++
-			continue
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "保存回传任务失败"})
+			return
 		}
-
-		patternID := pattern.ID
-		if err := h.db.Model(&task).Updates(map[string]interface{}{
-			"status":     "completed",
-			"progress":   100,
-			"pattern_id": patternID,
-			"message":    "回传完成",
-		}).Error; err != nil {
-			failedCount++
-			continue
-		}
-
-		successCount++
+		tasks = append(tasks, model.UploadTask{DeviceFileID: file.ID, DeviceID: device.ID, Status: "waiting", Message: "等待回传", OperatorID: userID,
+			ConflictMode: string(conflictMode), TargetName: strings.TrimSpace(req.RenameNames[strconv.FormatUint(uint64(file.ID), 10)]), FileSnapshot: string(snapshot)})
 	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"code": 0,
-		"data": gin.H{
-			"total":   len(files),
-			"success": successCount,
-			"failed":  failedCount,
-		},
-		"message": "success",
-	})
+	if err := h.db.Create(&tasks).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "保存回传任务失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"total": len(tasks), "queued": len(tasks)}, "message": "已加入上传队列"})
 }
 
 func (h *PatternHandler) resolveUploadDeviceFiles(deviceID uint, fileIDs []uint, snapshots []UploadDeviceFileSnapshot) ([]model.DevicePatternFile, error) {
@@ -756,6 +725,9 @@ func (h *PatternHandler) GetUploadQueue(c *gin.Context) {
 	list := make([]gin.H, 0, len(tasks))
 	for _, t := range tasks {
 		file := fileMap[t.DeviceFileID]
+		if file.FileName == "" && t.FileSnapshot != "" {
+			_ = json.Unmarshal([]byte(t.FileSnapshot), &file)
+		}
 		device := deviceMap[t.DeviceID]
 
 		var patternID uint
@@ -826,15 +798,19 @@ func (h *PatternHandler) updateUploadTaskStatus(c *gin.Context, id string, allow
 	if nextStatus == "waiting" && task.Progress < 100 {
 		updates["progress"] = 0
 	}
-	if err := h.db.Model(&task).Updates(updates).Error; err != nil {
+	result := h.db.Model(&task).Where("status IN ?", allowedCurrent).Updates(updates)
+	if result.Error != nil {
 		return http.StatusInternalServerError, "更新上传任务失败"
+	}
+	if result.RowsAffected == 0 {
+		return http.StatusConflict, "任务状态已改变，请刷新后重试"
 	}
 
 	return http.StatusOK, "success"
 }
 
 func (h *PatternHandler) PauseUploadTask(c *gin.Context) {
-	statusCode, message := h.updateUploadTaskStatus(c, c.Param("id"), []string{"waiting", "uploading"}, "paused", "任务已暂停")
+	statusCode, message := h.updateUploadTaskStatus(c, c.Param("id"), []string{"waiting"}, "paused", "任务已暂停")
 	if statusCode != http.StatusOK {
 		c.JSON(statusCode, gin.H{"code": statusCode, "message": message})
 		return
@@ -852,7 +828,7 @@ func (h *PatternHandler) ResumeUploadTask(c *gin.Context) {
 }
 
 func (h *PatternHandler) CancelUploadTask(c *gin.Context) {
-	statusCode, message := h.updateUploadTaskStatus(c, c.Param("id"), []string{"waiting", "uploading", "paused"}, "canceled", "任务已取消")
+	statusCode, message := h.updateUploadTaskStatus(c, c.Param("id"), []string{"waiting", "paused"}, "canceled", "任务已取消")
 	if statusCode != http.StatusOK {
 		c.JSON(statusCode, gin.H{"code": statusCode, "message": message})
 		return

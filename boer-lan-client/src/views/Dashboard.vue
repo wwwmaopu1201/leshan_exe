@@ -86,7 +86,7 @@
 
           <el-card shadow="never" class="board-card board-card--utilization">
             <div slot="header" class="board-card__header">
-              <span class="board-card__title">设备使用率</span>
+              <span class="board-card__title" :title="$translateApiMessage('当天使用率为加工时长除以开机时长；平均使用率为近7天每日使用率的平均值')">设备使用率</span>
             </div>
 
             <div class="utilization-panel">
@@ -163,6 +163,9 @@ export default {
         runningProcessingTrend: [],
         utilizationTrend: []
       },
+      refreshTimer: null,
+      lastDashboardParams: {},
+      refreshing: false,
       charts: {}
     }
   },
@@ -219,12 +222,29 @@ export default {
   mounted() {
     window.addEventListener('resize', this.handleResize)
     this.fetchDeviceTree()
+    this.refreshTimer = setInterval(() => this.refreshCurrentScope(), 5000)
+    window.addEventListener('online', this.refreshCurrentScope)
   },
   beforeDestroy() {
+    clearInterval(this.refreshTimer)
+    window.removeEventListener('online', this.refreshCurrentScope)
     window.removeEventListener('resize', this.handleResize)
     Object.values(this.charts).forEach(chart => chart && chart.dispose())
   },
   methods: {
+    async refreshCurrentScope() {
+      if (this.refreshing) return
+      this.refreshing = true
+      try {
+        await this.loadDashboardData(this.lastDashboardParams)
+        if (this.treeScope?.deviceId) {
+          const response = await getDeviceTree()
+          this.deviceTree = this.attachNodeKeys(response.data || [])
+          const node = this.findNodeByKey(`device-${this.treeScope.deviceId}`)
+          if (node) this.selectedScope.status = node.status
+        }
+      } finally { this.refreshing = false }
+    },
     toNumber(value) {
       const num = Number(value)
       return Number.isFinite(num) ? num : 0
@@ -308,6 +328,7 @@ export default {
       this.loadDashboardData({})
     },
     async loadDashboardData(params = {}) {
+      this.lastDashboardParams = { ...params }
       try {
         const res = await getDashboardData(params)
         if (res.code === 0) {
@@ -444,7 +465,7 @@ export default {
         },
         series: [
           {
-            name: '运行时长',
+            name: this.$translateApiMessage('运行时长'),
             type: 'line',
             smooth: true,
             symbol: 'circle',
@@ -454,7 +475,7 @@ export default {
             itemStyle: { color: '#6a9dff' }
           },
           {
-            name: '加工时长',
+            name: this.$translateApiMessage('加工时长'),
             type: 'line',
             smooth: true,
             symbol: 'circle',
@@ -479,7 +500,7 @@ export default {
           trigger: 'axis',
           formatter: params => {
             const item = Array.isArray(params) ? params[0] : params
-            return `${item?.axisValue || ''}<br />设备使用率：${this.formatPercent(item?.data || 0)}`
+            return `${item?.axisValue || ''}<br />${this.$translateApiMessage('设备使用率')}：${this.formatPercent(item?.data || 0)}`
           }
         },
         grid: { left: 18, right: 12, top: 16, bottom: 16, containLabel: true },
