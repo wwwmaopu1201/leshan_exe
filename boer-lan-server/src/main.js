@@ -99,7 +99,7 @@ function renderBootMessage(message) {
 }
 
 // 等待后端就绪
-async function waitForBackend(retries = 30, options = {}) {
+async function waitForBackend(retries = 180, options = {}) {
   const { showAlert = true } = options
   for (let i = 0; i < retries; i++) {
     try {
@@ -132,7 +132,7 @@ async function initApp() {
   renderBootMessage(translateApiMessage('正在准备服务端...'))
   await initRequestBaseURL()
 
-  const backendReady = await waitForBackend(import.meta.env.PROD ? 30 : 10, {
+  const backendReady = await waitForBackend(import.meta.env.PROD ? 180 : 10, {
     showAlert: import.meta.env.PROD
   })
   if (!backendReady) {

@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -233,7 +235,6 @@ func main() {
 
 	// Start server
 	addr := fmt.Sprintf(":%d", config.Server.Port)
-	log.Printf("Server starting on %s", addr)
 	httpServer := &http.Server{
 		Addr:              addr,
 		Handler:           r,
@@ -242,9 +243,28 @@ func main() {
 		WriteTimeout:      30 * time.Minute,
 		IdleTimeout:       5 * time.Minute,
 	}
-	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatalf("Failed to listen on %s: %v", addr, err)
+	}
+	log.Printf("Server listening on %s; production history repair will run in background", addr)
+	if err := serveHTTPWithProductionBackfill(httpServer, listener, db); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Failed to start server: %v", err)
 	}
+}
+
+func serveHTTPWithProductionBackfill(server *http.Server, listener net.Listener, database *gorm.DB) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		service.BackfillProductionDerivedData(database.WithContext(ctx))
+	}()
+	defer func() {
+		cancel()
+		<-done
+	}()
+	return server.Serve(listener)
 }
 
 func applyServerConfigOverrides() {
@@ -460,8 +480,7 @@ func initDB() {
 	repairLegacyDeviceData(db)
 	log.Println("Database startup: backfilling employee groups")
 	backfillEmployeeGroupIDs(db)
-	log.Println("Database startup: backfilling production derived data")
-	service.BackfillProductionDerivedData(db)
+	log.Println("Database startup: production derived data backfill deferred until HTTP startup")
 
 	log.Println("Database connected and migrated successfully")
 }

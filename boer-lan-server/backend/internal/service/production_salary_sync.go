@@ -166,14 +166,24 @@ func (dc *DeviceConnection) syncProductionSnapshot(snapshot productionSnapshot) 
 func BackfillProductionDerivedData(db *gorm.DB) {
 	const batchSize = 200
 	var lastID uint
+	var maxID uint
+	started := time.Now()
+	if err := db.Model(&model.ProductionRecord{}).Select("COALESCE(MAX(id), 0)").Scan(&maxID).Error; err != nil {
+		log.Printf("Skip production backfill: %v", err)
+		return
+	}
+	log.Printf("Production backfill started in background: max_id=%d", maxID)
 	updatedCount := 0
 	salaryBackfilled := 0
+	processedCount := 0
+	skippedCount := 0
+	lastProgress := started
 
 	for {
 		var records []model.ProductionRecord
 		if err := db.
 			Order("id ASC").
-			Where("id > ?", lastID).
+			Where("id > ? AND id <= ?", lastID, maxID).
 			Limit(batchSize).
 			Find(&records).Error; err != nil {
 			log.Printf("Skip production backfill: %v", err)
@@ -184,26 +194,34 @@ func BackfillProductionDerivedData(db *gorm.DB) {
 		}
 
 		for i := range records {
+			if err := db.Statement.Context.Err(); err != nil {
+				log.Printf("Production backfill stopped: %v", err)
+				return
+			}
 			record := records[i]
+			processedCount++
 			changed, salaryCreated, err := backfillSingleProductionRecord(db, &record)
 			if err != nil {
-				log.Printf("Skip production record backfill id=%d: %v", record.ID, err)
-				continue
+				skippedCount++
+				log.Printf("Skip production record backfill id=%d device_id=%d: %v", record.ID, record.DeviceID, err)
+			} else {
+				if changed {
+					updatedCount++
+				}
+				if salaryCreated {
+					salaryBackfilled++
+				}
 			}
-			if changed {
-				updatedCount++
-			}
-			if salaryCreated {
-				salaryBackfilled++
+			if time.Since(lastProgress) >= 5*time.Second {
+				log.Printf("Production backfill progress: processed=%d last_id=%d max_id=%d updated=%d salary_created=%d skipped=%d elapsed=%s", processedCount, record.ID, maxID, updatedCount, salaryBackfilled, skippedCount, time.Since(started))
+				lastProgress = time.Now()
 			}
 		}
 
 		lastID = records[len(records)-1].ID
 	}
 
-	if updatedCount > 0 || salaryBackfilled > 0 {
-		log.Printf("Production derived data backfilled: updated=%d salary_created=%d", updatedCount, salaryBackfilled)
-	}
+	log.Printf("Production backfill completed: processed=%d updated=%d salary_created=%d skipped=%d elapsed=%s", processedCount, updatedCount, salaryBackfilled, skippedCount, time.Since(started))
 }
 
 func backfillSingleProductionRecord(db *gorm.DB, record *model.ProductionRecord) (bool, bool, error) {
@@ -214,8 +232,9 @@ func backfillSingleProductionRecord(db *gorm.DB, record *model.ProductionRecord)
 	changed := false
 	salaryCreated := false
 	err := db.Transaction(func(tx *gorm.DB) error {
-		device, err := loadProductionDevice(tx, record.DeviceID)
-		if err != nil {
+		// 历史生产记录可能关联已归档的设备，仍应保留并补全其历史数据。
+		var device model.Device
+		if err := tx.Unscoped().First(&device, record.DeviceID).Error; err != nil {
 			return err
 		}
 

@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-const Current = "1.0.32"
+const Current = "1.0.33"
 
 func Resolve() string {
 	if envVersion := Normalize(os.Getenv("APP_VERSION")); envVersion != "" {

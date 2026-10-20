@@ -3,7 +3,10 @@ package main
 import (
 	"bytes"
 	"log"
+	"net"
+	"net/http"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -65,6 +68,68 @@ func TestEnsureDeviceIdentityIndexesOnRestart(t *testing.T) {
 				t.Fatalf("unexpected database errors: %s", output.String())
 			}
 		})
+	}
+}
+
+func TestHTTPReadyWhileProductionBackfillIsBlocked(t *testing.T) {
+	database, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "history.db")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	if err := database.AutoMigrate(&model.ProductionRecord{}); err != nil {
+		t.Fatal(err)
+	}
+	blocked, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	if err := database.Callback().Query().Before("gorm:query").Register("test:slow_history", func(tx *gorm.DB) {
+		if tx.Statement.Table == "production_records" {
+			once.Do(func() {
+				close(blocked)
+				<-release
+			})
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})}
+	finished := make(chan error, 1)
+	go func() { finished <- serveHTTPWithProductionBackfill(server, listener, database) }()
+	t.Cleanup(func() {
+		close(release)
+		_ = server.Close()
+		select {
+		case err := <-finished:
+			if err != http.ErrServerClosed {
+				t.Errorf("serve: %v", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Error("background backfill did not stop with server")
+		}
+	})
+	select {
+	case <-blocked:
+	case <-time.After(5 * time.Second):
+		t.Fatal("backfill did not start")
+	}
+	client := &http.Client{Timeout: time.Second}
+	response, err := client.Get("http://" + listener.Addr().String() + "/api/healthz")
+	if err != nil {
+		t.Fatalf("HTTP must be ready before history repair completes: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("health status: %d", response.StatusCode)
 	}
 }
 

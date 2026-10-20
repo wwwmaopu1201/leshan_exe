@@ -1,6 +1,7 @@
 package service
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -41,6 +42,59 @@ func TestComputeProductionSourceKeyIgnoresProtocolUserID(t *testing.T) {
 	}
 	if keyOld != keyNew {
 		t.Fatalf("expected same source key for old/new production payload, got old=%q new=%q", keyOld, keyNew)
+	}
+}
+
+func TestBackfillPreservesHistoryForArchivedAndMissingDevices(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "history.db")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqlDB.Close()
+	if err := db.AutoMigrate(&model.Device{}, &model.Employee{}, &model.Pattern{}, &model.DevicePatternFile{}, &model.ProductionRecord{}, &model.SalaryRecord{}); err != nil {
+		t.Fatal(err)
+	}
+	employee := model.Employee{Code: "E1", Name: "历史员工"}
+	if err := db.Create(&employee).Error; err != nil {
+		t.Fatal(err)
+	}
+	device := model.Device{Code: "D1", Name: "历史设备", EmployeeCode: employee.Code}
+	if err := db.Create(&device).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Delete(&device).Error; err != nil {
+		t.Fatal(err)
+	}
+	records := []model.ProductionRecord{
+		{DeviceID: device.ID + 100, Pieces: 1, SourceKey: "missing-device"},
+		{DeviceID: device.ID, Pieces: 2, UnitPrice: 3, RecordDate: time.Now(), SourceKey: "archived-device"},
+	}
+	if err := db.Create(&records).Error; err != nil {
+		t.Fatal(err)
+	}
+	// 缺失设备的记录不能阻止后续补全，重复运行不能重复生成工资。
+	BackfillProductionDerivedData(db)
+	BackfillProductionDerivedData(db)
+	var salary model.SalaryRecord
+	if err := db.Where("source_production_id = ?", records[1].ID).First(&salary).Error; err != nil {
+		t.Fatal(err)
+	}
+	if salary.EmployeeID != employee.ID || salary.TotalAmount != 6 {
+		t.Fatalf("incorrect historical salary: %+v", salary)
+	}
+	var productionCount, salaryCount int64
+	if err := db.Model(&model.ProductionRecord{}).Count(&productionCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&model.SalaryRecord{}).Count(&salaryCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if productionCount != 2 || salaryCount != 1 {
+		t.Fatalf("history must be preserved without duplicates: production=%d salary=%d", productionCount, salaryCount)
 	}
 }
 
