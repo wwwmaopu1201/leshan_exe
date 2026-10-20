@@ -382,7 +382,7 @@ func initDB() {
 	switch config.Database.Type {
 	case "sqlite":
 		// 确保数据目录存在
-		dbDir := config.Database.Path[:len(config.Database.Path)-len("/boer-lan.db")]
+		dbDir := filepath.Dir(config.Database.Path)
 		if err := os.MkdirAll(dbDir, 0755); err != nil {
 			log.Fatalf("Failed to create data directory: %v", err)
 		}
@@ -417,7 +417,7 @@ func initDB() {
 	}
 
 	// Auto migrate
-	if err := db.AutoMigrate(
+	models := []interface{}{
 		&model.Group{},
 		&model.Role{},
 		&model.User{},
@@ -440,15 +440,27 @@ func initDB() {
 		&model.LoginLog{},
 		&model.ServerConfig{},
 		&model.DebugLog{},
-	); err != nil {
-		log.Fatalf("Failed to auto migrate: %v", err)
 	}
-	ensureDeviceIdentityIndexes(db)
+	for _, entity := range models {
+		started := time.Now()
+		log.Printf("Database migration starting: %T", entity)
+		if err := db.AutoMigrate(entity); err != nil {
+			log.Fatalf("Failed to auto migrate %T: %v", entity, err)
+		}
+		log.Printf("Database migration completed: %T (%s)", entity, time.Since(started))
+	}
+	if err := ensureDeviceIdentityIndexes(db); err != nil {
+		log.Fatalf("Failed to ensure device identity indexes: %v", err)
+	}
 
 	// Create default data if not exists
+	log.Println("Database startup: initializing default data")
 	initDefaultData(db)
+	log.Println("Database startup: repairing legacy device data")
 	repairLegacyDeviceData(db)
+	log.Println("Database startup: backfilling employee groups")
 	backfillEmployeeGroupIDs(db)
+	log.Println("Database startup: backfilling production derived data")
 	service.BackfillProductionDerivedData(db)
 
 	log.Println("Database connected and migrated successfully")
@@ -642,17 +654,28 @@ func repairLegacyDeviceData(db *gorm.DB) {
 	archiveDuplicatePendingDevices(db)
 }
 
-func ensureDeviceIdentityIndexes(db *gorm.DB) {
+func ensureDeviceIdentityIndexes(db *gorm.DB) error {
 	migrator := db.Migrator()
 	if migrator == nil {
-		return
+		return fmt.Errorf("database migrator is unavailable")
 	}
 
+	// 旧版的设备编号索引可能是唯一索引，重建为当前模型的普通索引。
 	if migrator.HasIndex(&model.Device{}, "idx_devices_code") {
-		_ = migrator.DropIndex(&model.Device{}, "idx_devices_code")
+		if err := migrator.DropIndex(&model.Device{}, "idx_devices_code"); err != nil {
+			return fmt.Errorf("drop legacy device code index: %w", err)
+		}
 	}
-	_ = migrator.CreateIndex(&model.Device{}, "Code")
-	_ = migrator.CreateIndex(&model.Device{}, "MainboardSN")
+	if err := migrator.CreateIndex(&model.Device{}, "Code"); err != nil {
+		return fmt.Errorf("create device code index: %w", err)
+	}
+	// AutoMigrate 通常已经创建了主板索引，重复启动时不能再次创建。
+	if !migrator.HasIndex(&model.Device{}, "MainboardSN") {
+		if err := migrator.CreateIndex(&model.Device{}, "MainboardSN"); err != nil {
+			return fmt.Errorf("create device mainboard index: %w", err)
+		}
+	}
+	return nil
 }
 
 func repairMisdecodedDeviceTextFields(db *gorm.DB) {
