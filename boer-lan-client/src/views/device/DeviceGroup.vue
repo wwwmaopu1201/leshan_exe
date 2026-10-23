@@ -206,6 +206,7 @@
     </el-row>
 
     <el-dialog
+      append-to-body
       :title="groupDialogTitle"
       :visible.sync="showGroupDialog"
       width="400px"
@@ -237,6 +238,7 @@
     </el-dialog>
 
     <el-dialog
+      append-to-body
       title="批量移动设备分组"
       :visible.sync="showMoveDevicesDialog"
       width="420px"
@@ -262,6 +264,7 @@
     </el-dialog>
 
     <el-dialog
+      append-to-body
       title="未分组设备快速分组"
       :visible.sync="showQuickAssignDialog"
       width="420px"

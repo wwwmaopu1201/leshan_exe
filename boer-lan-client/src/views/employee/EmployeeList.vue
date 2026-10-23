@@ -145,6 +145,7 @@
     </el-card>
 
     <el-dialog
+      append-to-body
       :title="editForm.id ? $t('employee.editEmployee') : $t('employee.addEmployee')"
       :visible.sync="showEditDialog"
       width="520px"
@@ -198,6 +199,7 @@
     </el-dialog>
 
     <el-dialog
+      append-to-body
       title="批量导入员工"
       :visible.sync="showImportDialog"
       width="700px"

@@ -84,6 +84,7 @@
     </el-card>
 
     <el-dialog
+      append-to-body
       :title="renameDialog.mode === 'create' ? '新增花型类型' : '修改花型类型'"
       :visible.sync="renameDialog.visible"
       width="420px"

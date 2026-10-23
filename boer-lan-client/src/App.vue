@@ -8,6 +8,8 @@
     >
       <div class="app-scale-shell">
         <div class="app-design-canvas">
+          <!-- Dialogs in this scaled canvas must use append-to-body so their
+               wrappers share the body's stacking context with the modal mask. -->
           <router-view />
         </div>
       </div>

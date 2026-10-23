@@ -239,6 +239,7 @@
     </div>
 
     <el-dialog
+      append-to-body
       title="远程控制确认"
       :visible.sync="controlConfirm.visible"
       width="460px"

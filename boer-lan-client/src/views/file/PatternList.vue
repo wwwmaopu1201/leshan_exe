@@ -325,6 +325,7 @@
     </div>
 
     <el-dialog
+      append-to-body
       title="添加花型文件"
       :visible.sync="showUploadDialog"
       width="820px"
@@ -488,6 +489,7 @@
     </el-dialog>
 
     <el-dialog
+      append-to-body
       title="修改花型文件"
       :visible.sync="showEditDialog"
       width="520px"
@@ -566,6 +568,7 @@
     </el-dialog>
 
     <el-dialog
+      append-to-body
       title="批量修改"
       :visible.sync="showBatchEditDialog"
       width="560px"
@@ -659,6 +662,7 @@
     </el-dialog>
 
     <el-dialog
+      append-to-body
       :title="$t('file.selectDevice')"
       :visible.sync="showDeviceDialog"
       width="600px"
@@ -679,6 +683,7 @@
     </el-dialog>
 
     <el-dialog
+      append-to-body
       title="上传队列"
       :visible.sync="showUploadQueueDialog"
       width="920px"
@@ -760,6 +765,7 @@
     </el-dialog>
 
     <el-dialog
+      append-to-body
       title="同名花型处理"
       :visible.sync="showUploadConflictDialog"
       width="620px"
@@ -803,6 +809,7 @@
     </el-dialog>
 
     <el-dialog
+      append-to-body
       title="花型预览"
       :visible.sync="showPreviewDialog"
       width="600px"
@@ -826,6 +833,7 @@
     </el-dialog>
 
     <el-dialog
+      append-to-body
       :title="quickCreateDialog.mode === 'patternType' ? '新增花型类型' : '新增订单编号'"
       :visible.sync="quickCreateDialog.visible"
       width="420px"

@@ -159,6 +159,7 @@
     </div>
 
     <el-dialog
+      append-to-body
       :title="editForm.id ? $t('device.editDevice') : $t('device.addDevice')"
       :visible.sync="showEditDialog"
       width="620px"
@@ -244,6 +245,7 @@
     </el-dialog>
 
     <el-dialog
+      append-to-body
       title="新增设备类型"
       :visible.sync="showDeviceTypeDialog"
       width="420px"
@@ -267,6 +269,7 @@
     </el-dialog>
 
     <el-dialog
+      append-to-body
       title="新增电控类型"
       :visible.sync="showElectricControlTypeDialog"
       width="420px"
@@ -290,6 +293,7 @@
     </el-dialog>
 
     <el-dialog
+      append-to-body
       :title="$t('device.moveToGroup')"
       :visible.sync="showMoveDialog"
       width="420px"

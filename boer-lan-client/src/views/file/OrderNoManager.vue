@@ -84,6 +84,7 @@
     </el-card>
 
     <el-dialog
+      append-to-body
       :title="renameDialog.mode === 'create' ? '新增订单编号' : '修改订单编号'"
       :visible.sync="renameDialog.visible"
       width="420px"

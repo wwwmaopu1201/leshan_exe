@@ -91,6 +91,7 @@
     </el-card>
 
     <el-dialog
+      append-to-body
       :title="renameDialogTitle"
       :visible.sync="renameDialog.visible"
       width="420px"
