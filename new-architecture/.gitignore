@@ -1,0 +1,12 @@
+/server/data/
+/server/build/
+/server/build-windows/
+/server/dist-windows/
+/client/build/
+/client/build-windows/
+/client/dist-windows/
+.DS_Store
+/client/build-online-update/
+/server/build-online-update/
+
+/dist-windows-installers/

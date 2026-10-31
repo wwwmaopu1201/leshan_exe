@@ -1,0 +1,29 @@
+<RCC>
+  <qresource prefix="/">
+    <file alias="theme.qss">../server/assets/theme.qss</file>
+    <file alias="i18n-en.json">../server/assets/i18n-en.json</file>
+    <file alias="i18n-qt-en.json">../server/assets/i18n-qt-en.json</file>
+    <file alias="client-i18n-en.json">assets/i18n-client-en.json</file>
+    <file alias="client-theme.qss">assets/client-theme.qss</file>
+    <file alias="login-background-client.png">../../boer-lan-client/src/assets/images/login-background-client.png</file>
+    <file alias="client-logo.png">../../boer-lan-client/src/assets/images/logo.png</file>
+    <file alias="client-app-icon.png">assets/client-app-icon.png</file>
+    <file alias="default-avatar.svg">../../boer-lan-client/src/assets/images/default-avatar.svg</file>
+    <file alias="client-manual.pdf">assets/manuals/client-user-manual.pdf</file>
+    <file alias="contact-phone.svg">assets/contact-phone.svg</file>
+    <file alias="contact-mail.svg">assets/contact-mail.svg</file>
+    <file alias="contact-clock.svg">assets/contact-clock.svg</file>
+    <file alias="contact-location.svg">assets/contact-location.svg</file>
+    <file alias="app-icon.png">../server/assets/app-icon.png</file>
+    <file alias="arrow-down.svg">../server/assets/arrow-down.svg</file>
+    <file alias="language-switch.svg">../server/assets/language-switch.svg</file>
+    <file alias="calendar.svg">../server/assets/calendar.svg</file>
+    <file alias="folder.svg">../server/assets/folder.svg</file>
+    <file alias="monitor.svg">../server/assets/monitor.svg</file>
+    <file alias="eye.svg">../server/assets/eye.svg</file>
+    <file alias="eye-off.svg">../server/assets/eye-off.svg</file>
+    <file alias="element-icons.ttf">../server/assets/element-icons.ttf</file>
+    <file alias="spin-up.svg">../server/assets/spin-up.svg</file>
+    <file alias="spin-down.svg">../server/assets/spin-down.svg</file>
+  </qresource>
+</RCC>

@@ -1,0 +1,20 @@
+<RCC>
+  <qresource prefix="/">
+    <file alias="theme.qss">assets/theme.qss</file>
+    <file alias="i18n-en.json">assets/i18n-en.json</file>
+    <file alias="i18n-qt-en.json">assets/i18n-qt-en.json</file>
+    <file alias="logo-server.png">assets/logo-server.png</file>
+    <file alias="app-icon.png">assets/app-icon.png</file>
+    <file alias="login-background-server.png">assets/login-background-server.png</file>
+    <file alias="arrow-down.svg">assets/arrow-down.svg</file>
+    <file alias="language-switch.svg">assets/language-switch.svg</file>
+    <file alias="calendar.svg">assets/calendar.svg</file>
+    <file alias="folder.svg">assets/folder.svg</file>
+    <file alias="monitor.svg">assets/monitor.svg</file>
+    <file alias="eye.svg">assets/eye.svg</file>
+    <file alias="eye-off.svg">assets/eye-off.svg</file>
+    <file alias="element-icons.ttf">assets/element-icons.ttf</file>
+    <file alias="spin-up.svg">assets/spin-up.svg</file>
+    <file alias="spin-down.svg">assets/spin-down.svg</file>
+  </qresource>
+</RCC>

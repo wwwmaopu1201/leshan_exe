@@ -1,0 +1,112 @@
+QMainWindow#clientWindow, QWidget#clientShell, QWidget#clientPage { background: #eef2f6; color: #4c5768; }
+QWidget#clientLogin { background: #7bb8f2; }
+QFrame#clientLoginCard { background: rgba(255,255,255,248); border: 1px solid rgba(255,255,255,235); border-radius: 12px; }
+QLabel#clientLoginTitle { color: #243852; font-size: 23px; font-weight: 700; }
+QLabel#clientLoginBrand { color: white; font-size: 14px; font-weight: 600; }
+QLabel#clientLoginFooter { color: #e4f3ff; font-size: 11px; }
+QLineEdit#clientLoginInput { min-height: 34px; border: 1px solid #d8e3ef; border-radius: 5px; background: white; padding: 0 14px; font-size: 13px; }
+QLineEdit#clientLoginInput:focus { border-color: #409eff; }
+QListView#clientLoginCompleter { background: white; border: 1px solid #d8e3ef; border-radius: 3px; outline: 0; selection-background-color: #ecf5ff; selection-color: #3388ff; }
+QListView#clientLoginCompleter::item { min-height: 36px; padding: 0 14px; color: #4c5768; border: 0; }
+QListView#clientLoginCompleter::item:hover, QListView#clientLoginCompleter::item:selected { background: #ecf5ff; color: #3388ff; }
+QPushButton#clientLoginSubmit { min-height: 36px; border: 0; border-radius: 5px; background: #409eff; color: white; font-size: 14px; font-weight: 600; }
+QPushButton#clientLoginSubmit:hover { background: #66b1ff; }
+QPushButton#clientLoginSubmit:disabled { background: #a3cffd; }
+QPushButton#clientLanguage { color: white; border: 1px solid rgba(255,255,255,140); border-radius: 4px; background: rgba(255,255,255,30); min-height: 29px; }
+QPushButton#clientLanguage:hover { background: rgba(255,255,255,60); }
+QFrame#clientTopbar { background: #2e8af4; border: 0; }
+QLabel#clientTopTitle { color: white; font-size: 13px; font-weight: 600; }
+QLabel#clientServerTag { color: #edf6ff; background: rgba(255,255,255,34); border-radius: 3px; padding: 4px 10px; }
+QPushButton#clientTopButton { color: white; border: 1px solid rgba(255,255,255,95); background: rgba(255,255,255,28); border-radius: 3px; }
+QPushButton#clientTopButton:hover { background: rgba(255,255,255,60); }
+QPushButton#clientUserButton { color: white; border: 1px solid rgba(255,255,255,95); background: rgba(255,255,255,28); border-radius: 3px; }
+QPushButton#clientUserButton:hover { background: rgba(255,255,255,60); }
+QFrame#clientSidebar { background: white; border: 0; border-right: 1px solid #e5eaf1; }
+QTreeWidget#clientNavigation { background: white; border: 0; outline: 0; color: #4c5768; font-size: 12px; }
+QTreeWidget#clientNavigation::item { min-height: 37px; padding: 3px 9px; border: 0; }
+QTreeWidget#clientNavigation::item:hover { background: #f1f7ff; color: #3388ff; }
+QTreeWidget#clientNavigation::item:selected { background: #e9f3ff; color: #3388ff; }
+QFrame#clientCard { background: white; border: 1px solid #e6ecf3; border-radius: 3px; }
+QLabel#clientPageTitle { color: #303d4d; font-size: 18px; font-weight: 600; }
+QLabel#clientSectionTitle { color: #344358; font-size: 14px; font-weight: 600; }
+QLabel#clientMuted { color: #909cac; font-size: 12px; }
+QLabel#clientMetric { color: #33465f; font-size: 24px; font-weight: 600; }
+QLabel#clientToast[error="false"] { background: #f0f9eb; color: #5a9f30; border: 1px solid #c2e7b0; border-radius: 3px; padding: 8px 18px; }
+QLabel#clientToast[error="true"] { background: #fef0f0; color: #e65757; border: 1px solid #fac3c3; border-radius: 3px; padding: 8px 18px; }
+QLabel#clientStatusOk { color: #67c23a; background: #f0f9eb; border: 1px solid #c2e7b0; border-radius: 3px; padding: 3px 8px; }
+QLabel#clientStatusWarn { color: #e6a23c; background: #fdf6ec; border: 1px solid #f5dab1; border-radius: 3px; padding: 3px 8px; }
+QLabel#clientStatusBad { color: #f56c6c; background: #fef0f0; border: 1px solid #fbc4c4; border-radius: 3px; padding: 3px 8px; }
+QLabel#clientStatusNeutral { color: #909399; background: #f4f4f5; border: 1px solid #d3d4d6; border-radius: 3px; padding: 3px 8px; }
+QTableWidget#clientTable { border: 1px solid #e8edf4; gridline-color: #ebeef5; background: white; alternate-background-color: #fbfcfe; selection-background-color: #eaf3ff; selection-color: #303d4d; }
+QTableWidget#clientTable::item:focus { outline: 0; }
+QTableWidget#clientFrozenActions { border: 1px solid #e8edf4; border-left: 1px solid #dfe6ee; gridline-color: #ebeef5; background: white; alternate-background-color: #fbfcfe; }
+QPushButton#clientLink { border: 0; color: #409eff; background: transparent; padding: 2px 4px; }
+QPushButton#clientLink:hover { color: #66b1ff; }
+QPushButton#clientDangerLink { border: 0; color: #f56c6c; background: transparent; padding: 2px 4px; }
+QPushButton#clientDangerLink:hover { color: #f78989; }
+QPushButton#successButton { background: #67c23a; color: white; border-color: #67c23a; }
+QPushButton#successButton:hover { background: #85ce61; border-color: #85ce61; }
+QFrame#clientFilter { background: white; border: 1px solid #e6ecf3; border-radius: 3px; }
+QMainWindow#clientWindow QComboBox { min-height: 26px; padding: 0 10px; border: 1px solid #d7dde6; border-radius: 3px; background: white; color: #4c5768; }
+QMainWindow#clientWindow QComboBox:focus { border-color: #409eff; }
+QMainWindow#clientWindow QComboBox::drop-down { border: 0; width: 26px; background: transparent; }
+QMainWindow#clientWindow QComboBox::down-arrow { image: url(:/arrow-down.svg); width: 12px; height: 8px; }
+QMainWindow#clientWindow QComboBox QAbstractItemView { background: white; border: 1px solid #dfe6ee; outline: 0; padding: 0; selection-background-color: #ecf5ff; selection-color: #409eff; }
+QMainWindow#clientWindow QComboBox QAbstractItemView::item { min-height: 28px; padding: 0 10px; }
+QDialog#editorDialog QComboBox { min-height: 34px; }
+QDialog#editorDialog QComboBox QAbstractItemView::item { min-height: 36px; }
+QFrame#clientFilter QLineEdit { min-height: 26px; }
+QFrame#clientPatternDrop { background: #f8fbff; border: 1px dashed #a9c8ed; border-radius: 5px; }
+QFrame#clientDialog { background: white; border: 1px solid #e6ecf3; border-radius: 3px; }
+QDialog#editorDialog, QScrollArea#dialogScroll, QScrollArea#dialogScroll QWidget#qt_scrollarea_viewport, QWidget#dialogContent { background: white; }
+QFileDialog#clientFileDialog { background: #ffffff; color: #4c5768; }
+QFileDialog#clientFileDialog QTreeView, QFileDialog#clientFileDialog QListView { background: white; alternate-background-color: #f9fbfe; border: 1px solid #e6ecf3; selection-background-color: #eaf3ff; selection-color: #303d4d; }
+QFileDialog#clientFileDialog QLineEdit, QFileDialog#clientFileDialog QComboBox { min-height: 26px; border: 1px solid #d7dde6; border-radius: 3px; background: white; }
+QFileDialog#clientFileDialog QToolButton { background: white; border: 1px solid transparent; border-radius: 3px; min-width: 25px; min-height: 25px; }
+QFileDialog#clientFileDialog QToolButton:hover { background: #ecf5ff; border-color: #c9e2ff; }
+QFileDialog#clientFileDialog QPushButton#primaryButton { background: #409eff; border: 1px solid #409eff; color: white; border-radius: 3px; min-height: 28px; }
+QFileDialog#clientFileDialog QPushButton#primaryButton:hover { background: #66b1ff; }
+QToolBox { background: white; border: 0; }
+QToolBox::tab { background: #fff; border-bottom: 1px solid #ebeef5; min-height: 27px; padding: 3px 9px; color: #4c5768; }
+QToolBox::tab:selected { color: #409eff; font-weight: 600; }
+QProgressBar#clientProgress { border: 0; border-radius: 8px; background: #e9eef5; color: #fff; text-align: center; font-size: 10px; }
+QProgressBar#clientProgress::chunk { border-radius: 8px; background: #409eff; }
+QFrame#dashboardBlue { background: #2498f2; border-radius: 5px; }
+QFrame#dashboardGreen { background: #37c900; border-radius: 5px; }
+QFrame#dashboardOrange { background: #ffa009; border-radius: 5px; }
+QFrame#dashboardCyan { background: #1fc0ca; border-radius: 5px; }
+QLabel#dashboardCardTitle { color: white; font-size: 13px; font-weight: 600; }
+QLabel#dashboardCardLabel { color: #f2f8ff; font-size: 11px; }
+QLabel#dashboardCardValue { color: white; font-size: 17px; font-weight: 600; }
+QLabel#homeStatusValue { color: #25a6ed; font-size: 24px; font-weight: 600; }
+QProgressBar#rankingHigh, QProgressBar#rankingLow { border: 0; border-radius: 4px; background: #e9edf2; }
+QProgressBar#rankingHigh::chunk { border-radius: 4px; background: #29c856; }
+QProgressBar#rankingLow::chunk { border-radius: 4px; background: #f34b57; }
+QFrame#queueTotal { background: #f3f7ff; border: 1px solid #dce5fb; border-radius: 18px; }
+QFrame#queueWaiting { background: #fffaf0; border: 1px solid #f3e5c7; border-radius: 18px; }
+QFrame#queueRunning { background: #f1f5ff; border: 1px solid #dce5fb; border-radius: 18px; }
+QFrame#queuePaused { background: #f6f8fb; border: 1px solid #dfe5ef; border-radius: 18px; }
+QFrame#queueCompleted { background: #effbf5; border: 1px solid #d5efe2; border-radius: 18px; }
+QFrame#queueFailed { background: #fff4f4; border: 1px solid #f5dddd; border-radius: 18px; }
+QLabel#queueValue { color: #243650; font-size: 28px; font-weight: 600; }
+QFrame#queueNote { background: #f2f6ff; border: 0; border-radius: 14px; }
+QLabel#profileValue { color: #31445f; font-size: 12px; font-weight: 600; }
+QPushButton#profilePasswordAvatar { background: #f4f8fe; border: 2px solid #d7e8fa; border-radius: 48px; padding: 2px; }
+QPushButton#profilePasswordAvatar:hover { border-color: #409eff; background: #eaf4ff; }
+QFrame#contactItem { background: #f5f8fc; border: 0; border-radius: 17px; }
+QLabel#contactIcon0 { background: #2861df; border-radius: 15px; }
+QLabel#contactIcon1 { background: #27ab77; border-radius: 15px; }
+QLabel#contactIcon2 { background: #e99b1c; border-radius: 15px; }
+QLabel#contactIcon3 { background: #1ca4ca; border-radius: 15px; }
+QPushButton#contactFaqQuestion { background: white; border: 0; border-bottom: 1px solid #e7edf5; border-radius: 0; text-align: left; color: #44546a; min-height: 38px; }
+QPushButton#contactFaqQuestion:hover, QPushButton#contactFaqQuestion:checked { color: #409eff; background: #f7faff; }
+QLabel#contactFaqAnswer { background: #f7faff; color: #67788e; padding: 12px 16px; }
+QPushButton#clientLink:disabled, QPushButton#clientDangerLink:disabled { color: #c0c4cc; background: transparent; }
+
+/* Password form: keep a readable field width on every native Qt platform. */
+QLineEdit#profilePasswordInput { min-height: 38px; max-height: 38px; padding: 0 12px; border-radius: 4px; font-size: 13px; }
+QPushButton[passwordAction="true"] { min-width: 72px; height: 34px; min-height: 34px; max-height: 34px; padding: 0 14px; }
+
+/* Personal center is a continuous settings canvas, not a card on grey space. */
+QWidget#clientPage[personalCenter="true"], QWidget#personalCenterBody { background:white; }
+QFrame#clientCard[passwordPanel="true"] { background:transparent; border:0; border-radius:0; }

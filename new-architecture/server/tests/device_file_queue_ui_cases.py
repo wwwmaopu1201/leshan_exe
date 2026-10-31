@@ -1,0 +1,47 @@
+"""Working device, paused/waiting queue, file queries, live disconnect and long metadata."""
+import os
+from pathlib import Path
+import socket
+import struct
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+ready=threading.Event();stop=threading.Event();errors=[];marker=Path(tempfile.mkdtemp(prefix='file-queue-ui-',dir='/private/tmp/boer-qt-customer'))/'disconnect'
+def frame(kind,no,payload=b''):
+ raw=b'DT'+bytes(11)+struct.pack('>HHBBI',kind,no,1,1,len(payload)+2)+payload;crc=65535
+ for byte in raw:
+  crc^=byte
+  for _ in range(8):crc=(crc>>1)^(0xa001 if crc&1 else 0)
+ return raw+struct.pack('>H',crc)
+def exact(peer,n):
+ raw=b''
+ while len(raw)<n:
+  value=peer.recv(n-len(raw))
+  if not value:raise EOFError()
+  raw+=value
+ return raw
+def read(peer):
+ head=exact(peer,23);return head+exact(peer,struct.unpack('>I',head[19:23])[0])
+def device():
+ try:
+  with socket.create_connection(('127.0.0.1',int(sys.argv[2])),timeout=5) as peer:
+   read(peer);peer.sendall(frame(0xb2a,2));read(peer);peer.sendall(frame(0x1302,0x10fa,struct.pack('>II',1,88555)+'队列读取设备'.encode()));peer.sendall(frame(0xb29,0x32,b'\1'));peer.sendall(frame(0x1302,0x107c,struct.pack('>H',2000)));peer.sendall(frame(0xb01,0x1f,struct.pack('>I',12345)));peer.sendall(frame(0xb29,0x33,b'\1'+struct.pack('>H',7)+'监控花型'.encode()));time.sleep(.15);ready.set();peer.settimeout(.2)
+   while not stop.is_set():
+    if marker.exists():return
+    try:packet=read(peer)
+    except socket.timeout:continue
+    kind,no=struct.unpack('>HH',packet[13:17])
+    if kind==0xb2a and no==9:peer.sendall(frame(kind,no,b''.join(struct.pack('>H',77+n)+name.encode('utf-16le').ljust(44,b'\0') for n,name in enumerate(['设备花型A.NTP','设备花型B.NTP','设备花型C.NTP']))))
+    elif kind==0xb2a and no==4:raise AssertionError('download started while the device reports sewing')
+    elif kind==0xb29:peer.sendall(frame(kind,0x32,b'\1'))
+ except Exception as error:
+  if not stop.is_set():errors.append(repr(error))
+  ready.set()
+worker=threading.Thread(target=device,daemon=True);worker.start()
+if not ready.wait(5) or errors:raise RuntimeError(errors or 'DT peer readiness timeout')
+client='/private/tmp/boer-qt-customer/client/boer-qt-client.app/Contents/MacOS/boer-qt-client'
+try:result=subprocess.run([client,'--pattern-regression-test','--server-host','127.0.0.1','--server-port',sys.argv[1]],env=dict(os.environ,BOER_TEST_DEVICE_FILE_QUEUE='1',BOER_TEST_DEVICE_CLOSE_SIGNAL=str(marker)),timeout=60)
+finally:stop.set();worker.join(timeout=2)
+print('DT peer errors:',errors,flush=True);sys.exit(result.returncode if result.returncode else int(bool(errors)))

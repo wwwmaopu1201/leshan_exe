@@ -1,0 +1,18 @@
+server:
+  port: 8088
+
+database:
+  type: sqlite
+  path: ""
+  # For a new MySQL primary database, set type: mysql and fill these fields.
+  # host: 127.0.0.1
+  # port: 3306
+  # username: boer
+  # password: ""
+  # database: boer_lan_qt
+  # charset: utf8mb4
+
+jwt:
+  # Leave secret empty to use the key saved in this Qt database.
+  secret: ""
+  expire: 24
