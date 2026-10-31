@@ -298,7 +298,7 @@ func (dc *DeviceConnection) mergeDeviceRecord(source, target model.Device, reaso
 		return nil
 	}
 
-	return dc.db.Transaction(func(tx *gorm.DB) error {
+	err := dc.db.Transaction(func(tx *gorm.DB) error {
 		updates := make(map[string]interface{})
 		if shouldReplaceDeviceCode(target, source) {
 			updates["code"] = strings.TrimSpace(source.Code)
@@ -345,9 +345,14 @@ func (dc *DeviceConnection) mergeDeviceRecord(source, target model.Device, reaso
 		if err := tx.First(&target, target.ID).Error; err != nil {
 			return err
 		}
-		dc.bindDeviceRecord(target, reason)
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	// Binding writes runtime/log rows through dc.db; do it only after commit.
+	dc.bindDeviceRecord(target, reason)
+	return nil
 }
 
 func reassignDeviceReferences(tx *gorm.DB, sourceID, targetID uint) error {

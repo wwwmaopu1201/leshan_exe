@@ -13,7 +13,7 @@ const logDir = path.join(workspaceDir, 'log')
 fs.mkdirSync(dataDir, { recursive: true })
 fs.mkdirSync(logDir, { recursive: true })
 
-const child = spawn('go', ['run', 'cmd/server/main.go'], {
+const child = spawn('go', ['run', './cmd/server'], {
   cwd: backendDir,
   stdio: 'inherit',
   env: {

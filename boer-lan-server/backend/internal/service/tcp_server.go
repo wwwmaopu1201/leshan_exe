@@ -182,6 +182,9 @@ func (s *TCPServer) offlineChecker() {
 			return
 		case <-ticker.C:
 			now := time.Now()
+			if err := s.reconcileOfflineStatuses(now); err != nil {
+				log.Printf("[TCP] Offline reconciliation failed: %v", err)
+			}
 			for _, dc := range s.connMgr.GetAll() {
 				if now.Sub(dc.lastHeartbeat) > ConnectionIdleTimeout {
 					if dc.shouldCloseAfterIdleProbe(now) {
@@ -235,4 +238,24 @@ func (cm *ConnectionManager) DisconnectCodes(codes []string) {
 			_ = dc.conn.Close()
 		}
 	}
+}
+
+// Revisit persisted states even after their socket has been removed. A recent
+// protocol timestamp protects registration and reconnect grace periods.
+func (s *TCPServer) reconcileOfflineStatuses(now time.Time) error {
+	var devices []model.Device
+	cutoff := now.Add(-ConnectionIdleTimeout - OfflineProbeGrace - ReconnectGracePeriod)
+	if err := s.db.Select("id", "code", "mainboard_sn").Where("status <> ? AND updated_at < ? AND (last_protocol_at < ? OR last_protocol_at IS NULL)", "offline", cutoff, cutoff).Find(&devices).Error; err != nil {
+		return err
+	}
+	for _, device := range devices {
+		if s.connMgr.HasBoundDevice(device.ID, device.Code, device.MainboardSN, nil) {
+			continue
+		}
+		if err := s.db.Model(&model.Device{}).Where("id = ? AND status <> ? AND updated_at < ? AND (last_protocol_at < ? OR last_protocol_at IS NULL)", device.ID, "offline", cutoff, cutoff).Update("status", "offline").Error; err != nil {
+			return err
+		}
+		closeDeviceRuntimeSessions(s.db, device.ID, now, "offline-reconcile")
+	}
+	return nil
 }

@@ -38,7 +38,7 @@ jobs:
         run: |
           (Get-Content go.mod) -replace '^go 1\.21$', 'go 1.20' | Set-Content go.mod
           go version
-          go build -ldflags="-s -w" -o ../src-tauri/backend-server.exe cmd/server/main.go
+          go build -ldflags="-s -w" -o ../src-tauri/backend-server.exe ./cmd/server
 
       - name: Build frontend for Windows 7 shell
         working-directory: boer-lan-server

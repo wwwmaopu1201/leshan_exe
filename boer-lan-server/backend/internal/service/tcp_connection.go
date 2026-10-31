@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"strings"
 	"sync"
@@ -1068,8 +1069,12 @@ func (dc *DeviceConnection) scheduleOfflineTransition() {
 
 		if deviceID > 0 {
 			offlineAt := time.Now()
-			dc.db.Model(&model.Device{}).Where("id = ? AND status != ?", deviceID, "offline").
-				Update("status", "offline")
+			if err := dc.db.Model(&model.Device{}).Where("id = ? AND status != ?", deviceID, "offline").
+				Update("status", "offline").Error; err != nil {
+				log.Printf("[TCP] Offline update failed, will retry: device=%s id=%d err=%v", deviceCode, deviceID, err)
+				dc.scheduleOfflineTransition()
+				return
+			}
 			closeDeviceRuntimeSessions(dc.db, deviceID, offlineAt, "disconnect")
 		}
 		emitTCPLog(dc.db, "info", true, "[TCP] Device disconnected: %s", deviceCode)
