@@ -1,6 +1,8 @@
 package service
 
 import (
+	"boer-lan-server/pkg/sqlitequeue"
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -34,7 +36,9 @@ func emitTCPLog(db *gorm.DB, level string, persist bool, format string, args ...
 		Source:  tcpDebugSource,
 		Message: message,
 	}
-	if err := db.Create(&entry).Error; err != nil {
+	ctx, cancel := context.WithTimeout(sqlitequeue.Priority(context.Background(), -10), time.Second)
+	defer cancel()
+	if err := db.WithContext(ctx).Create(&entry).Error; err != nil {
 		log.Printf("[TCP] failed to persist debug log: %v", err)
 	}
 }

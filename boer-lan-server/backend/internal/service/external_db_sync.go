@@ -1,6 +1,8 @@
 package service
 
 import (
+	"boer-lan-server/pkg/sqlitequeue"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -46,7 +48,7 @@ type ExternalDBSyncService struct {
 
 func NewExternalDBSyncService(db *gorm.DB) *ExternalDBSyncService {
 	return &ExternalDBSyncService{
-		db:     db,
+		db:     db.WithContext(sqlitequeue.Priority(context.Background(), -10)),
 		stopCh: make(chan struct{}),
 	}
 }

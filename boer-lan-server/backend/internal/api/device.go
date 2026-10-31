@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 
 	"boer-lan-server/internal/model"
 	"boer-lan-server/internal/service"
+	"boer-lan-server/pkg/dbretry"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -1324,9 +1326,23 @@ func (h *DeviceHandler) CreateDevice(c *gin.Context) {
 }
 
 func (h *DeviceHandler) UpdateDevice(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	defer cancel()
+	database := h.db.WithContext(ctx)
+	busy := func(err error) bool {
+		if dbretry.IsBusy(err) || (errors.Is(err, context.DeadlineExceeded) && c.Request.Context().Err() == nil) {
+			c.Header("Retry-After", "1")
+			c.JSON(http.StatusServiceUnavailable, gin.H{"code": 503, "message": "数据库繁忙，请稍后重试"})
+			return true
+		}
+		return false
+	}
 	id := c.Param("id")
 	var device model.Device
-	if err := h.db.First(&device, id).Error; err != nil {
+	if err := database.First(&device, id).Error; err != nil {
+		if busy(err) {
+			return
+		}
 		c.JSON(http.StatusNotFound, gin.H{
 			"code":    404,
 			"message": "设备不存在",
@@ -1450,7 +1466,7 @@ func (h *DeviceHandler) UpdateDevice(c *gin.Context) {
 				return
 			}
 			var groupCount int64
-			if err := h.db.Model(&model.Group{}).Where("id = ?", groupID).Count(&groupCount).Error; err != nil {
+			if err := database.Model(&model.Group{}).Where("id = ?", groupID).Count(&groupCount).Error; err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{
 					"code":    500,
 					"message": "分组校验失败",
@@ -1493,7 +1509,7 @@ func (h *DeviceHandler) UpdateDevice(c *gin.Context) {
 
 	if req.Name != nil && strings.TrimSpace(*req.Name) != device.Name {
 		name := strings.TrimSpace(*req.Name)
-		query := h.db.Model(&model.Device{}).Where("id <> ? AND name = ?", device.ID, name)
+		query := database.Model(&model.Device{}).Where("id <> ? AND name = ?", device.ID, name)
 		groupID, changed := updates["group_id"]
 		if changed {
 			if groupID == nil {
@@ -1508,6 +1524,9 @@ func (h *DeviceHandler) UpdateDevice(c *gin.Context) {
 		}
 		var count int64
 		if err := query.Count(&count).Error; err != nil {
+			if busy(err) {
+				return
+			}
 			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "校验设备名称失败"})
 			return
 		}
@@ -1518,7 +1537,12 @@ func (h *DeviceHandler) UpdateDevice(c *gin.Context) {
 	}
 
 	if len(updates) > 0 {
-		if err := h.db.Model(&device).Updates(updates).Error; err != nil {
+		if err := dbretry.Do(ctx, func() error {
+			return database.Model(&device).Updates(updates).Error
+		}); err != nil {
+			if busy(err) {
+				return
+			}
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"code":    500,
 				"message": "更新失败",
@@ -1527,7 +1551,7 @@ func (h *DeviceHandler) UpdateDevice(c *gin.Context) {
 		}
 	}
 
-	_ = h.db.First(&device, device.ID).Error
+	_ = database.First(&device, device.ID).Error
 	if req.EmployeeCode != nil || req.EmployeeName != nil {
 		h.pushCurrentUserToOnlineDevice(device)
 	}
