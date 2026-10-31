@@ -1,6 +1,6 @@
 {
   "name": "boer-lan-server",
-  "version": "1.0.33",
+  "version": "1.0.34",
   "scripts": {
     "dev": "vite",
     "dev:backend": "node scripts/dev-backend.mjs",
@@ -12,7 +12,7 @@
     "tauri:build": "tauri build",
     "tauri:build:portable": "tauri build --no-bundle",
     "package:portable:win": "powershell -ExecutionPolicy Bypass -File scripts/package-portable.ps1",
-    "build:backend": "cd backend && go build -ldflags=\"-s -w\" -o ../src-tauri/backend-server cmd/server/main.go",
+    "build:backend": "cd backend && go build -ldflags=\"-s -w\" -o ../src-tauri/backend-server ./cmd/server",
     "build:all": "npm run build:backend && npm run tauri:build"
   },
   "dependencies": {

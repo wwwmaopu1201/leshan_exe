@@ -25,7 +25,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"gopkg.in/yaml.v3"
 	"gorm.io/driver/mysql"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -407,7 +406,7 @@ func initDB() {
 			log.Fatalf("Failed to create data directory: %v", err)
 		}
 
-		db, err = gorm.Open(sqlite.Open(config.Database.Path), &gorm.Config{
+		db, err = openSQLiteDatabase(config.Database.Path, &gorm.Config{
 			Logger: newGORMLogger(runtimeLogSettings.GORMLogLevel),
 		})
 		if err != nil {

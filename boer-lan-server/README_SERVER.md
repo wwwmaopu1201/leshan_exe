@@ -53,7 +53,7 @@
 
 ```bash
 cd boer-lan-server
-go run cmd/server/main.go
+go run ./cmd/server
 ```
 
 ### 2. 访问管理界面

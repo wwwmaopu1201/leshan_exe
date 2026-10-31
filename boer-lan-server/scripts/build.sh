@@ -3,7 +3,7 @@
 # 构建 Go 后端
 echo "Building Go backend..."
 cd backend
-go build -ldflags="-s -w" -o ../src-tauri/backend-server cmd/server/main.go
+go build -ldflags="-s -w" -o ../src-tauri/backend-server ./cmd/server
 cd ..
 
 # 构建 Tauri 应用

@@ -37,7 +37,7 @@ jobs:
 
       - name: Build Go backend exe
         working-directory: boer-lan-server/backend
-        run: go build -ldflags="-s -w" -o ../src-tauri/backend-server.exe cmd/server/main.go
+        run: go build -ldflags="-s -w" -o ../src-tauri/backend-server.exe ./cmd/server
 
       - name: Build Tauri app
         working-directory: boer-lan-server
