@@ -1,9 +1,12 @@
 package service
 
 import (
+	"context"
+	"log"
 	"time"
 
 	"boer-lan-server/internal/model"
+	"boer-lan-server/pkg/dbretry"
 
 	"gorm.io/gorm"
 )
@@ -16,28 +19,30 @@ func ensureDeviceRuntimeSession(db *gorm.DB, deviceID uint, seenAt time.Time) {
 		seenAt = time.Now()
 	}
 
-	var session model.DeviceRuntimeSession
-	err := db.
-		Where("device_id = ? AND ended_at IS NULL", deviceID).
-		Order("started_at DESC, id DESC").
-		First(&session).Error
-	if err == nil {
-		updates := map[string]interface{}{"last_seen_at": seenAt}
-		if seenAt.Before(session.StartedAt) {
-			updates["started_at"] = seenAt
-		}
-		_ = db.Model(&session).Updates(updates).Error
-		return
+	err := dbretry.Do(context.Background(), func() error {
+		return db.Transaction(func(tx *gorm.DB) error {
+			var session model.DeviceRuntimeSession
+			err := tx.Where("device_id = ? AND ended_at IS NULL", deviceID).Order("started_at DESC, id DESC").First(&session).Error
+			if err == nil {
+				// A heartbeat per second is enough; retain the exact disconnect time on close.
+				if !seenAt.Before(session.StartedAt) && seenAt.Sub(session.LastSeenAt) < time.Second {
+					return nil
+				}
+				updates := map[string]interface{}{"last_seen_at": seenAt}
+				if seenAt.Before(session.StartedAt) {
+					updates["started_at"] = seenAt
+				}
+				return tx.Model(&session).Updates(updates).Error
+			}
+			if err != gorm.ErrRecordNotFound {
+				return err
+			}
+			return tx.Create(&model.DeviceRuntimeSession{DeviceID: deviceID, StartedAt: seenAt, LastSeenAt: seenAt}).Error
+		})
+	})
+	if err != nil {
+		log.Printf("Runtime session write failed: device=%d err=%v", deviceID, err)
 	}
-	if err != nil && err != gorm.ErrRecordNotFound {
-		return
-	}
-
-	_ = db.Create(&model.DeviceRuntimeSession{
-		DeviceID:   deviceID,
-		StartedAt:  seenAt,
-		LastSeenAt: seenAt,
-	}).Error
 }
 
 func closeDeviceRuntimeSessions(db *gorm.DB, deviceID uint, endedAt time.Time, reason string) {
@@ -66,11 +71,15 @@ func closeDeviceRuntimeSessions(db *gorm.DB, deviceID uint, endedAt time.Time, r
 		if duration < 0 {
 			duration = 0
 		}
-		_ = db.Model(&session).Updates(map[string]interface{}{
-			"ended_at":         end,
-			"last_seen_at":     end,
-			"duration_seconds": duration,
-			"end_reason":       reason,
-		}).Error
+		if err := dbretry.Do(context.Background(), func() error {
+			return db.Model(&session).Updates(map[string]interface{}{
+				"ended_at":         end,
+				"last_seen_at":     end,
+				"duration_seconds": duration,
+				"end_reason":       reason,
+			}).Error
+		}); err != nil {
+			log.Printf("Runtime session close failed: device=%d err=%v", deviceID, err)
+		}
 	}
 }

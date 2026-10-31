@@ -31,24 +31,27 @@ var ErrPatternTransferBusy = errors.New("device pattern transfer busy")
 
 // DeviceConnection 管理单个设备的TCP连接
 type DeviceConnection struct {
-	conn           net.Conn
-	db             *gorm.DB
-	deviceCode     string
-	deviceID       uint
-	deviceFlag     string
-	deviceModel    uint32
-	deviceName     string
-	lastHeartbeat  time.Time
-	connMgr        *ConnectionManager
-	warnedNoPacket bool
-	stateMu        sync.RWMutex
-	registered     bool
-	registerAt     time.Time
-	offlineProbeAt time.Time
-	loopStopCh     chan struct{}
-	patternMu      sync.Mutex
-	patternPacketC chan *Packet
-	patternDoneC   chan struct{}
+	conn             net.Conn
+	db               *gorm.DB
+	deviceCode       string
+	deviceID         uint
+	deviceFlag       string
+	deviceModel      uint32
+	deviceName       string
+	lastHeartbeat    time.Time
+	connMgr          *ConnectionManager
+	warnedNoPacket   bool
+	runtimeStateMu   sync.Mutex
+	runtimeValues    map[string]interface{}
+	runtimeWrittenAt time.Time
+	stateMu          sync.RWMutex
+	registered       bool
+	registerAt       time.Time
+	offlineProbeAt   time.Time
+	loopStopCh       chan struct{}
+	patternMu        sync.Mutex
+	patternPacketC   chan *Packet
+	patternDoneC     chan struct{}
 }
 
 // NewDeviceConnection 创建新的设备连接处理器
@@ -827,6 +830,7 @@ func (dc *DeviceConnection) handleProduction(pkt *Packet) {
 	production, err := parseProductionDataNewPayload(pkt.Data)
 	if err != nil {
 		emitTCPLog(dc.db, "warn", true, "[TCP] Production data parse failed: %v data=%s", err, packetDataPreview(pkt.Data, 32))
+		dc.send(buildProtocolReply(pkt, []byte{0x01}))
 		return
 	}
 
@@ -844,7 +848,6 @@ func (dc *DeviceConnection) handleProduction(pkt *Packet) {
 		production.StopReason,
 	)
 
-	dc.send(buildProtocolReply(pkt, []byte{0x00}))
 	dc.updateDeviceRuntime(map[string]interface{}{
 		"current_pattern_no":   uint(production.PatternID),
 		"current_pattern_name": production.PatternName,
@@ -854,6 +857,7 @@ func (dc *DeviceConnection) handleProduction(pkt *Packet) {
 		if err := dc.ensureProductionDeviceBinding(uint(production.DeviceCode)); err != nil {
 			emitTCPLog(dc.db, "warn", true, "[TCP] Production data received before device registration and binding failed: payloadDeviceId=%d remote=%s err=%v",
 				production.DeviceCode, dc.conn.RemoteAddr(), err)
+			dc.send(buildProtocolReply(pkt, []byte{0x01}))
 			return
 		}
 	}
@@ -870,8 +874,11 @@ func (dc *DeviceConnection) handleProduction(pkt *Packet) {
 	})
 	if err != nil {
 		emitTCPLog(dc.db, "error", true, "[TCP] Failed to sync production record for device %s: %v", dc.deviceCode, err)
+		dc.send(buildProtocolReply(pkt, []byte{0x01}))
 		return
 	}
+	// Acknowledge only after the production/salary transaction has committed.
+	dc.send(buildProtocolReply(pkt, []byte{0x00}))
 	if record == nil {
 		return
 	}
@@ -897,6 +904,7 @@ func (dc *DeviceConnection) handleProductionOld(pkt *Packet) {
 	production, err := parseProductionDataOldPayload(pkt.Data)
 	if err != nil {
 		emitTCPLog(dc.db, "warn", true, "[TCP] Production old data parse failed: %v data=%s", err, packetDataPreview(pkt.Data, 32))
+		dc.send(buildProtocolReply(pkt, []byte{0x01}))
 		return
 	}
 
@@ -913,7 +921,6 @@ func (dc *DeviceConnection) handleProductionOld(pkt *Packet) {
 		production.StopReason,
 	)
 
-	dc.send(buildProtocolReply(pkt, []byte{0x00}))
 	dc.updateDeviceRuntime(map[string]interface{}{
 		"current_pattern_no":   uint(production.PatternID),
 		"current_pattern_name": production.PatternName,
@@ -923,6 +930,7 @@ func (dc *DeviceConnection) handleProductionOld(pkt *Packet) {
 		if err := dc.ensureProductionDeviceBinding(uint(production.DeviceCode)); err != nil {
 			emitTCPLog(dc.db, "warn", true, "[TCP] Production old data received before device registration and binding failed: payloadDeviceId=%d remote=%s err=%v",
 				production.DeviceCode, dc.conn.RemoteAddr(), err)
+			dc.send(buildProtocolReply(pkt, []byte{0x01}))
 			return
 		}
 	}
@@ -938,8 +946,10 @@ func (dc *DeviceConnection) handleProductionOld(pkt *Packet) {
 	})
 	if err != nil {
 		emitTCPLog(dc.db, "error", true, "[TCP] Failed to sync old production record for device %s: %v", dc.deviceCode, err)
+		dc.send(buildProtocolReply(pkt, []byte{0x01}))
 		return
 	}
+	dc.send(buildProtocolReply(pkt, []byte{0x00}))
 	if created && record != nil {
 		emitTCPLog(dc.db, "info", false,
 			"[TCP] Production old record saved: device=%s productionId=%d employeeId=%d patternId=%d pieces=%d unitPrice=%.3f",

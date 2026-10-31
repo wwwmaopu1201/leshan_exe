@@ -1,6 +1,8 @@
 package service
 
 import (
+	"boer-lan-server/pkg/sqlitequeue"
+	"context"
 	"crypto/sha1"
 	"encoding/hex"
 	"errors"
@@ -40,13 +42,34 @@ type productionResolution struct {
 }
 
 func (dc *DeviceConnection) syncProductionSnapshot(snapshot productionSnapshot) (*model.ProductionRecord, bool, error) {
+	// Retry the whole transaction, never a statement inside a failed transaction.
+	for attempt := 0; ; attempt++ {
+		record, created, err := dc.syncProductionSnapshotOnce(snapshot)
+		if err == nil || attempt >= 4 || !isProductionLockError(err) {
+			return record, created, err
+		}
+		time.Sleep(time.Duration(attempt+1) * 50 * time.Millisecond)
+	}
+}
+
+func isProductionLockError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "database is locked") ||
+		strings.Contains(message, "database table is locked") ||
+		strings.Contains(message, "database schema is locked")
+}
+
+func (dc *DeviceConnection) syncProductionSnapshotOnce(snapshot productionSnapshot) (*model.ProductionRecord, bool, error) {
 	if dc.deviceID == 0 {
 		return nil, false, fmt.Errorf("device session is not bound")
 	}
 
 	var record model.ProductionRecord
 	created := false
-	err := dc.db.Transaction(func(tx *gorm.DB) error {
+	err := dc.db.WithContext(sqlitequeue.Priority(context.Background(), 10)).Transaction(func(tx *gorm.DB) error {
 		device, err := loadProductionDevice(tx, dc.deviceID)
 		if err != nil {
 			return err
@@ -164,6 +187,7 @@ func (dc *DeviceConnection) syncProductionSnapshot(snapshot productionSnapshot) 
 }
 
 func BackfillProductionDerivedData(db *gorm.DB) {
+	db = db.WithContext(sqlitequeue.Priority(context.Background(), -10))
 	const batchSize = 200
 	var lastID uint
 	var maxID uint

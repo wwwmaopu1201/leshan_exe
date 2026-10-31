@@ -1,12 +1,15 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
 	"boer-lan-server/internal/model"
+	"boer-lan-server/pkg/dbretry"
 
 	"gorm.io/gorm"
 )
@@ -497,12 +500,42 @@ func (dc *DeviceConnection) updateDeviceRuntime(updates map[string]interface{}) 
 	if dc.deviceID == 0 {
 		return
 	}
+	dc.runtimeStateMu.Lock()
+	defer dc.runtimeStateMu.Unlock()
+	now := time.Now()
+	unchanged := true
+	for key, value := range updates {
+		previous, exists := dc.runtimeValues[key]
+		if !exists || !reflect.DeepEqual(previous, value) {
+			unchanged = false
+			break
+		}
+	}
+	// Repeated production snapshots often carry the same pattern/status.
+	// Keep actual value changes immediate; merge identical keepalive writes.
+	if unchanged && now.Sub(dc.runtimeWrittenAt) < time.Second {
+		return
+	}
 	if updates == nil {
 		updates = make(map[string]interface{})
 	}
-	updates["last_protocol_at"] = time.Now()
-	if err := dc.db.Model(&model.Device{}).Where("id = ?", dc.deviceID).Updates(updates).Error; err != nil {
+	values := make(map[string]interface{}, len(updates)+1)
+	for key, value := range updates {
+		values[key] = value
+	}
+	values["last_protocol_at"] = now
+	if err := dbretry.Do(context.Background(), func() error {
+		return dc.db.Model(&model.Device{}).Where("id = ?", dc.deviceID).Updates(values).Error
+	}); err != nil {
 		emitTCPLog(dc.db, "warn", true, "[TCP] Update device runtime failed: device=%s id=%d err=%v", dc.deviceCode, dc.deviceID, err)
+	} else {
+		if dc.runtimeValues == nil {
+			dc.runtimeValues = make(map[string]interface{})
+		}
+		for key, value := range updates {
+			dc.runtimeValues[key] = value
+		}
+		dc.runtimeWrittenAt = now
 	}
 	ensureDeviceRuntimeSession(dc.db, dc.deviceID, time.Now())
 }
