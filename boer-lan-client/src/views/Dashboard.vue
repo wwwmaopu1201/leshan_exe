@@ -627,15 +627,15 @@ export default {
 }
 
 .side-legend__dot.is-idle {
-  background: #70cb37;
+  background: #67c23a;
 }
 
 .side-legend__dot.is-working {
-  background: #1890ff;
+  background: #f56c6c;
 }
 
 .side-legend__dot.is-offline {
-  background: #7b7b7b;
+  background: #909399;
 }
 
 .dashboard-side ::v-deep .device-tree-panel {

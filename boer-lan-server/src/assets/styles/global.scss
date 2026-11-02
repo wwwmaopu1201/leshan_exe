@@ -433,11 +433,11 @@ code {
 
 .status-dot.online,
 .status-dot.idle {
-  background: $success-color;
+  background: #67c23a;
 }
 
 .status-dot.working {
-  background: $primary-color;
+  background: #f56c6c;
 }
 
 .status-dot.alarm {
@@ -445,7 +445,7 @@ code {
 }
 
 .status-dot.offline {
-  background: $info-color;
+  background: #909399;
 }
 
 .ghost-empty {

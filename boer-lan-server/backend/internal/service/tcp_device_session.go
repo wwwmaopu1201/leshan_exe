@@ -183,10 +183,11 @@ func (dc *DeviceConnection) upsertDeviceRecord(code, name, deviceType, modelName
 		}
 		if strings.TrimSpace(name) != "" {
 			normalizedName := strings.TrimSpace(name)
-			if shouldRefreshProtocolDeviceName(device, normalizedName) {
+			generatedName := isPlaceholderDeviceName(normalizedName, code, mainboardSN)
+			if (!generatedName || isPlaceholderDeviceName(device.Name, device.Code, device.MainboardSN)) && shouldRefreshProtocolDeviceName(device, normalizedName) {
 				updates["name"] = normalizedName
 			}
-			if shouldRefreshProtocolInitialName(device, normalizedName) {
+			if (!generatedName || isPlaceholderDeviceName(device.InitialName, device.Code, device.MainboardSN)) && shouldRefreshProtocolInitialName(device, normalizedName) {
 				updates["initial_name"] = normalizedName
 			}
 		}
@@ -445,6 +446,9 @@ func shouldRefreshProtocolDeviceName(device model.Device, protocolName string) b
 	}
 
 	currentName := strings.TrimSpace(device.Name)
+	if isPlaceholderDeviceName(protocolName, device.Code, device.MainboardSN) && !isPlaceholderDeviceName(currentName, device.Code, device.MainboardSN) {
+		return false
+	}
 	if currentName == "" {
 		return true
 	}
@@ -464,6 +468,9 @@ func shouldRefreshProtocolInitialName(device model.Device, protocolName string) 
 	}
 
 	currentInitialName := strings.TrimSpace(device.InitialName)
+	if isPlaceholderDeviceName(protocolName, device.Code, device.MainboardSN) && !isPlaceholderDeviceName(currentInitialName, device.Code, device.MainboardSN) {
+		return false
+	}
 	return currentInitialName != protocolName
 }
 
@@ -478,6 +485,9 @@ func isPlaceholderDeviceName(value, code, mainboardSN string) bool {
 		return true
 	}
 	if code != "" && value == "设备 "+code {
+		return true
+	}
+	if code != "" && value == "设备"+code {
 		return true
 	}
 	if mainboardSN != "" && value == "设备 "+mainboardSN {

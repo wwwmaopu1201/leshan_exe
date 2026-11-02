@@ -435,9 +435,7 @@ code {
   background: rgba(245, 108, 108, 0.08);
 }
 
-.status-tag.working,
 .status-tag.group,
-.status-pill.working,
 .status-pill.group {
   color: $primary-color;
   border-color: rgba(64, 158, 255, 0.35);
@@ -1047,3 +1045,10 @@ code {
 .el-input .el-icon-view { position: relative; }
 
 .el-autocomplete { width: 100%; }
+
+.status-tag.working,
+.status-pill.working {
+  color: #f56c6c;
+  border-color: rgba(245, 108, 108, 0.35);
+  background: rgba(245, 108, 108, 0.08);
+}

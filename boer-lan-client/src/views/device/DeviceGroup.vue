@@ -158,6 +158,7 @@
                 <el-table-column prop="createTime" label="添加时间" width="160"  show-overflow-tooltip />
                 <el-table-column prop="status" label="状态" width="100">
                   <template slot-scope="scope">
+                    <span :class="['node-status-dot', `status-${scope.row.status || 'offline'}`]"></span>
                     <el-tag :type="getStatusType(scope.row.status)" size="small">
                       {{ scope.row.status }}
                     </el-tag>
@@ -1525,8 +1526,8 @@ export default {
     },
     getStatusType(status) {
       const map = {
-        working: 'primary',
-        idle: 'warning',
+        working: 'danger',
+        idle: 'success',
         offline: 'info'
       }
       return map[status] || 'info'
@@ -1825,11 +1826,11 @@ export default {
     border-radius: 50%;
 
     &.status-idle {
-      background: #67C23A;
+      background: #67c23a;
     }
 
     &.status-working {
-      background: #F56C6C;
+      background: #f56c6c;
     }
 
     &.status-offline {
@@ -1953,5 +1954,12 @@ export default {
   .tree-node .tree-node-label {
     min-width: 0;
   }
+}
+
+.el-table .node-status-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;
+  &.status-working { background: #f56c6c; }
+  &.status-idle { background: #67c23a; }
+  &.status-offline { background: #909399; }
 }
 </style>

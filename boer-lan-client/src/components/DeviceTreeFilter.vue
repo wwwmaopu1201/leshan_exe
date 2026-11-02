@@ -389,15 +389,15 @@ export default {
   flex-shrink: 0;
 
   &.working {
-    background: #2f6df6;
+    background: #f56c6c;
   }
 
   &.idle {
-    background: #2fb46e;
+    background: #67c23a;
   }
 
   &.offline {
-    background: #8a98ad;
+    background: #909399;
   }
 }
 

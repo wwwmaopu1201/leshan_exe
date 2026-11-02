@@ -1432,15 +1432,15 @@ export default {
   border-radius: 50%;
 
   &.idle {
-    background: #2fb46e;
+    background: #67c23a;
   }
 
   &.working {
-    background: #ef5a5a;
+    background: #f56c6c;
   }
 
   &.offline {
-    background: #8a98ad;
+    background: #909399;
   }
 }
 

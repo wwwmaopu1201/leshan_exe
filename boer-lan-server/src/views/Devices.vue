@@ -168,6 +168,7 @@
             <el-table-column label="状态" width="100" align="center">
               <template slot-scope="{ row }">
                 <span :class="['status-pill', getStatusTone(row.status)]">
+                  <span :class="['status-dot', row.status]"></span>
                   {{ getStatusLabel(row.status) }}
                 </span>
               </template>
@@ -1494,8 +1495,8 @@ export default {
     getStatusTone(status) {
       const map = {
         offline: 'info',
-        working: 'primary',
-        idle: 'warning'
+        working: 'danger',
+        idle: 'success'
       }
       return map[status] || 'info'
     },
@@ -1869,15 +1870,15 @@ export default {
 }
 
 .status-dot.idle {
-  background: #2fb46e;
+  background: #67c23a;
 }
 
 .status-dot.working {
-  background: #2f6df6;
+  background: #f56c6c;
 }
 
 .status-dot.offline {
-  background: #8a98ad;
+  background: #909399;
 }
 
 ::v-deep .el-tree {

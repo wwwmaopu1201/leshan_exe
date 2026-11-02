@@ -1116,13 +1116,13 @@ export default {
   margin-left: 6px;
 
   &.idle {
-    background: #67C23A;
+    background: #67c23a;
   }
   &.offline {
     background: #909399;
   }
   &.working {
-    background: #F56C6C;
+    background: #f56c6c;
   }
 }
 
