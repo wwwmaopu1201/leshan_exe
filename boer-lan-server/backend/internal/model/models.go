@@ -119,6 +119,8 @@ type DeviceRuntimeSession struct {
 	EndReason       string     `gorm:"size:50" json:"endReason"`
 }
 
+// Decimal fields explicitly set size:12 to match SQLite migration metadata for
+// decimal(12,3); leaving float64 size at 64 rebuilds unchanged tables on startup.
 // Pattern 花型文件
 type Pattern struct {
 	UploadedAt *time.Time `json:"uploadedAt,omitempty"`
@@ -128,12 +130,12 @@ type Pattern struct {
 	FileName    string  `gorm:"size:255;not null" json:"fileName"`
 	FilePath    string  `gorm:"size:500" json:"filePath"`
 	FileSize    int64   `json:"fileSize"`
-	Stitches    int     `json:"stitches"`                                      // 针数
-	Colors      int     `json:"colors"`                                        // 色数
-	Width       float64 `json:"width"`                                         // 宽度mm
-	Height      float64 `json:"height"`                                        // 高度mm
-	UnitPrice   float64 `gorm:"type:decimal(12,3);default:0" json:"unitPrice"` // 工价
-	OrderNo     string  `gorm:"size:100;index" json:"orderNo"`                 // 订单编号
+	Stitches    int     `json:"stitches"`                                              // 针数
+	Colors      int     `json:"colors"`                                                // 色数
+	Width       float64 `json:"width"`                                                 // 宽度mm
+	Height      float64 `json:"height"`                                                // 高度mm
+	UnitPrice   float64 `gorm:"type:decimal(12,3);size:12;default:0" json:"unitPrice"` // 工价
+	OrderNo     string  `gorm:"size:100;index" json:"orderNo"`                         // 订单编号
 	UploadedBy  uint    `gorm:"index" json:"uploadedBy"`
 }
 
@@ -169,7 +171,7 @@ type DevicePatternFile struct {
 	PatternType string  `gorm:"size:100;index" json:"patternType"`
 	FileSize    int64   `json:"fileSize"`
 	Stitches    int     `json:"stitches"`
-	UnitPrice   float64 `gorm:"type:decimal(12,3);default:0" json:"unitPrice"`
+	UnitPrice   float64 `gorm:"type:decimal(12,3);size:12;default:0" json:"unitPrice"`
 	OrderNo     string  `gorm:"size:100;index" json:"orderNo"`
 	FilePath    string  `gorm:"size:500" json:"filePath"`
 }
@@ -228,7 +230,7 @@ type ProductionRecord struct {
 	StartNeedle    uint       `json:"startNeedle"`
 	EndNeedle      uint       `json:"endNeedle"`
 	StopReason     uint       `json:"stopReason"`
-	UnitPrice      float64    `gorm:"type:decimal(12,3);default:0" json:"unitPrice"`
+	UnitPrice      float64    `gorm:"type:decimal(12,3);size:12;default:0" json:"unitPrice"`
 	OrderNo        string     `gorm:"size:100;index" json:"orderNo"`
 	SourceKey      string     `gorm:"size:64;uniqueIndex" json:"sourceKey"`
 	RecordDate     time.Time  `gorm:"index" json:"recordDate"`
@@ -257,7 +259,7 @@ type SalaryRecord struct {
 	OrderNo            string    `gorm:"size:100;index" json:"orderNo"`
 	SourceProductionID *uint     `gorm:"uniqueIndex" json:"sourceProductionId"`
 	Pieces             int       `json:"pieces"`
-	UnitPrice          float64   `gorm:"type:decimal(12,3);default:0" json:"unitPrice"`
+	UnitPrice          float64   `gorm:"type:decimal(12,3);size:12;default:0" json:"unitPrice"`
 	Salary             float64   `json:"salary"`
 	Bonus              float64   `json:"bonus"`
 	TotalAmount        float64   `json:"totalAmount"`
