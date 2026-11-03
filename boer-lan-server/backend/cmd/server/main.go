@@ -188,6 +188,7 @@ func main() {
 
 	// Initialize database
 	initDB()
+	defer closeDatabase(db)
 	applyServerConfigOverrides()
 	persistRuntimePort()
 

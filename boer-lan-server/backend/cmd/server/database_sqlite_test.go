@@ -13,8 +13,7 @@ func TestSQLiteConcurrentReadModifyWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pool, _ := db.DB()
-	defer pool.Close()
+	defer closeDatabase(db)
 	if err := db.Exec("CREATE TABLE counter(value INTEGER NOT NULL)").Error; err != nil {
 		t.Fatal(err)
 	}

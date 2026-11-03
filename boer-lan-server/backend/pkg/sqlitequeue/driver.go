@@ -98,7 +98,7 @@ func (g *gate) release() {
 			}
 		}
 	}
-	if g.waiting[best].priority > 0 {
+	if g.waiting[best].priority >= 0 {
 		g.burst++
 	} else {
 		g.burst = 0

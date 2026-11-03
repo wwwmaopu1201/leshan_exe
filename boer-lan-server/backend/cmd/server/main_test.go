@@ -150,11 +150,7 @@ func TestInitDBOnRestart(t *testing.T) {
 		if count != 1 {
 			t.Fatalf("restart %d: expected one admin, got %d", restart, count)
 		}
-		sqlDB, err := db.DB()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := sqlDB.Close(); err != nil {
+		if err := closeDatabase(db); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -150,10 +150,18 @@ func ensureGroupsUnderTotalIfExists(db *gorm.DB) (*model.Group, error) {
 		}
 		root.ParentID = nil
 	}
-	if err := db.Model(&model.Group{}).
-		Where("parent_id IS NULL AND id <> ?", root.ID).
-		Update("parent_id", root.ID).Error; err != nil {
+	// This helper is used by polling GET endpoints. A zero-row UPDATE still
+	// starts a write transaction, so check before acquiring the writer.
+	var pending int64
+	if err := db.Model(&model.Group{}).Where("parent_id IS NULL AND id <> ?", root.ID).Count(&pending).Error; err != nil {
 		return nil, err
+	}
+	if pending > 0 {
+		if err := db.Model(&model.Group{}).
+			Where("parent_id IS NULL AND id <> ?", root.ID).
+			Update("parent_id", root.ID).Error; err != nil {
+			return nil, err
+		}
 	}
 	return root, nil
 }

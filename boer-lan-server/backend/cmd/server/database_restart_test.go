@@ -19,8 +19,7 @@ func TestSQLiteRestartDoesNotRebuildUnchangedPriceTables(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pool, _ := db.DB()
-	defer pool.Close()
+	defer closeDatabase(db)
 	models := []interface{}{&model.Pattern{}, &model.DevicePatternFile{}, &model.ProductionRecord{}, &model.SalaryRecord{}}
 	for _, m := range models {
 		if err = db.AutoMigrate(m); err != nil {

@@ -17,6 +17,7 @@ import (
 	"boer-lan-server/internal/model"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type productionSnapshot struct {
@@ -187,9 +188,35 @@ func (dc *DeviceConnection) syncProductionSnapshotOnce(snapshot productionSnapsh
 }
 
 func BackfillProductionDerivedData(db *gorm.DB) {
-	db = db.WithContext(sqlitequeue.Priority(context.Background(), -10))
-	const batchSize = 200
+	db = db.WithContext(sqlitequeue.Priority(db.Statement.Context, -10))
+	if db.Statement.Context.Err() != nil {
+		return
+	}
+	const batchSize = 50
+	const cursorKey = "production_backfill_cursor_v1"
 	var lastID uint
+	// Production databases have this table; small isolated service databases may
+	// omit it. Only checkpoint work that completed, never a failed transaction.
+	checkpoint := db.Migrator().HasTable(&model.ServerConfig{})
+	if checkpoint {
+		var cursor model.ServerConfig
+		if err := db.Where("key = ?", cursorKey).First(&cursor).Error; err == nil {
+			value, err := strconv.ParseUint(cursor.Value, 10, 64)
+			if err == nil {
+				lastID = uint(value)
+			}
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Printf("Skip production backfill: reading checkpoint: %v", err)
+			return
+		}
+	}
+	saveProgress := func(id uint) error {
+		if !checkpoint {
+			return nil
+		}
+		cursor := model.ServerConfig{Key: cursorKey, Value: strconv.FormatUint(uint64(id), 10)}
+		return db.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "key"}}, DoUpdates: clause.AssignmentColumns([]string{"value", "updated_at"})}).Create(&cursor).Error
+	}
 	var maxID uint
 	started := time.Now()
 	if err := db.Model(&model.ProductionRecord{}).Select("COALESCE(MAX(id), 0)").Scan(&maxID).Error; err != nil {
@@ -224,10 +251,20 @@ func BackfillProductionDerivedData(db *gorm.DB) {
 			}
 			record := records[i]
 			processedCount++
-			changed, salaryCreated, err := backfillSingleProductionRecord(db, &record)
+			// Bound a repair transaction and yield between records. Live production
+			// has higher queue priority and readers never share this writer pool.
+			ctx, cancel := context.WithTimeout(db.Statement.Context, 2*time.Second)
+			changed, salaryCreated, err := backfillSingleProductionRecord(db.WithContext(ctx), &record)
+			cancel()
 			if err != nil {
 				skippedCount++
 				log.Printf("Skip production record backfill id=%d device_id=%d: %v", record.ID, record.DeviceID, err)
+				if !errors.Is(err, gorm.ErrRecordNotFound) {
+					if saveErr := saveProgress(lastID); saveErr != nil {
+						log.Printf("Production checkpoint failed: %v", saveErr)
+					}
+					return
+				}
 			} else {
 				if changed {
 					updatedCount++
@@ -236,13 +273,24 @@ func BackfillProductionDerivedData(db *gorm.DB) {
 					salaryBackfilled++
 				}
 			}
+			lastID = record.ID
 			if time.Since(lastProgress) >= 5*time.Second {
 				log.Printf("Production backfill progress: processed=%d last_id=%d max_id=%d updated=%d salary_created=%d skipped=%d elapsed=%s", processedCount, record.ID, maxID, updatedCount, salaryBackfilled, skippedCount, time.Since(started))
 				lastProgress = time.Now()
 			}
+			timer := time.NewTimer(10 * time.Millisecond)
+			select {
+			case <-db.Statement.Context.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
 		}
 
-		lastID = records[len(records)-1].ID
+		if err := saveProgress(lastID); err != nil {
+			log.Printf("Production checkpoint failed: %v", err)
+			return
+		}
 	}
 
 	log.Printf("Production backfill completed: processed=%d updated=%d salary_created=%d skipped=%d elapsed=%s", processedCount, updatedCount, salaryBackfilled, skippedCount, time.Since(started))
@@ -565,6 +613,9 @@ func upsertSalaryRecordFromProduction(tx *gorm.DB, record *model.ProductionRecor
 	err := tx.Where("source_production_id = ?", record.ID).First(&existing).Error
 	switch {
 	case err == nil:
+		if salaryRecordMatchesProduction(existing, record) {
+			return false, nil
+		}
 		updates := buildSalaryRecordFromProduction(record)
 		return false, tx.Model(&existing).Updates(updates).Error
 	case !errors.Is(err, gorm.ErrRecordNotFound):
@@ -604,6 +655,15 @@ func upsertSalaryRecordFromProduction(tx *gorm.DB, record *model.ProductionRecor
 		return false, err
 	}
 	return true, nil
+}
+
+func salaryRecordMatchesProduction(existing model.SalaryRecord, record *model.ProductionRecord) bool {
+	salary := roundDecimal(float64(record.Pieces)*record.UnitPrice, 2)
+	return existing.EmployeeID == record.EmployeeID && existing.DeviceID == record.DeviceID &&
+		existing.PatternID == record.PatternID && existing.PatternName == strings.TrimSpace(record.PatternName) &&
+		existing.OrderNo == strings.TrimSpace(record.OrderNo) && existing.Pieces == record.Pieces &&
+		existing.UnitPrice == roundDecimal(record.UnitPrice, 3) && existing.Salary == salary &&
+		existing.Bonus == 0 && existing.TotalAmount == salary && existing.RecordDate.Equal(record.RecordDate)
 }
 
 func buildSalaryRecordFromProduction(record *model.ProductionRecord) map[string]interface{} {

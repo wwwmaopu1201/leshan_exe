@@ -8,6 +8,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"boer-lan-server/internal/model"
@@ -20,6 +22,15 @@ const (
 	tcpDebugSource              = "tcp"
 )
 
+type pendingDebugLog struct {
+	db    *gorm.DB
+	entry model.DebugLog
+}
+
+var debugLogQueue = make(chan pendingDebugLog, 1024)
+var debugLogWorker sync.Once
+var droppedDebugLogs atomic.Uint64
+
 func emitTCPLog(db *gorm.DB, level string, persist bool, format string, args ...interface{}) {
 	message := fmt.Sprintf(format, args...)
 	log.Print(message)
@@ -27,7 +38,7 @@ func emitTCPLog(db *gorm.DB, level string, persist bool, format string, args ...
 		fmt.Fprintf(os.Stdout, "%s %s\n", time.Now().Format("2006/01/02 15:04:05.000000"), message)
 	}
 
-	if !persist || db == nil || !isDebugOutputEnabled(db) {
+	if !persist || db == nil {
 		return
 	}
 
@@ -36,10 +47,52 @@ func emitTCPLog(db *gorm.DB, level string, persist bool, format string, args ...
 		Source:  tcpDebugSource,
 		Message: message,
 	}
-	ctx, cancel := context.WithTimeout(sqlitequeue.Priority(context.Background(), -10), time.Second)
-	defer cancel()
-	if err := db.WithContext(ctx).Create(&entry).Error; err != nil {
-		log.Printf("[TCP] failed to persist debug log: %v", err)
+	debugLogWorker.Do(func() { go persistDebugLogs() })
+	select {
+	case debugLogQueue <- pendingDebugLog{db: db, entry: entry}:
+	default:
+		// The file log above is already saved. Diagnostic database copies must
+		// never delay device packets or displace business data under overload.
+		droppedDebugLogs.Add(1)
+	}
+}
+
+func persistDebugLogs() {
+	lastReport := time.Now()
+	for first := range debugLogQueue {
+		batch := []pendingDebugLog{first}
+		// Coalesce bursts into a small transaction rather than one per packet.
+		timer := time.NewTimer(25 * time.Millisecond)
+	collect:
+		for len(batch) < 64 {
+			select {
+			case next := <-debugLogQueue:
+				batch = append(batch, next)
+			case <-timer.C:
+				break collect
+			}
+		}
+		timer.Stop()
+		groups := make(map[*gorm.DB][]model.DebugLog)
+		for _, item := range batch {
+			groups[item.db] = append(groups[item.db], item.entry)
+		}
+		for db, entries := range groups {
+			ctx, cancel := context.WithTimeout(sqlitequeue.Priority(context.Background(), -20), 250*time.Millisecond)
+			background := db.WithContext(ctx)
+			if isDebugOutputEnabled(background) {
+				if err := background.Create(&entries).Error; err != nil {
+					droppedDebugLogs.Add(uint64(len(entries)))
+				}
+			}
+			cancel()
+		}
+		if time.Since(lastReport) >= 10*time.Second {
+			if count := droppedDebugLogs.Swap(0); count > 0 {
+				log.Printf("[TCP] skipped %d database debug-log copies under load; file logs retained", count)
+			}
+			lastReport = time.Now()
+		}
 	}
 }
 
