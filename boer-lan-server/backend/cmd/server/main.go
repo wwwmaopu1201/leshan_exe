@@ -258,6 +258,7 @@ func serveHTTPWithProductionBackfill(server *http.Server, listener net.Listener,
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		service.PurgeDeletedDevicePatternFiles(database.WithContext(ctx))
 		service.BackfillProductionDerivedData(database.WithContext(ctx))
 	}()
 	defer func() {

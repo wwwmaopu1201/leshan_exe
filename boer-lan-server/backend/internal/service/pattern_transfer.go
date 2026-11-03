@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"boer-lan-server/internal/model"
+	"boer-lan-server/pkg/sqlitequeue"
 
 	"gorm.io/gorm"
 )
@@ -133,7 +135,9 @@ func (s *PatternTransferService) refreshDevicePatternFiles(device model.Device, 
 	}
 
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("device_id = ?", device.ID).Delete(&model.DevicePatternFile{}).Error; err != nil {
+		// The list is a snapshot of the device; soft-deleted copies only accumulate
+		// and slow every production lookup that scans this table.
+		if err := tx.Unscoped().Where("device_id = ?", device.ID).Delete(&model.DevicePatternFile{}).Error; err != nil {
 			return err
 		}
 		if len(records) == 0 {
@@ -984,5 +988,35 @@ func (s *PatternTransferService) InterruptDownload(id uint) {
 	defer s.downloadMu.Unlock()
 	if cancel := s.downloadCancels[id]; cancel != nil {
 		cancel()
+	}
+}
+
+// PurgeDeletedDevicePatternFiles removes soft-deleted snapshot rows left by
+// earlier versions in small batches so the single SQLite writer stays available.
+func PurgeDeletedDevicePatternFiles(db *gorm.DB) {
+	db = db.WithContext(sqlitequeue.Priority(db.Statement.Context, -10))
+	total := int64(0)
+	for {
+		if err := db.Statement.Context.Err(); err != nil {
+			return
+		}
+		var ids []uint
+		if err := db.Unscoped().Model(&model.DevicePatternFile{}).Where("deleted_at IS NOT NULL").Limit(2000).Pluck("id", &ids).Error; err != nil {
+			log.Printf("Skip deleted device pattern file purge after %d rows: %v", total, err)
+			return
+		}
+		if len(ids) == 0 {
+			break
+		}
+		result := db.Unscoped().Where("id IN ?", ids).Delete(&model.DevicePatternFile{})
+		if result.Error != nil {
+			log.Printf("Skip deleted device pattern file purge after %d rows: %v", total, result.Error)
+			return
+		}
+		total += result.RowsAffected
+		time.Sleep(50 * time.Millisecond)
+	}
+	if total > 0 {
+		log.Printf("Purged %d deleted device pattern file rows", total)
 	}
 }

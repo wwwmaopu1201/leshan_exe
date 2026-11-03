@@ -31,6 +31,33 @@ var debugLogQueue = make(chan pendingDebugLog, 1024)
 var debugLogWorker sync.Once
 var droppedDebugLogs atomic.Uint64
 
+// Devices retransmit identical packets; one database copy per window is enough
+// because the file log above still records every occurrence.
+const repeatedDebugLogWindow = time.Minute
+
+var recentDebugLogsMu sync.Mutex
+var recentDebugLogs = make(map[string]time.Time)
+
+func isRepeatedDebugLog(message string, now time.Time) bool {
+	recentDebugLogsMu.Lock()
+	defer recentDebugLogsMu.Unlock()
+	if last, ok := recentDebugLogs[message]; ok && now.Sub(last) < repeatedDebugLogWindow {
+		return true
+	}
+	if len(recentDebugLogs) >= 4096 {
+		for key, last := range recentDebugLogs {
+			if now.Sub(last) >= repeatedDebugLogWindow {
+				delete(recentDebugLogs, key)
+			}
+		}
+		if len(recentDebugLogs) >= 4096 {
+			recentDebugLogs = make(map[string]time.Time)
+		}
+	}
+	recentDebugLogs[message] = now
+	return false
+}
+
 func emitTCPLog(db *gorm.DB, level string, persist bool, format string, args ...interface{}) {
 	message := fmt.Sprintf(format, args...)
 	log.Print(message)
@@ -38,7 +65,7 @@ func emitTCPLog(db *gorm.DB, level string, persist bool, format string, args ...
 		fmt.Fprintf(os.Stdout, "%s %s\n", time.Now().Format("2006/01/02 15:04:05.000000"), message)
 	}
 
-	if !persist || db == nil {
+	if !persist || db == nil || isRepeatedDebugLog(message, time.Now()) {
 		return
 	}
 
@@ -80,7 +107,7 @@ func persistDebugLogs() {
 		for db, entries := range groups {
 			ctx, cancel := context.WithTimeout(sqlitequeue.Priority(context.Background(), -20), 250*time.Millisecond)
 			background := db.WithContext(ctx)
-			if isDebugOutputEnabled(background) {
+			if isDebugOutputEnabled(background, db) {
 				if err := background.Create(&entries).Error; err != nil {
 					droppedDebugLogs.Add(uint64(len(entries)))
 				}
@@ -96,7 +123,27 @@ func persistDebugLogs() {
 	}
 }
 
-func isDebugOutputEnabled(db *gorm.DB) bool {
+type debugOutputState struct {
+	enabled   bool
+	checkedAt time.Time
+}
+
+var debugOutputCacheMu sync.Mutex
+var debugOutputCache = make(map[*gorm.DB]debugOutputState)
+
+// The switch rarely changes; avoid one config read per persisted batch.
+func isDebugOutputEnabled(db *gorm.DB, key *gorm.DB) bool {
+	debugOutputCacheMu.Lock()
+	defer debugOutputCacheMu.Unlock()
+	if state, ok := debugOutputCache[key]; ok && time.Since(state.checkedAt) < 5*time.Second {
+		return state.enabled
+	}
+	enabled := readDebugOutputEnabled(db)
+	debugOutputCache[key] = debugOutputState{enabled: enabled, checkedAt: time.Now()}
+	return enabled
+}
+
+func readDebugOutputEnabled(db *gorm.DB) bool {
 	var config model.ServerConfig
 	if err := db.Where("key = ?", debugOutputEnabledConfigKey).First(&config).Error; err != nil {
 		return true

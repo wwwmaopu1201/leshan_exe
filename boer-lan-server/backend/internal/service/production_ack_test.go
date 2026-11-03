@@ -1,9 +1,12 @@
 package service
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"net"
 	"testing"
+	"time"
 
 	"boer-lan-server/internal/model"
 	"gorm.io/gorm"
@@ -91,5 +94,64 @@ func TestProductionAckRequiresCommittedRecord(t *testing.T) {
 				t.Fatalf("duplicate records: %d", count)
 			}
 		})
+	}
+}
+
+func TestMalformedProductionIsAcknowledged(t *testing.T) {
+	for _, old := range []bool{false, true} {
+		db := openTCPConnectionTestDB(t, fmt.Sprintf("malformed_ack_%v", old))
+		replies := []byte{}
+		dc := &DeviceConnection{db: db, deviceID: 1, deviceCode: "malformed", registered: true}
+		dc.conn = productionAckConn{write: func(p []byte) {
+			if len(p) > 23 {
+				replies = append(replies, p[23])
+			}
+		}}
+		// Captured from the 2026-11-03 customer log: start month is zero.
+		payload := buildProductionDataNewTestPayload(true)
+		copy(payload[50:57], make([]byte, 7))
+		packet := &Packet{ParamType: PTProduction, ParamNo: PNProduction, Data: payload}
+		if old {
+			packet = &Packet{ParamType: PTProduction, ParamNo: PNProductionOld, Data: []byte{0xFF, 0xFF}}
+			dc.handleProductionOld(packet)
+		} else {
+			dc.handleProduction(packet)
+		}
+		if len(replies) != 1 || replies[0] != 0 {
+			t.Fatalf("old=%v malformed production must be ACKed once to stop retransmission, replies=%v", old, replies)
+		}
+	}
+}
+
+func TestRepeatedDebugLogIsPersistedOncePerWindow(t *testing.T) {
+	now := time.Now()
+	message := "repeated " + now.String()
+	if isRepeatedDebugLog(message, now) {
+		t.Fatal("first message suppressed")
+	}
+	if !isRepeatedDebugLog(message, now.Add(time.Second)) {
+		t.Fatal("retransmitted message persisted again")
+	}
+	if isRepeatedDebugLog(message, now.Add(repeatedDebugLogWindow+time.Second)) {
+		t.Fatal("message suppressed after window")
+	}
+}
+
+func TestPatternListSyncPurgesDeletedSnapshots(t *testing.T) {
+	db := openTCPConnectionTestDB(t, "pattern_purge")
+	if err := db.AutoMigrate(&model.DevicePatternFile{}); err != nil {
+		t.Fatal(err)
+	}
+	rows := []model.DevicePatternFile{{DeviceID: 1, FileName: "a"}, {DeviceID: 1, FileName: "b"}, {DeviceID: 2, FileName: "c"}}
+	if err := db.Create(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	db.Delete(&rows[0])
+	db.Delete(&rows[1])
+	PurgeDeletedDevicePatternFiles(db.WithContext(context.Background()))
+	var remaining int64
+	db.Unscoped().Model(&model.DevicePatternFile{}).Count(&remaining)
+	if remaining != 1 {
+		t.Fatalf("soft-deleted pattern snapshots remain: %d", remaining)
 	}
 }

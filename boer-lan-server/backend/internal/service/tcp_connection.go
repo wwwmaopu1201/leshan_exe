@@ -830,7 +830,9 @@ func (dc *DeviceConnection) handleProduction(pkt *Packet) {
 	production, err := parseProductionDataNewPayload(pkt.Data)
 	if err != nil {
 		emitTCPLog(dc.db, "warn", true, "[TCP] Production data parse failed: %v data=%s", err, packetDataPreview(pkt.Data, 32))
-		dc.send(buildProtocolReply(pkt, []byte{0x01}))
+		// A malformed payload never parses on retransmission; NAK makes devices
+		// resend it every few seconds and floods the single SQLite writer.
+		dc.send(buildProtocolReply(pkt, []byte{0x00}))
 		return
 	}
 
@@ -904,7 +906,9 @@ func (dc *DeviceConnection) handleProductionOld(pkt *Packet) {
 	production, err := parseProductionDataOldPayload(pkt.Data)
 	if err != nil {
 		emitTCPLog(dc.db, "warn", true, "[TCP] Production old data parse failed: %v data=%s", err, packetDataPreview(pkt.Data, 32))
-		dc.send(buildProtocolReply(pkt, []byte{0x01}))
+		// A malformed payload never parses on retransmission; NAK makes devices
+		// resend it every few seconds and floods the single SQLite writer.
+		dc.send(buildProtocolReply(pkt, []byte{0x00}))
 		return
 	}
 
