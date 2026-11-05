@@ -361,6 +361,13 @@ func (dc *DeviceConnection) handleDeviceInfo(pkt *Packet) {
 	dc.deviceName = deviceName
 	dc.lastHeartbeat = now
 
+	if mainboardSN == "" {
+		// Cached on the session; the record is created once the flag arrives.
+		emitTCPLog(dc.db, "info", true, "[TCP] Device info held until mainboard flag: name=%s ip=%s remote=%s",
+			deviceName, ip, dc.conn.RemoteAddr())
+		return
+	}
+
 	if err := dc.upsertDeviceRecord(code, deviceName, deviceType, modelName, "device-info"); err != nil {
 		emitTCPLog(dc.db, "error", true, "[TCP] Failed to upsert device %s: %v", code, err)
 		return
@@ -380,7 +387,15 @@ func (dc *DeviceConnection) handleMainboardSN(pkt *Packet) {
 	}
 	dc.deviceFlag = sn
 	if dc.deviceID == 0 {
-		if err := dc.upsertDeviceRecord(sn, "", "", "", "device-flag"); err != nil {
+		name := strings.TrimSpace(dc.deviceName)
+		if isPlaceholderDeviceName(name, dc.deviceCode, sn) || strings.Contains(name, pendingDevicePrefix) {
+			name = ""
+		}
+		deviceType, modelName := "", ""
+		if dc.deviceModel > 0 {
+			deviceType, modelName = mapDeviceModel(dc.deviceModel)
+		}
+		if err := dc.upsertDeviceRecord(sn, name, deviceType, modelName, "device-flag"); err != nil {
 			emitTCPLog(dc.db, "error", true, "[TCP] Failed to bind device by mainboard flag=%s err=%v", sn, err)
 			return
 		}

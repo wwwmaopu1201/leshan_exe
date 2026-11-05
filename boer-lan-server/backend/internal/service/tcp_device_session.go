@@ -19,6 +19,10 @@ const (
 	pendingDevicePrefix   = "PENDING-"
 )
 
+// errMainboardSNMissing: devices behind NAT share one IP, so a record without
+// a mainboard flag cannot be told apart from other machines and is not stored.
+var errMainboardSNMissing = errors.New("device has not reported mainboard flag")
+
 func (dc *DeviceConnection) startHandshakeLoop() {
 	dc.stateMu.Lock()
 	if dc.loopStopCh != nil {
@@ -93,6 +97,9 @@ func (dc *DeviceConnection) sendRegisterProbe(trigger string) {
 }
 
 func (dc *DeviceConnection) ensurePlaceholderDevice(reason string) {
+	if strings.TrimSpace(dc.deviceFlag) == "" {
+		return
+	}
 	code, name, deviceType, modelName := dc.provisionalIdentity()
 	if code == "" || strings.HasPrefix(code, pendingDevicePrefix) {
 		return
@@ -151,6 +158,9 @@ func (dc *DeviceConnection) upsertDeviceRecord(code, name, deviceType, modelName
 
 	ip := extractIP(dc.conn.RemoteAddr().String())
 	mainboardSN := strings.TrimSpace(dc.deviceFlag)
+	if mainboardSN == "" {
+		return errMainboardSNMissing
+	}
 	now := time.Now()
 
 	var device model.Device
@@ -233,12 +243,6 @@ func (dc *DeviceConnection) resolveExistingDevice(device *model.Device, code, ma
 
 	if code != "" {
 		if err := dc.db.Where("code = ?", code).First(device).Error; err == nil {
-			return nil
-		}
-	}
-
-	if ip != "" {
-		if err := dc.db.Where("ip = ? AND code LIKE ?", ip, pendingDevicePrefix+"%").First(device).Error; err == nil {
 			return nil
 		}
 	}
@@ -387,6 +391,9 @@ func reassignDeviceReferences(tx *gorm.DB, sourceID, targetID uint) error {
 func (dc *DeviceConnection) ensureProductionDeviceBinding(payloadDeviceCode uint) error {
 	if dc.deviceID > 0 {
 		return nil
+	}
+	if strings.TrimSpace(dc.deviceFlag) == "" {
+		return errMainboardSNMissing
 	}
 
 	code := strings.TrimSpace(dc.deviceCode)
