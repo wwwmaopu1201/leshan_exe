@@ -1,6 +1,6 @@
 {
   "name": "boer-lan-server",
-  "version": "1.0.39",
+  "version": "1.0.40",
   "scripts": {
     "dev": "vite",
     "dev:backend": "node scripts/dev-backend.mjs",

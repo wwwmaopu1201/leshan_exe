@@ -854,38 +854,25 @@ func (s *PatternTransferService) findDeviceConnection(device model.Device) *Devi
 
 	code := strings.TrimSpace(device.Code)
 	mainboardSN := strings.TrimSpace(device.MainboardSN)
-	ip := strings.TrimSpace(device.IP)
-	pendingCode := pendingDeviceCodeForIP(ip)
 
-	var matchedByMainboard *DeviceConnection
-	var matchedByIP *DeviceConnection
+	// No IP fallback: machines behind one NAT share an IP, so matching by IP
+	// could send a pattern to the wrong machine.
+	var matched *DeviceConnection
 	for _, dc := range s.connMgr.GetAll() {
 		if dc == nil {
 			continue
 		}
-
-		dcCode := strings.TrimSpace(dc.deviceCode)
 		if mainboardSN != "" && strings.TrimSpace(dc.deviceFlag) == mainboardSN {
 			return dc
 		}
 		if device.ID > 0 && dc.deviceID == device.ID {
-			matchedByMainboard = dc
+			matched = dc
 		}
-		if code != "" && dcCode == code && matchedByMainboard == nil {
-			matchedByMainboard = dc
-		}
-		if pendingCode != "" && dcCode == pendingCode {
-			matchedByIP = dc
-		}
-		if ip != "" && extractIP(dc.conn.RemoteAddr().String()) == ip {
-			matchedByIP = dc
+		if code != "" && strings.TrimSpace(dc.deviceCode) == code && matched == nil {
+			matched = dc
 		}
 	}
-
-	if matchedByMainboard != nil {
-		return matchedByMainboard
-	}
-	return matchedByIP
+	return matched
 }
 
 func parsePatternListEntries(pkt *Packet) []PatternListEntry {

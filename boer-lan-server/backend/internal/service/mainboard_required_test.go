@@ -70,3 +70,54 @@ func TestDevicesWithoutMainboardAreNotStoredAndDoNotShareRecords(t *testing.T) {
 		}
 	}
 }
+
+// Defensive: even if a path upserts by device number before the flag record
+// exists, a record owned by another mainboard must not be taken over.
+func TestUpsertByDeviceNumberDoesNotAdoptOtherMainboard(t *testing.T) {
+	db := openTCPConnectionTestDB(t, "same_device_number")
+	owner := model.Device{Code: "2", Name: "0502024", InitialName: "0502024", MainboardSN: "042BZKBCHN351800417"}
+	if err := db.Create(&owner).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	other := newMainboardTestConnection(t, db)
+	other.deviceFlag = "CNC14ZKBCN371700074"
+	if err := other.upsertDeviceRecord("2", "0504019", "", "", "device-info"); err != nil {
+		t.Fatal(err)
+	}
+	if other.deviceID == owner.ID || other.deviceCode == "2" {
+		t.Fatalf("took over record %d / code %q", other.deviceID, other.deviceCode)
+	}
+
+	var reloaded model.Device
+	db.First(&reloaded, owner.ID)
+	if reloaded.MainboardSN != "042BZKBCHN351800417" || reloaded.Name != "0502024" {
+		t.Fatalf("owner record overwritten: mainboard=%q name=%q", reloaded.MainboardSN, reloaded.Name)
+	}
+}
+
+// Machines behind one NAT share an IP; a pattern for an offline machine must
+// not be sent to whichever machine is online at that IP.
+func TestFindDeviceConnectionDoesNotFallBackToSharedIP(t *testing.T) {
+	db := openTCPConnectionTestDB(t, "no_ip_fallback")
+	connMgr := NewConnectionManager()
+
+	online := newMainboardTestConnection(t, db)
+	online.deviceCode = "CNC14ZKBCN371700037"
+	online.deviceFlag = "CNC14ZKBCN371700037"
+	online.deviceID = 1
+	connMgr.Register(online.deviceCode, online)
+
+	svc := NewPatternTransferService(db, connMgr)
+	offline := model.Device{Code: "BE002ZKBCN361700922", MainboardSN: "BE002ZKBCN361700922", IP: extractIP(online.conn.RemoteAddr().String())}
+	offline.ID = 2
+	if dc := svc.findDeviceConnection(offline); dc != nil {
+		t.Fatalf("offline device matched connection of %s by shared IP", dc.deviceCode)
+	}
+
+	self := model.Device{Code: "CNC14ZKBCN371700037", MainboardSN: "CNC14ZKBCN371700037"}
+	self.ID = 1
+	if dc := svc.findDeviceConnection(self); dc != online {
+		t.Fatalf("expected online device to match its own connection")
+	}
+}

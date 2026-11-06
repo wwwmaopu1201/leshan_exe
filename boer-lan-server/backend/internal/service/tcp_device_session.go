@@ -167,6 +167,14 @@ func (dc *DeviceConnection) upsertDeviceRecord(code, name, deviceType, modelName
 	err := dc.resolveExistingDevice(&device, code, mainboardSN, ip)
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
+		if mainboardSN != code {
+			var sameCode int64
+			dc.db.Model(&model.Device{}).Where("code = ?", code).Count(&sameCode)
+			if sameCode > 0 {
+				// Another machine already owns this device number; keep sessions apart.
+				code = mainboardSN
+			}
+		}
 		device = model.Device{
 			Code:         code,
 			Name:         fallbackString(name, "设备 "+code),
@@ -241,8 +249,11 @@ func (dc *DeviceConnection) resolveExistingDevice(device *model.Device, code, ma
 		}
 	}
 
+	// A device number may be a factory default shared by several machines, so
+	// only adopt a record that has no mainboard flag or the same one.
 	if code != "" {
-		if err := dc.db.Where("code = ?", code).First(device).Error; err == nil {
+		if err := dc.db.Where("code = ? AND (mainboard_sn = '' OR mainboard_sn IS NULL OR mainboard_sn = ?)", code, mainboardSN).
+			First(device).Error; err == nil {
 			return nil
 		}
 	}
